@@ -547,6 +547,7 @@ func (g *Goproxy) executeGoCommand(
 	cmd := exec.CommandContext(ctx, g.GoBinName, args...)
 	cmd.Env = append(
 		os.Environ(),
+		"GO111MODULE=on",
 		fmt.Sprint("GOCACHE=", filepath.Join(goproxyRoot, "gocache")),
 		fmt.Sprint("GOPATH=", filepath.Join(goproxyRoot, "gopath")),
 	)
