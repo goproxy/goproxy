@@ -20,7 +20,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/cespare/xxhash"
+	"github.com/cespare/xxhash/v2"
 	"golang.org/x/mod/module"
 	"golang.org/x/net/idna"
 )
@@ -272,11 +272,8 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		filename = path.Join(path.Dir(filename), filenameBase)
 	}
 
-	if isExist, err := g.Cacher.IsExist(r.Context(), filename); err != nil {
-		g.logError(err)
-		responseInternalServerError(rw)
-		return
-	} else if !isExist {
+	cache, err := g.Cacher.Get(r.Context(), filename)
+	if err == ErrCacheNotFound {
 		if _, err := g.modDownload(
 			r.Context(),
 			escapedModulePath,
@@ -291,15 +288,19 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 			return
 		}
-	}
 
-	cacheReader, err := g.Cacher.Get(r.Context(), filename)
-	if err != nil {
+		cache, err = g.Cacher.Get(r.Context(), filename)
+		if err != nil {
+			g.logError(err)
+			responseInternalServerError(rw)
+			return
+		}
+	} else if err != nil {
 		g.logError(err)
 		responseInternalServerError(rw)
 		return
 	}
-	defer cacheReader.Close()
+	defer cache.Close()
 
 	contentType := ""
 	switch filenameExt {
@@ -314,13 +315,13 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	rw.Header().Set("Content-Type", contentType)
 
 	eTagHash := xxhash.New()
-	if _, err := io.Copy(eTagHash, cacheReader); err != nil {
+	if _, err := io.Copy(eTagHash, cache); err != nil {
 		g.logError(err)
 		responseInternalServerError(rw)
 		return
 	}
 
-	if _, err := cacheReader.Seek(0, io.SeekStart); err != nil {
+	if _, err := cache.Seek(0, io.SeekStart); err != nil {
 		g.logError(err)
 		responseInternalServerError(rw)
 		return
@@ -334,7 +335,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		),
 	)
 
-	http.ServeContent(rw, r, "", cacheReader.ModTime(), cacheReader)
+	http.ServeContent(rw, r, "", cache.ModTime(), cache)
 }
 
 // logError logs the err.

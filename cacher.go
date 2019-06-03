@@ -2,6 +2,7 @@ package goproxy
 
 import (
 	"context"
+	"errors"
 	"io"
 	"io/ioutil"
 	"os"
@@ -9,24 +10,23 @@ import (
 	"time"
 )
 
+// ErrCacheNotFound is the error resulting if a path search failed to find a
+// cache.
+var ErrCacheNotFound = errors.New("cache not found")
+
 // Cacher is the interface that defines a set of methods used to cache module
 // files for the `Goproxy`.
+//
+// Note that the cache names must be UNIX-style paths.
 type Cacher interface {
 	// Get gets a `Cache` targeted by the name from the underlying cacher.
 	//
-	// Note that the name must be a UNIX-style path.
+	// The `ErrCacheNotFound` must be returned if the target cache cannot be
+	// found.
 	Get(ctx context.Context, name string) (Cache, error)
 
 	// Set sets the r to the underlying cacher with the name.
-	//
-	// Note that the name must be a UNIX-style path.
 	Set(ctx context.Context, name string, r io.Reader) error
-
-	// IsExist reports whether the `Cache` targeted by the name is exist in
-	// the underlying cacher.
-	//
-	// Note that the name must be a UNIX-style path.
-	IsExist(ctx context.Context, name string) (bool, error)
 }
 
 // Cache is the cache unit of the `Cacher`.
@@ -36,6 +36,8 @@ type Cache interface {
 	io.Closer
 
 	// Name returns the name of the underlying cache.
+	//
+	// Note that the returned name must be a UNIX-style path.
 	Name() string
 
 	// ModTime returns the modification time of the underlying cache.
@@ -46,7 +48,7 @@ type Cache interface {
 type LocalCacher struct {
 	// Root is the root of the caches.
 	//
-	// If the `Root` is empty, the `os.TempDir()` is used.
+	// If the `Root` is empty, the `os.TempDir` is used.
 	//
 	// Note that the `Root` must be a UNIX-style path.
 	Root string
@@ -56,6 +58,10 @@ type LocalCacher struct {
 func (c *LocalCacher) Get(ctx context.Context, name string) (Cache, error) {
 	file, err := os.Open(c.localName(name))
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrCacheNotFound
+		}
+
 		return nil, err
 	}
 
@@ -65,8 +71,9 @@ func (c *LocalCacher) Get(ctx context.Context, name string) (Cache, error) {
 	}
 
 	return &LocalCache{
-		file:     file,
-		fileInfo: fileInfo,
+		file:    file,
+		name:    name,
+		modTime: fileInfo.ModTime(),
 	}, nil
 }
 
@@ -88,17 +95,6 @@ func (c *LocalCacher) Set(ctx context.Context, name string, r io.Reader) error {
 	return ioutil.WriteFile(localName, b, os.ModePerm)
 }
 
-// IsExist implements the `Cacher`.
-func (c *LocalCacher) IsExist(ctx context.Context, name string) (bool, error) {
-	if _, err := os.Stat(c.localName(name)); os.IsNotExist(err) {
-		return false, nil
-	} else if err != nil {
-		return false, err
-	}
-
-	return true, nil
-}
-
 // localName returns the local representation of the name.
 func (c *LocalCacher) localName(name string) string {
 	name = filepath.FromSlash(name)
@@ -111,8 +107,9 @@ func (c *LocalCacher) localName(name string) string {
 
 // LocalCache implements the `Cache` by using the local disk.
 type LocalCache struct {
-	file     *os.File
-	fileInfo os.FileInfo
+	file    *os.File
+	name    string
+	modTime time.Time
 }
 
 // Read implements the `Cache`.
@@ -132,10 +129,10 @@ func (c *LocalCache) Close() error {
 
 // Name implements the `Cache`.
 func (c *LocalCache) Name() string {
-	return c.file.Name()
+	return c.name
 }
 
 // ModTime implements the `Cache`.
 func (c *LocalCache) ModTime() time.Time {
-	return c.fileInfo.ModTime()
+	return c.modTime
 }
