@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +21,7 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"golang.org/x/mod/module"
+	"golang.org/x/mod/semver"
 	"golang.org/x/net/idna"
 )
 
@@ -192,6 +192,8 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			sumdbRes.Header.Get("Content-Length"),
 		)
 
+		setResponseCacheControlHeader(rw, false)
+
 		io.Copy(rw, sumdbRes.Body)
 
 		return
@@ -223,6 +225,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		setResponseCacheControlHeader(rw, false)
 		switch filenameParts[1] {
 		case "latest":
 			responseJSON(rw, mlr)
@@ -243,7 +246,14 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	escapedModuleVersion := strings.TrimSuffix(filenameBase, filenameExt)
-	if _, err := hex.DecodeString(escapedModuleVersion); err == nil {
+	moduleVersion, err := module.UnescapeVersion(escapedModuleVersion)
+	if err != nil {
+		responseNotFound(rw)
+		return
+	}
+
+	isModuleVersionValid := semver.IsValid(moduleVersion)
+	if !isModuleVersionValid {
 		mlr, err := g.modList(
 			r.Context(),
 			escapedModulePath,
@@ -261,7 +271,8 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		escapedModuleVersion, err = module.EscapeVersion(mlr.Version)
+		moduleVersion = mlr.Version
+		escapedModuleVersion, err = module.EscapeVersion(moduleVersion)
 		if err != nil {
 			g.logError(err)
 			responseInternalServerError(rw)
@@ -334,6 +345,8 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			base64.StdEncoding.EncodeToString(eTagHash.Sum(nil)),
 		),
 	)
+
+	setResponseCacheControlHeader(rw, isModuleVersionValid)
 
 	http.ServeContent(rw, r, "", cache.ModTime(), cache)
 }
@@ -553,6 +566,19 @@ func (g *Goproxy) executeGoCommand(
 	}
 
 	return stdout, nil
+}
+
+// setResponseCacheControlHeader sets the Cache-Control header based on the
+// cacheable.
+func setResponseCacheControlHeader(rw http.ResponseWriter, cacheable bool) {
+	cacheControl := ""
+	if cacheable {
+		cacheControl = "max-age=31536000"
+	} else {
+		cacheControl = "must-revalidate, no-cache, no-store"
+	}
+
+	rw.Header().Set("Cache-Control", cacheControl)
 }
 
 // responseJSON responses the JSON marshaled from the v to the client.
