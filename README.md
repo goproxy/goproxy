@@ -5,6 +5,9 @@
 
 A minimalist Go module proxy handler.
 
+**The project was created on 2019-06-03 and is still very young, so it's not
+production-ready yet. Issues welcome! PRs welcome!**
+
 ## Installation
 
 Open your terminal and execute
@@ -17,7 +20,7 @@ done.
 
 > The only requirement is the [Go](https://golang.org), at least v1.11.
 
-## Usage
+## Quick Start
 
 Create a file named `goproxy.go`
 
@@ -41,7 +44,7 @@ and run it
 $ go run goproxy.go
 ```
 
-then visit `http://localhost:8080`.
+then try it by setting `GOPROXY=http://localhost:8080`.
 
 ## Community
 
