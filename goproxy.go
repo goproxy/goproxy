@@ -1,3 +1,6 @@
+/*
+Package goproxy implements a minimalist Go module proxy handler.
+*/
 package goproxy
 
 import (
