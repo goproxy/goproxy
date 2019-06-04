@@ -65,7 +65,7 @@ type Goproxy struct {
 	// request ends.
 	//
 	// Default: nil
-	Cacher Cacher `mapstructure:"-"`
+	Cacher Cacher `mapstructure:"cacher"`
 
 	// SupportedSUMDBHosts is the supported checksum database hosts.
 	//

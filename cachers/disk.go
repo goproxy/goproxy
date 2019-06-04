@@ -14,15 +14,13 @@ import (
 
 // Disk implements the `goproxy.Cacher` by using the disk.
 type Disk struct {
-	// Root is the Unix path style root of the caches.
-	//
-	// If the `Root` is empty, the `os.TempDir` is used.
-	Root string
+	// Root is the root of the caches.
+	Root string `mapstructure:"root"`
 }
 
 // Cache implements the `goproxy.Cacher`.
 func (d *Disk) Cache(ctx context.Context, name string) (goproxy.Cache, error) {
-	file, err := os.Open(d.filename(name))
+	file, err := os.Open(filepath.Join(d.Root, filepath.FromSlash(name)))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, goproxy.ErrCacheNotFound
@@ -61,7 +59,7 @@ func (d *Disk) SetCache(ctx context.Context, c goproxy.Cache) error {
 		return err
 	}
 
-	filename := d.filename(c.Name())
+	filename := filepath.Join(d.Root, filepath.FromSlash(c.Name()))
 	if err := os.MkdirAll(
 		filepath.Dir(filename),
 		os.ModePerm,
@@ -70,16 +68,6 @@ func (d *Disk) SetCache(ctx context.Context, c goproxy.Cache) error {
 	}
 
 	return ioutil.WriteFile(filename, b, os.ModePerm)
-}
-
-// filename returns the disk file representation of the name.
-func (d *Disk) filename(name string) string {
-	name = filepath.FromSlash(name)
-	if d.Root != "" {
-		return filepath.Join(filepath.FromSlash(d.Root), name)
-	}
-
-	return filepath.Join(os.TempDir(), name)
 }
 
 // diskCache implements the `goproxy.Cache`. It is the cache unit of the `Disk`.
