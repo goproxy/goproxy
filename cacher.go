@@ -3,7 +3,9 @@ package goproxy
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
 	"errors"
+	"hash"
 	"io"
 	"io/ioutil"
 	"os"
@@ -20,6 +22,10 @@ var ErrCacheNotFound = errors.New("cache not found")
 // If you are looking for some useful implementations of the `Cacher`, simply
 // visit the "github.com/goproxy/goproxy/cachers" package.
 type Cacher interface {
+	// NewHash returns a new instance of the `hash.Hash` used to compute the
+	// checksums of the caches in the underlying cacher.
+	NewHash() hash.Hash
+
 	// Cache returns the matched `Cache` for the name from the underlying
 	// cacher. It returns the `ErrCacheNotFound` if not found.
 	//
@@ -47,13 +53,18 @@ type Cache interface {
 	// ModTime returns the modification time of the underlying cache.
 	ModTime() time.Time
 
-	// Checksum returns the xxHash (XXH64) checksum of the underlying cache.
+	// Checksum returns the checksum of the underlying cache.
 	Checksum() []byte
 }
 
 // tempCacher implements the `Cacher` by using the `map[string]tempCache`.
 type tempCacher struct {
 	caches map[string]*tempCache
+}
+
+// NewHash implements the `Cacher`.
+func (tc *tempCacher) NewHash() hash.Hash {
+	return md5.New()
 }
 
 // Cache implements the `Cacher`.

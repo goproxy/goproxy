@@ -2,13 +2,14 @@ package cachers
 
 import (
 	"context"
+	"crypto/md5"
+	"hash"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"time"
 
-	"github.com/cespare/xxhash/v2"
 	"github.com/goproxy/goproxy"
 )
 
@@ -16,6 +17,11 @@ import (
 type Disk struct {
 	// Root is the root of the caches.
 	Root string `mapstructure:"root"`
+}
+
+// NewHash implements the `goproxy.Cacher`.
+func (d *Disk) NewHash() hash.Hash {
+	return md5.New()
 }
 
 // Cache implements the `goproxy.Cacher`.
@@ -34,7 +40,7 @@ func (d *Disk) Cache(ctx context.Context, name string) (goproxy.Cache, error) {
 		return nil, err
 	}
 
-	fileHash := xxhash.New()
+	fileHash := d.NewHash()
 	if _, err := io.Copy(fileHash, file); err != nil {
 		return nil, err
 	}

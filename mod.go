@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cespare/xxhash/v2"
 	"golang.org/x/mod/module"
 )
 
@@ -172,7 +171,7 @@ func modDownload(
 		return nil, err
 	}
 
-	infoFileHash := xxhash.New()
+	infoFileHash := cacher.NewHash()
 	if _, err := io.Copy(infoFileHash, infoFile); err != nil {
 		return nil, err
 	}
@@ -202,7 +201,7 @@ func modDownload(
 		return nil, err
 	}
 
-	modFileHash := xxhash.New()
+	modFileHash := cacher.NewHash()
 	if _, err := io.Copy(modFileHash, modFile); err != nil {
 		return nil, err
 	}
@@ -232,7 +231,7 @@ func modDownload(
 		return nil, err
 	}
 
-	zipFileHash := xxhash.New()
+	zipFileHash := cacher.NewHash()
 	if _, err := io.Copy(zipFileHash, zipFile); err != nil {
 		return nil, err
 	}

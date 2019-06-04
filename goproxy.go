@@ -26,11 +26,12 @@ import (
 // that you can set GOPROXY to serve the `Goproxy` itself under other proxies,
 // and by setting GONOPROXY to indicate which modules the `Goproxy` should
 // download directly instead of using GOPROXY. And of course, you can also set
-// GOSUMDB and GONOSUMDB to indicate how the `Goproxy` should check the modules.
+// GOSUMDB and GONOSUMDB to indicate how the `Goproxy` should verify the
+// modules.
 //
 // ATTENTION: Since GONOPROXY has not yet been released (it will be introduced
 // in Go 1.13), so we implemented a built-in GONOPROXY support for the
-// `Goproxy`. So, you can set GONOPROXY even before Go 1.13.
+// `Goproxy`. Now, you can set GONOPROXY even before Go 1.13.
 //
 // It is highly recommended not to modify the value of any field of the
 // `Goproxy` after calling the `Goproxy.ServeHTTP`, which will cause
