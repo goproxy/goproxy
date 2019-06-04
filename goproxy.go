@@ -70,7 +70,10 @@ type Goproxy struct {
 
 	// Cacher is the `Cacher` that used to cache module files.
 	//
-	// Default: `&DiskCacher{}`
+	// If the `Cacher` is nil, all module files will disappear as the
+	// request ends.
+	//
+	// Default: nil
 	Cacher Cacher `mapstructure:"-"`
 
 	// SupportedSUMDBHosts is the supported checksum database hosts.
@@ -100,7 +103,6 @@ func New() *Goproxy {
 	return &Goproxy{
 		GoBinName:           "go",
 		MaxGoBinWorkers:     8,
-		Cacher:              &DiskCacher{},
 		SupportedSUMDBHosts: []string{"sum.golang.org"},
 		loadOnce:            &sync.Once{},
 		supportedSUMDBHosts: map[string]bool{},
@@ -297,10 +299,18 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		filename = path.Join(path.Dir(filename), filenameBase)
 	}
 
-	cache, err := g.Cacher.Get(r.Context(), filename)
+	cacher := g.Cacher
+	if cacher == nil {
+		cacher = &mapCacher{
+			caches: make(map[string]*mapCache, 3),
+		}
+	}
+
+	cache, err := cacher.Get(r.Context(), filename)
 	if err == ErrCacheNotFound {
 		if _, err := g.modDownload(
 			r.Context(),
+			cacher,
 			escapedModulePath,
 			escapedModuleVersion,
 		); err != nil {
@@ -314,7 +324,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		cache, err = g.Cacher.Get(r.Context(), filename)
+		cache, err = cacher.Get(r.Context(), filename)
 		if err != nil {
 			g.logError(err)
 			responseInternalServerError(rw)
@@ -462,6 +472,7 @@ type modDownloadResult struct {
 // `go mod download -json escapedModulePath@escapedModuleVersion`.
 func (g *Goproxy) modDownload(
 	ctx context.Context,
+	cacher Cacher,
 	escapedModulePath string,
 	escapedModuleVersion string,
 ) (*modDownloadResult, error) {
@@ -516,7 +527,7 @@ func (g *Goproxy) modDownload(
 	}
 	defer infoFile.Close()
 
-	if err := g.Cacher.Set(
+	if err := cacher.Set(
 		ctx,
 		fmt.Sprint(filenamePrefix, ".info"),
 		infoFile,
@@ -530,7 +541,7 @@ func (g *Goproxy) modDownload(
 	}
 	defer modFile.Close()
 
-	if err := g.Cacher.Set(
+	if err := cacher.Set(
 		ctx,
 		fmt.Sprint(filenamePrefix, ".mod"),
 		modFile,
@@ -544,7 +555,7 @@ func (g *Goproxy) modDownload(
 	}
 	defer zipFile.Close()
 
-	if err := g.Cacher.Set(
+	if err := cacher.Set(
 		ctx,
 		fmt.Sprint(filenamePrefix, ".zip"),
 		zipFile,

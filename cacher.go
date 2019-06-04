@@ -1,12 +1,11 @@
 package goproxy
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"io/ioutil"
-	"os"
-	"path/filepath"
 	"time"
 )
 
@@ -18,6 +17,9 @@ var ErrCacheNotFound = errors.New("cache not found")
 // files for the `Goproxy`.
 //
 // Note that the cache names must be UNIX-style paths.
+//
+// If you are looking for some useful implementations of the `Cacher`, simply
+// visit the "github.com/goproxy/goproxy/cachers" package.
 type Cacher interface {
 	// Get gets a `Cache` targeted by the name from the underlying cacher.
 	//
@@ -44,95 +46,65 @@ type Cache interface {
 	ModTime() time.Time
 }
 
-// DiskCacher implements the `Cacher` by using the disk.
-type DiskCacher struct {
-	// Root is the root of the caches.
-	//
-	// If the `Root` is empty, the `os.TempDir` is used.
-	//
-	// Note that the `Root` must be a UNIX-style path.
-	Root string
+// mapCacher implements the `Cacher` by using the `map[string]mapCache`.
+type mapCacher struct {
+	caches map[string]*mapCache
 }
 
 // Get implements the `Cacher`.
-func (dc *DiskCacher) Get(ctx context.Context, name string) (Cache, error) {
-	file, err := os.Open(dc.filename(name))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, ErrCacheNotFound
-		}
-
-		return nil, err
+func (mc *mapCacher) Get(ctx context.Context, name string) (Cache, error) {
+	c, ok := mc.caches[name]
+	if !ok {
+		return nil, ErrCacheNotFound
 	}
 
-	fileInfo, err := file.Stat()
-	if err != nil {
-		return nil, err
-	}
-
-	return &diskCache{
-		file:    file,
-		name:    name,
-		modTime: fileInfo.ModTime(),
-	}, nil
+	return c, nil
 }
 
 // Set implements the `Cacher`.
-func (dc *DiskCacher) Set(ctx context.Context, name string, r io.Reader) error {
+func (mc *mapCacher) Set(ctx context.Context, name string, r io.Reader) error {
 	b, err := ioutil.ReadAll(r)
 	if err != nil {
 		return err
 	}
 
-	filename := dc.filename(name)
-	if err := os.MkdirAll(
-		filepath.Dir(filename),
-		os.ModePerm,
-	); err != nil {
-		return err
+	mc.caches[name] = &mapCache{
+		reader:  bytes.NewReader(b),
+		name:    name,
+		modTime: time.Now(),
 	}
 
-	return ioutil.WriteFile(filename, b, os.ModePerm)
+	return nil
 }
 
-// filename returns the disk file representation of the name.
-func (dc *DiskCacher) filename(name string) string {
-	name = filepath.FromSlash(name)
-	if dc.Root != "" {
-		return filepath.Join(filepath.FromSlash(dc.Root), name)
-	}
-
-	return filepath.Join(os.TempDir(), name)
-}
-
-// diskCache implements the `Cache`. It is the cache unit of the `DiskCacher`.
-type diskCache struct {
-	file    *os.File
+// mapCache implements the `Cache`. It is the cache unit of the `mapCacher`.
+type mapCache struct {
+	reader  *bytes.Reader
 	name    string
 	modTime time.Time
 }
 
 // Read implements the `Cache`.
-func (dc *diskCache) Read(b []byte) (int, error) {
-	return dc.file.Read(b)
+func (mc *mapCache) Read(b []byte) (int, error) {
+	return mc.reader.Read(b)
 }
 
 // Seek implements the `Cache`.
-func (dc *diskCache) Seek(offset int64, whence int) (int64, error) {
-	return dc.file.Seek(offset, whence)
+func (mc *mapCache) Seek(offset int64, whence int) (int64, error) {
+	return mc.reader.Seek(offset, whence)
 }
 
 // Close implements the `Cache`.
-func (dc *diskCache) Close() error {
-	return dc.file.Close()
+func (mc *mapCache) Close() error {
+	return nil
 }
 
 // Name implements the `Cache`.
-func (dc *diskCache) Name() string {
-	return dc.name
+func (mc *mapCache) Name() string {
+	return mc.name
 }
 
 // ModTime implements the `Cache`.
-func (dc *diskCache) ModTime() time.Time {
-	return dc.modTime
+func (mc *mapCache) ModTime() time.Time {
+	return mc.modTime
 }
