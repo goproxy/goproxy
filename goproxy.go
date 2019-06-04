@@ -381,12 +381,17 @@ func (g *Goproxy) logError(err error) {
 		return
 	}
 
+	em := err.Error()
+	if !strings.HasPrefix(em, "goproxy: ") {
+		em = fmt.Sprint("goproxy: ", em)
+	}
+
 	if g.ErrorLogger != nil {
-		g.ErrorLogger.Output(2, err.Error())
+		g.ErrorLogger.Output(2, em)
 		return
 	}
 
-	log.Output(2, err.Error())
+	log.Output(2, em)
 }
 
 var (
