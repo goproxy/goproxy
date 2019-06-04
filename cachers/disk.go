@@ -14,11 +14,9 @@ import (
 
 // Disk implements the `goproxy.Cacher` by using the disk.
 type Disk struct {
-	// Root is the root of the caches.
+	// Root is the Unix path style root of the caches.
 	//
 	// If the `Root` is empty, the `os.TempDir` is used.
-	//
-	// Note that the `Root` must be a UNIX-style path.
 	Root string
 }
 

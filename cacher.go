@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"io/ioutil"
+	"os"
 	"time"
 )
 
@@ -16,16 +17,18 @@ var ErrCacheNotFound = errors.New("cache not found")
 // Cacher is the interface that defines a set of methods used to cache module
 // files for the `Goproxy`.
 //
-// Note that the cache names must be UNIX-style paths.
-//
 // If you are looking for some useful implementations of the `Cacher`, simply
 // visit the "github.com/goproxy/goproxy/cachers" package.
 type Cacher interface {
 	// Cache returns the matched `Cache` for the name from the underlying
 	// cacher. It returns the `ErrCacheNotFound` if not found.
+	//
+	// It is the caller's responsibility to close the returned `Cache`.
 	Cache(ctx context.Context, name string) (Cache, error)
 
 	// SetCache sets the c to the underlying cacher.
+	//
+	// It is the caller's responsibility to close the c.
 	SetCache(ctx context.Context, c Cache) error
 }
 
@@ -35,9 +38,7 @@ type Cache interface {
 	io.Seeker
 	io.Closer
 
-	// Name returns the unique name of the underlying cache.
-	//
-	// Note that the returned name must be a UNIX-style path.
+	// Name returns the unique Unix path style name of the underlying cache.
 	Name() string
 
 	// Size returns the length in bytes of the underlying cache.
@@ -86,6 +87,7 @@ func (tc *tempCacher) SetCache(ctx context.Context, c Cache) error {
 // tempCache implements the `Cache`. It is the cache unit of the `tempCacher`.
 type tempCache struct {
 	readSeeker io.ReadSeeker
+	closed     bool
 	name       string
 	size       int64
 	modTime    time.Time
@@ -94,18 +96,31 @@ type tempCache struct {
 
 // Read implements the `Cache`.
 func (tc *tempCache) Read(b []byte) (int, error) {
+	if tc.closed {
+		return 0, os.ErrClosed
+	}
+
 	return tc.readSeeker.Read(b)
 }
 
 // Seek implements the `Cache`.
 func (tc *tempCache) Seek(offset int64, whence int) (int64, error) {
+	if tc.closed {
+		return 0, os.ErrClosed
+	}
+
 	return tc.readSeeker.Seek(offset, whence)
 }
 
 // Close implements the `Cache`.
 func (tc *tempCache) Close() error {
-	_, err := tc.readSeeker.Seek(0, io.SeekEnd)
-	return err
+	if tc.closed {
+		return os.ErrClosed
+	}
+
+	tc.closed = true
+
+	return nil
 }
 
 // Name implements the `Cache`.
