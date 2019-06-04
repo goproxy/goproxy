@@ -37,6 +37,10 @@ import (
 // download directly instead of using GOPROXY. And of course, you can also set
 // GOSUMDB and GONOSUMDB to indicate how the `Goproxy` should check the modules.
 //
+// ATTENTION: Since GONOPROXY has not yet been released (it will be introduced
+// in Go 1.13), so we implemented a built-in GONOPROXY support for the
+// `Goproxy`. So, you can set GONOPROXY even before Go 1.13.
+//
 // It is highly recommended not to modify the value of any field of the
 // `Goproxy` after calling the `Goproxy.ServeHTTP`, which will cause
 // unpredictable problems.
@@ -421,6 +425,11 @@ func (g *Goproxy) modList(
 	}
 	defer os.RemoveAll(goproxyRoot)
 
+	var env []string
+	if globsMatchPath(os.Getenv("GONOPROXY"), modulePath) {
+		env = []string{"GOPROXY=direct", "GONOPROXY="}
+	}
+
 	args := []string{"list", "-json", "-m"}
 	if allVersions {
 		args = append(args, "-versions")
@@ -428,7 +437,7 @@ func (g *Goproxy) modList(
 
 	args = append(args, fmt.Sprint(modulePath, "@", moduleVersion))
 
-	stdout, err := g.executeGoCommand(ctx, goproxyRoot, args...)
+	stdout, err := g.executeGoCommand(ctx, goproxyRoot, env, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -472,9 +481,15 @@ func (g *Goproxy) modDownload(
 	}
 	defer os.RemoveAll(goproxyRoot)
 
+	var env []string
+	if globsMatchPath(os.Getenv("GONOPROXY"), modulePath) {
+		env = []string{"GOPROXY=direct", "GONOPROXY="}
+	}
+
 	stdout, err := g.executeGoCommand(
 		ctx,
 		goproxyRoot,
+		env,
 		"mod",
 		"download",
 		"-json",
@@ -544,6 +559,7 @@ func (g *Goproxy) modDownload(
 func (g *Goproxy) executeGoCommand(
 	ctx context.Context,
 	goproxyRoot string,
+	env []string,
 	args ...string,
 ) ([]byte, error) {
 	g.goBinWorkerChan <- struct{}{}
@@ -553,7 +569,7 @@ func (g *Goproxy) executeGoCommand(
 
 	cmd := exec.CommandContext(ctx, g.GoBinName, args...)
 	cmd.Env = append(
-		os.Environ(),
+		append(os.Environ(), env...),
 		"GO111MODULE=on",
 		fmt.Sprint("GOCACHE=", filepath.Join(goproxyRoot, "gocache")),
 		fmt.Sprint("GOPATH=", filepath.Join(goproxyRoot, "gopath")),
@@ -577,6 +593,55 @@ func (g *Goproxy) executeGoCommand(
 	}
 
 	return stdout, nil
+}
+
+// globsMatchPath reports whether any path prefix of target matches one of the
+// glob patterns (as defined by the `path.Match`) in the comma-separated globs
+// list. It ignores any empty or malformed patterns in the list.
+func globsMatchPath(globs, target string) bool {
+	for globs != "" {
+		// Extract next non-empty glob in comma-separated list.
+		var glob string
+		if i := strings.Index(globs, ","); i >= 0 {
+			glob, globs = globs[:i], globs[i+1:]
+		} else {
+			glob, globs = globs, ""
+		}
+
+		if glob == "" {
+			continue
+		}
+
+		// A glob with N+1 path elements (N slashes) needs to be matched
+		// against the first N+1 path elements of target, which end just
+		// before the N+1'th slash.
+		n := strings.Count(glob, "/")
+		prefix := target
+
+		// Walk target, counting slashes, truncating at the N+1'th
+		// slash.
+		for i := 0; i < len(target); i++ {
+			if target[i] == '/' {
+				if n == 0 {
+					prefix = target[:i]
+					break
+				}
+
+				n--
+			}
+		}
+
+		if n > 0 {
+			// Not enough prefix elements.
+			continue
+		}
+
+		if matched, _ := path.Match(glob, prefix); matched {
+			return true
+		}
+	}
+
+	return false
 }
 
 // setResponseCacheControlHeader sets the Cache-Control header based on the
