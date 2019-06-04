@@ -4,21 +4,13 @@ Package goproxy implements a minimalist Go module proxy handler.
 package goproxy
 
 import (
-	"bytes"
-	"context"
 	"encoding/base64"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
-	"os"
-	"os/exec"
 	"path"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -224,8 +216,10 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	escapedModulePath := filenameParts[0]
 	switch filenameParts[1] {
 	case "latest", "v/list":
-		mlr, err := g.modList(
+		mlr, err := modList(
+			g.goBinWorkerChan,
 			r.Context(),
+			g.GoBinName,
 			escapedModulePath,
 			"latest",
 			filenameParts[1] == "v/list",
@@ -270,8 +264,10 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	isModuleVersionValid := semver.IsValid(moduleVersion)
 	if !isModuleVersionValid {
-		mlr, err := g.modList(
+		mlr, err := modList(
+			g.goBinWorkerChan,
 			r.Context(),
+			g.GoBinName,
 			escapedModulePath,
 			escapedModuleVersion,
 			false,
@@ -308,8 +304,10 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	cache, err := cacher.Get(r.Context(), filename)
 	if err == ErrCacheNotFound {
-		if _, err := g.modDownload(
+		if _, err := modDownload(
+			g.goBinWorkerChan,
 			r.Context(),
+			g.GoBinName,
 			cacher,
 			escapedModulePath,
 			escapedModuleVersion,
@@ -392,334 +390,4 @@ func (g *Goproxy) logError(err error) {
 	}
 
 	log.Output(2, em)
-}
-
-var (
-	modOutputNotFoundKeywords = [][]byte{
-		[]byte("could not read username"),
-		[]byte("invalid"),
-		[]byte("malformed"),
-		[]byte("no matching"),
-		[]byte("not found"),
-		[]byte("unknown"),
-		[]byte("unrecognized"),
-	}
-
-	errModuleVersionNotFound = errors.New("module version not found")
-)
-
-// modListResult is the result of
-// `go list -json -m -versions <MODULE_PATH>@<MODULE_VERSION>`.
-type modListResult struct {
-	Version  string   `json:"Version"`
-	Time     string   `json:"Time"`
-	Versions []string `json:"Versions,omitempty"`
-}
-
-// modList executes
-// `go list -json -m -versions escapedModulePath@escapedModuleVersion`.
-func (g *Goproxy) modList(
-	ctx context.Context,
-	escapedModulePath string,
-	escapedModuleVersion string,
-	allVersions bool,
-) (*modListResult, error) {
-	modulePath, err := module.UnescapePath(escapedModulePath)
-	if err != nil {
-		return nil, errModuleVersionNotFound
-	}
-
-	moduleVersion, err := module.UnescapeVersion(escapedModuleVersion)
-	if err != nil {
-		return nil, errModuleVersionNotFound
-	}
-
-	goproxyRoot, err := ioutil.TempDir("", "goproxy")
-	if err != nil {
-		return nil, err
-	}
-	defer os.RemoveAll(goproxyRoot)
-
-	var env []string
-	if globsMatchPath(os.Getenv("GONOPROXY"), modulePath) {
-		env = []string{"GOPROXY=direct", "GONOPROXY="}
-	}
-
-	args := []string{"list", "-json", "-m"}
-	if allVersions {
-		args = append(args, "-versions")
-	}
-
-	args = append(args, fmt.Sprint(modulePath, "@", moduleVersion))
-
-	stdout, err := g.executeGoCommand(ctx, goproxyRoot, env, args...)
-	if err != nil {
-		return nil, err
-	}
-
-	mlr := &modListResult{}
-	if err := json.Unmarshal(stdout, mlr); err != nil {
-		return nil, err
-	}
-
-	return mlr, nil
-}
-
-// modDownloadResult is the result of
-// `go mod download -json <MODULE_PATH>@<MODULE_VERSION>`.
-type modDownloadResult struct {
-	Info  string `json:"Info"`
-	GoMod string `json:"GoMod"`
-	Zip   string `json:"Zip"`
-}
-
-// modDownload executes
-// `go mod download -json escapedModulePath@escapedModuleVersion`.
-func (g *Goproxy) modDownload(
-	ctx context.Context,
-	cacher Cacher,
-	escapedModulePath string,
-	escapedModuleVersion string,
-) (*modDownloadResult, error) {
-	modulePath, err := module.UnescapePath(escapedModulePath)
-	if err != nil {
-		return nil, errModuleVersionNotFound
-	}
-
-	moduleVersion, err := module.UnescapeVersion(escapedModuleVersion)
-	if err != nil {
-		return nil, errModuleVersionNotFound
-	}
-
-	goproxyRoot, err := ioutil.TempDir("", "goproxy")
-	if err != nil {
-		return nil, err
-	}
-	defer os.RemoveAll(goproxyRoot)
-
-	var env []string
-	if globsMatchPath(os.Getenv("GONOPROXY"), modulePath) {
-		env = []string{"GOPROXY=direct", "GONOPROXY="}
-	}
-
-	stdout, err := g.executeGoCommand(
-		ctx,
-		goproxyRoot,
-		env,
-		"mod",
-		"download",
-		"-json",
-		fmt.Sprint(modulePath, "@", moduleVersion),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	mdr := &modDownloadResult{}
-	if err := json.Unmarshal(stdout, mdr); err != nil {
-		return nil, err
-	}
-
-	filenamePrefix := path.Join(
-		escapedModulePath,
-		"@v",
-		escapedModuleVersion,
-	)
-
-	infoFile, err := os.Open(mdr.Info)
-	if err != nil {
-		return nil, err
-	}
-	defer infoFile.Close()
-
-	if err := cacher.Set(
-		ctx,
-		fmt.Sprint(filenamePrefix, ".info"),
-		infoFile,
-	); err != nil {
-		return nil, err
-	}
-
-	modFile, err := os.Open(mdr.GoMod)
-	if err != nil {
-		return nil, err
-	}
-	defer modFile.Close()
-
-	if err := cacher.Set(
-		ctx,
-		fmt.Sprint(filenamePrefix, ".mod"),
-		modFile,
-	); err != nil {
-		return nil, err
-	}
-
-	zipFile, err := os.Open(mdr.Zip)
-	if err != nil {
-		return nil, err
-	}
-	defer zipFile.Close()
-
-	if err := cacher.Set(
-		ctx,
-		fmt.Sprint(filenamePrefix, ".zip"),
-		zipFile,
-	); err != nil {
-		return nil, err
-	}
-
-	return mdr, nil
-}
-
-// executeGoCommand executes go command with the args.
-func (g *Goproxy) executeGoCommand(
-	ctx context.Context,
-	goproxyRoot string,
-	env []string,
-	args ...string,
-) ([]byte, error) {
-	g.goBinWorkerChan <- struct{}{}
-	defer func() {
-		<-g.goBinWorkerChan
-	}()
-
-	cmd := exec.CommandContext(ctx, g.GoBinName, args...)
-	cmd.Env = append(
-		append(os.Environ(), env...),
-		"GO111MODULE=on",
-		fmt.Sprint("GOCACHE=", filepath.Join(goproxyRoot, "gocache")),
-		fmt.Sprint("GOPATH=", filepath.Join(goproxyRoot, "gopath")),
-	)
-	cmd.Dir = goproxyRoot
-	stdout, err := cmd.Output()
-	if err != nil {
-		output := stdout
-		if ee, ok := err.(*exec.ExitError); ok {
-			output = append(output, ee.Stderr...)
-		}
-
-		lowercasedOutput := bytes.ToLower(output)
-		for _, k := range modOutputNotFoundKeywords {
-			if bytes.Contains(lowercasedOutput, k) {
-				return nil, errModuleVersionNotFound
-			}
-		}
-
-		return nil, fmt.Errorf("modList: %v: %s", err, output)
-	}
-
-	return stdout, nil
-}
-
-// globsMatchPath reports whether any path prefix of target matches one of the
-// glob patterns (as defined by the `path.Match`) in the comma-separated globs
-// list. It ignores any empty or malformed patterns in the list.
-func globsMatchPath(globs, target string) bool {
-	for globs != "" {
-		// Extract next non-empty glob in comma-separated list.
-		var glob string
-		if i := strings.Index(globs, ","); i >= 0 {
-			glob, globs = globs[:i], globs[i+1:]
-		} else {
-			glob, globs = globs, ""
-		}
-
-		if glob == "" {
-			continue
-		}
-
-		// A glob with N+1 path elements (N slashes) needs to be matched
-		// against the first N+1 path elements of target, which end just
-		// before the N+1'th slash.
-		n := strings.Count(glob, "/")
-		prefix := target
-
-		// Walk target, counting slashes, truncating at the N+1'th
-		// slash.
-		for i := 0; i < len(target); i++ {
-			if target[i] == '/' {
-				if n == 0 {
-					prefix = target[:i]
-					break
-				}
-
-				n--
-			}
-		}
-
-		if n > 0 {
-			// Not enough prefix elements.
-			continue
-		}
-
-		if matched, _ := path.Match(glob, prefix); matched {
-			return true
-		}
-	}
-
-	return false
-}
-
-// setResponseCacheControlHeader sets the Cache-Control header based on the
-// cacheable.
-func setResponseCacheControlHeader(rw http.ResponseWriter, cacheable bool) {
-	cacheControl := ""
-	if cacheable {
-		cacheControl = "max-age=31536000"
-	} else {
-		cacheControl = "must-revalidate, no-cache, no-store"
-	}
-
-	rw.Header().Set("Cache-Control", cacheControl)
-}
-
-// responseJSON responses the JSON marshaled from the v to the client.
-func responseJSON(rw http.ResponseWriter, v interface{}) {
-	b, err := json.Marshal(v)
-	if err != nil {
-		responseInternalServerError(rw)
-		return
-	}
-
-	rw.Header().Set("Content-Type", "application/json; charset=utf-8")
-	rw.Write(b)
-}
-
-// responseString responses the s to the client.
-func responseString(rw http.ResponseWriter, s string) {
-	rw.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	rw.Write([]byte(s))
-}
-
-// responseStatusCode responses the sc to the client.
-func responseStatusCode(rw http.ResponseWriter, sc int) {
-	rw.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	rw.WriteHeader(sc)
-	rw.Write([]byte(http.StatusText(sc)))
-}
-
-// responseNotFound responses "404 Not Found" to the client.
-func responseNotFound(rw http.ResponseWriter) {
-	responseStatusCode(rw, http.StatusNotFound)
-}
-
-// responseMethodNotAllowed responses "405 Method Not Allowed" to the client.
-func responseMethodNotAllowed(rw http.ResponseWriter) {
-	responseStatusCode(rw, http.StatusMethodNotAllowed)
-}
-
-// responseGone responses "410 Gone" to the client.
-func responseGone(rw http.ResponseWriter) {
-	responseStatusCode(rw, http.StatusGone)
-}
-
-// responseInternalServerError responses "500 Internal Server Error" to the
-// client.
-func responseInternalServerError(rw http.ResponseWriter) {
-	responseStatusCode(rw, http.StatusInternalServerError)
-}
-
-// responseBadGateway responses "502 Status Bad Gateway" to the client.
-func responseBadGateway(rw http.ResponseWriter) {
-	responseStatusCode(rw, http.StatusBadGateway)
 }
