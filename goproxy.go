@@ -30,6 +30,13 @@ import (
 
 // Goproxy is the top-level struct of this project.
 //
+// Note that the `Goproxy` will not mess with your environment variables, it
+// will still follow your GOPROXY, GONOPROXY, GOSUMDB, and GONOSUMDB. This means
+// that you can set GOPROXY to serve the `Goproxy` itself under other proxies,
+// and by setting GONOPROXY to indicate which modules the `Goproxy` should
+// download directly instead of using GOPROXY. And of course, you can also set
+// GOSUMDB and GONOSUMDB to indicate how the `Goproxy` should check the modules.
+//
 // It is highly recommended not to modify the value of any field of the
 // `Goproxy` after calling the `Goproxy.ServeHTTP`, which will cause
 // unpredictable problems.
@@ -603,32 +610,35 @@ func responseString(rw http.ResponseWriter, s string) {
 	rw.Write([]byte(s))
 }
 
+// responseStatusCode responses the sc to the client.
+func responseStatusCode(rw http.ResponseWriter, sc int) {
+	rw.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	rw.WriteHeader(sc)
+	rw.Write([]byte(http.StatusText(sc)))
+}
+
 // responseNotFound responses "404 Not Found" to the client.
 func responseNotFound(rw http.ResponseWriter) {
-	http.Error(rw, "404 Not Found", http.StatusNotFound)
+	responseStatusCode(rw, http.StatusNotFound)
 }
 
 // responseMethodNotAllowed responses "405 Method Not Allowed" to the client.
 func responseMethodNotAllowed(rw http.ResponseWriter) {
-	http.Error(rw, "405 Method Not Allowed", http.StatusMethodNotAllowed)
+	responseStatusCode(rw, http.StatusMethodNotAllowed)
 }
 
 // responseGone responses "410 Gone" to the client.
 func responseGone(rw http.ResponseWriter) {
-	http.Error(rw, "410 Gone", http.StatusGone)
+	responseStatusCode(rw, http.StatusGone)
 }
 
 // responseInternalServerError responses "500 Internal Server Error" to the
 // client.
 func responseInternalServerError(rw http.ResponseWriter) {
-	http.Error(
-		rw,
-		"500 Internal Server Error",
-		http.StatusInternalServerError,
-	)
+	responseStatusCode(rw, http.StatusInternalServerError)
 }
 
 // responseBadGateway responses "502 Status Bad Gateway" to the client.
 func responseBadGateway(rw http.ResponseWriter) {
-	http.Error(rw, "502 Status Bad Gateway", http.StatusBadGateway)
+	responseStatusCode(rw, http.StatusBadGateway)
 }

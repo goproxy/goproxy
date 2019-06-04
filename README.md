@@ -5,6 +5,15 @@
 
 A minimalist Go module proxy handler.
 
+Goproxy has fully implemented the Go's
+[module proxy protocol](https://golang.org/cmd/go/#hdr-Module_proxy_protocol).
+Our goal is to find the most dead simple way to provide a minimalist handler
+that can act as a full-featured Go module proxy for those who want to build
+their own proxies. Yeah, there is no `Makefile`, no configuration files, no
+**HUGE** file organization, no lengthy documentation, no annoying stuff, just a
+[`Goproxy`](https://godoc.org/github.com/goproxy/goproxy#Goproxy) that
+implements the [`http.Handler`](https://godoc.org/net/http#Handler).
+
 **The project was created on 2019-06-03 and is still very young, so it's not
 production-ready yet. Issues welcome! PRs welcome!**
 
