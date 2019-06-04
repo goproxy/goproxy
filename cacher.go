@@ -70,7 +70,7 @@ func (c *LocalCacher) Get(ctx context.Context, name string) (Cache, error) {
 		return nil, err
 	}
 
-	return &LocalCache{
+	return &localCache{
 		file:    file,
 		name:    name,
 		modTime: fileInfo.ModTime(),
@@ -105,34 +105,34 @@ func (c *LocalCacher) localName(name string) string {
 	return filepath.Join(os.TempDir(), name)
 }
 
-// LocalCache implements the `Cache` by using the local disk.
-type LocalCache struct {
+// localCache implements the `Cache`. It is the cache unit of the `LocalCacher`.
+type localCache struct {
 	file    *os.File
 	name    string
 	modTime time.Time
 }
 
 // Read implements the `Cache`.
-func (c *LocalCache) Read(b []byte) (int, error) {
-	return c.file.Read(b)
+func (lc *localCache) Read(b []byte) (int, error) {
+	return lc.file.Read(b)
 }
 
 // Seek implements the `Cache`.
-func (c *LocalCache) Seek(offset int64, whence int) (int64, error) {
-	return c.file.Seek(offset, whence)
+func (lc *localCache) Seek(offset int64, whence int) (int64, error) {
+	return lc.file.Seek(offset, whence)
 }
 
 // Close implements the `Cache`.
-func (c *LocalCache) Close() error {
-	return c.file.Close()
+func (lc *localCache) Close() error {
+	return lc.file.Close()
 }
 
 // Name implements the `Cache`.
-func (c *LocalCache) Name() string {
-	return c.name
+func (lc *localCache) Name() string {
+	return lc.name
 }
 
 // ModTime implements the `Cache`.
-func (c *LocalCache) ModTime() time.Time {
-	return c.modTime
+func (lc *localCache) ModTime() time.Time {
+	return lc.modTime
 }
