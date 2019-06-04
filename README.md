@@ -53,7 +53,47 @@ and run it
 $ go run goproxy.go
 ```
 
-then try it by setting `GOPROXY=http://localhost:8080`.
+then try it by setting `GOPROXY` to `http://localhost:8080` by following the
+instructions below.
+
+### macOS or Linux
+
+Open your terminal and execute
+
+```bash
+$ export GOPROXY=http://localhost:8080
+```
+
+or
+
+```bash
+$ echo "GOPROXY=http://localhost:8080" >> ~/.profile && source ~/.profile
+```
+
+done.
+
+### Windows
+
+Open your PowerShell and execute
+
+```poweshell
+C:\> $env:GOPROXY = "http://localhost:8080"
+```
+
+or
+
+```md
+1. Open the Start Search, type in "env"
+2. Choose the "Edit the system environment variables"
+3. Click the "Environment Variables…" button
+4. Under the "User variables for <YOUR_USERNAME>" section (the upper half)
+5. Click the "New..." button
+6. Choose the "Variable name" input bar, type in "GOPROXY"
+7. Choose the "Variable value" input bar, type in "http://localhost:8080"
+8. Click the "OK" button
+```
+
+done.
 
 ## Community
 
