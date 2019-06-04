@@ -14,7 +14,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/cespare/xxhash/v2"
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
 	"golang.org/x/net/idna"
@@ -123,14 +122,14 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	trimedPath := strings.TrimPrefix(r.URL.Path, g.PathPrefix)
 	trimedPath = strings.TrimLeft(trimedPath, "/")
 
-	filename, err := url.PathUnescape(trimedPath)
+	name, err := url.PathUnescape(trimedPath)
 	if err != nil {
 		responseNotFound(rw)
 		return
 	}
 
-	if strings.HasPrefix(filename, "sumdb/") {
-		sumdbURL := strings.TrimPrefix(filename, "sumdb/")
+	if strings.HasPrefix(name, "sumdb/") {
+		sumdbURL := strings.TrimPrefix(name, "sumdb/")
 		sumdbPathOffset := strings.Index(sumdbURL, "/")
 		if sumdbPathOffset < 0 {
 			responseNotFound(rw)
@@ -207,22 +206,22 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filenameParts := strings.Split(filename, "/@")
-	if len(filenameParts) != 2 {
+	nameParts := strings.Split(name, "/@")
+	if len(nameParts) != 2 {
 		responseNotFound(rw)
 		return
 	}
 
-	escapedModulePath := filenameParts[0]
-	switch filenameParts[1] {
+	escapedModulePath := nameParts[0]
+	switch nameParts[1] {
 	case "latest", "v/list":
 		mlr, err := modList(
-			g.goBinWorkerChan,
 			r.Context(),
+			g.goBinWorkerChan,
 			g.GoBinName,
 			escapedModulePath,
 			"latest",
-			filenameParts[1] == "v/list",
+			nameParts[1] == "v/list",
 		)
 		if err != nil {
 			if err == errModuleVersionNotFound {
@@ -236,7 +235,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 
 		setResponseCacheControlHeader(rw, false)
-		switch filenameParts[1] {
+		switch nameParts[1] {
 		case "latest":
 			responseJSON(rw, mlr)
 		case "v/list":
@@ -246,16 +245,16 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filenameBase := path.Base(filenameParts[1])
-	filenameExt := path.Ext(filenameBase)
-	switch filenameExt {
+	nameBase := path.Base(nameParts[1])
+	nameExt := path.Ext(nameBase)
+	switch nameExt {
 	case ".info", ".mod", ".zip":
 	default:
 		responseNotFound(rw)
 		return
 	}
 
-	escapedModuleVersion := strings.TrimSuffix(filenameBase, filenameExt)
+	escapedModuleVersion := strings.TrimSuffix(nameBase, nameExt)
 	moduleVersion, err := module.UnescapeVersion(escapedModuleVersion)
 	if err != nil {
 		responseNotFound(rw)
@@ -265,8 +264,8 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	isModuleVersionValid := semver.IsValid(moduleVersion)
 	if !isModuleVersionValid {
 		mlr, err := modList(
-			g.goBinWorkerChan,
 			r.Context(),
+			g.goBinWorkerChan,
 			g.GoBinName,
 			escapedModulePath,
 			escapedModuleVersion,
@@ -291,22 +290,22 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		filenameBase = fmt.Sprint(escapedModuleVersion, filenameExt)
-		filename = path.Join(path.Dir(filename), filenameBase)
+		nameBase = fmt.Sprint(escapedModuleVersion, nameExt)
+		name = path.Join(path.Dir(name), nameBase)
 	}
 
 	cacher := g.Cacher
 	if cacher == nil {
-		cacher = &mapCacher{
-			caches: make(map[string]*mapCache, 3),
+		cacher = &tempCacher{
+			caches: make(map[string]*tempCache, 3),
 		}
 	}
 
-	cache, err := cacher.Get(r.Context(), filename)
+	cache, err := cacher.Cache(r.Context(), name)
 	if err == ErrCacheNotFound {
 		if _, err := modDownload(
-			g.goBinWorkerChan,
 			r.Context(),
+			g.goBinWorkerChan,
 			g.GoBinName,
 			cacher,
 			escapedModulePath,
@@ -322,7 +321,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		cache, err = cacher.Get(r.Context(), filename)
+		cache, err = cacher.Cache(r.Context(), name)
 		if err != nil {
 			g.logError(err)
 			responseInternalServerError(rw)
@@ -336,7 +335,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	defer cache.Close()
 
 	contentType := ""
-	switch filenameExt {
+	switch nameExt {
 	case ".info":
 		contentType = "application/json; charset=utf-8"
 	case ".mod":
@@ -346,25 +345,11 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	rw.Header().Set("Content-Type", contentType)
-
-	eTagHash := xxhash.New()
-	if _, err := io.Copy(eTagHash, cache); err != nil {
-		g.logError(err)
-		responseInternalServerError(rw)
-		return
-	}
-
-	if _, err := cache.Seek(0, io.SeekStart); err != nil {
-		g.logError(err)
-		responseInternalServerError(rw)
-		return
-	}
-
 	rw.Header().Set(
 		"ETag",
 		fmt.Sprintf(
 			"%q",
-			base64.StdEncoding.EncodeToString(eTagHash.Sum(nil)),
+			base64.StdEncoding.EncodeToString(cache.Checksum()),
 		),
 	)
 

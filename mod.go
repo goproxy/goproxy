@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/cespare/xxhash/v2"
 	"golang.org/x/mod/module"
 )
 
@@ -41,8 +43,8 @@ type modListResult struct {
 // modList executes
 // `go list -json -m -versions escapedModulePath@escapedModuleVersion`.
 func modList(
-	workerChan chan struct{},
 	ctx context.Context,
+	workerChan chan struct{},
 	goBinName string,
 	escapedModulePath string,
 	escapedModuleVersion string,
@@ -77,8 +79,8 @@ func modList(
 	args = append(args, fmt.Sprint(modulePath, "@", moduleVersion))
 
 	stdout, err := executeGoCommand(
-		workerChan,
 		ctx,
+		workerChan,
 		goBinName,
 		args,
 		env,
@@ -107,8 +109,8 @@ type modDownloadResult struct {
 // modDownload executes
 // `go mod download -json escapedModulePath@escapedModuleVersion`.
 func modDownload(
-	workerChan chan struct{},
 	ctx context.Context,
+	workerChan chan struct{},
 	goBinName string,
 	cacher Cacher,
 	escapedModulePath string,
@@ -136,8 +138,8 @@ func modDownload(
 	}
 
 	stdout, err := executeGoCommand(
-		workerChan,
 		ctx,
+		workerChan,
 		goBinName,
 		[]string{
 			"mod",
@@ -157,11 +159,7 @@ func modDownload(
 		return nil, err
 	}
 
-	filenamePrefix := path.Join(
-		escapedModulePath,
-		"@v",
-		escapedModuleVersion,
-	)
+	namePrefix := path.Join(escapedModulePath, "@v", escapedModuleVersion)
 
 	infoFile, err := os.Open(mdr.Info)
 	if err != nil {
@@ -169,11 +167,27 @@ func modDownload(
 	}
 	defer infoFile.Close()
 
-	if err := cacher.Set(
-		ctx,
-		fmt.Sprint(filenamePrefix, ".info"),
-		infoFile,
-	); err != nil {
+	infoFileInfo, err := infoFile.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	infoFileHash := xxhash.New()
+	if _, err := io.Copy(infoFileHash, infoFile); err != nil {
+		return nil, err
+	}
+
+	if _, err := infoFile.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+
+	if err := cacher.SetCache(ctx, &tempCache{
+		readSeeker: infoFile,
+		name:       fmt.Sprint(namePrefix, ".info"),
+		size:       infoFileInfo.Size(),
+		modTime:    infoFileInfo.ModTime(),
+		checksum:   infoFileHash.Sum(nil),
+	}); err != nil {
 		return nil, err
 	}
 
@@ -183,11 +197,27 @@ func modDownload(
 	}
 	defer modFile.Close()
 
-	if err := cacher.Set(
-		ctx,
-		fmt.Sprint(filenamePrefix, ".mod"),
-		modFile,
-	); err != nil {
+	modFileInfo, err := modFile.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	modFileHash := xxhash.New()
+	if _, err := io.Copy(modFileHash, modFile); err != nil {
+		return nil, err
+	}
+
+	if _, err := modFile.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+
+	if err := cacher.SetCache(ctx, &tempCache{
+		readSeeker: modFile,
+		name:       fmt.Sprint(namePrefix, ".mod"),
+		size:       modFileInfo.Size(),
+		modTime:    modFileInfo.ModTime(),
+		checksum:   modFileHash.Sum(nil),
+	}); err != nil {
 		return nil, err
 	}
 
@@ -197,11 +227,27 @@ func modDownload(
 	}
 	defer zipFile.Close()
 
-	if err := cacher.Set(
-		ctx,
-		fmt.Sprint(filenamePrefix, ".zip"),
-		zipFile,
-	); err != nil {
+	zipFileInfo, err := zipFile.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	zipFileHash := xxhash.New()
+	if _, err := io.Copy(zipFileHash, zipFile); err != nil {
+		return nil, err
+	}
+
+	if _, err := zipFile.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+
+	if err := cacher.SetCache(ctx, &tempCache{
+		readSeeker: zipFile,
+		name:       fmt.Sprint(namePrefix, ".zip"),
+		size:       zipFileInfo.Size(),
+		modTime:    zipFileInfo.ModTime(),
+		checksum:   zipFileHash.Sum(nil),
+	}); err != nil {
 		return nil, err
 	}
 
@@ -210,8 +256,8 @@ func modDownload(
 
 // executeGoCommand executes go command with the args.
 func executeGoCommand(
-	workerChan chan struct{},
 	ctx context.Context,
+	workerChan chan struct{},
 	goBinName string,
 	args []string,
 	env []string,

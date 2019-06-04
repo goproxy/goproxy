@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/goproxy/goproxy"
 )
 
@@ -21,8 +22,8 @@ type Disk struct {
 	Root string
 }
 
-// Get implements the `goproxy.Cacher`.
-func (d *Disk) Get(ctx context.Context, name string) (goproxy.Cache, error) {
+// Cache implements the `goproxy.Cacher`.
+func (d *Disk) Cache(ctx context.Context, name string) (goproxy.Cache, error) {
 	file, err := os.Open(d.filename(name))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -37,21 +38,32 @@ func (d *Disk) Get(ctx context.Context, name string) (goproxy.Cache, error) {
 		return nil, err
 	}
 
+	fileHash := xxhash.New()
+	if _, err := io.Copy(fileHash, file); err != nil {
+		return nil, err
+	}
+
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+
 	return &diskCache{
-		file:    file,
-		name:    name,
-		modTime: fileInfo.ModTime(),
+		file:     file,
+		name:     name,
+		size:     fileInfo.Size(),
+		modTime:  fileInfo.ModTime(),
+		checksum: fileHash.Sum(nil),
 	}, nil
 }
 
-// Set implements the `goproxy.Cacher`.
-func (d *Disk) Set(ctx context.Context, name string, r io.Reader) error {
-	b, err := ioutil.ReadAll(r)
+// SetCache implements the `goproxy.Cacher`.
+func (d *Disk) SetCache(ctx context.Context, c goproxy.Cache) error {
+	b, err := ioutil.ReadAll(c)
 	if err != nil {
 		return err
 	}
 
-	filename := d.filename(name)
+	filename := d.filename(c.Name())
 	if err := os.MkdirAll(
 		filepath.Dir(filename),
 		os.ModePerm,
@@ -74,9 +86,11 @@ func (d *Disk) filename(name string) string {
 
 // diskCache implements the `goproxy.Cache`. It is the cache unit of the `Disk`.
 type diskCache struct {
-	file    *os.File
-	name    string
-	modTime time.Time
+	file     *os.File
+	name     string
+	size     int64
+	modTime  time.Time
+	checksum []byte
 }
 
 // Read implements the `goproxy.Cache`.
@@ -99,7 +113,17 @@ func (dc *diskCache) Name() string {
 	return dc.name
 }
 
+// Size implements the `goproxy.Cache`.
+func (dc *diskCache) Size() int64 {
+	return dc.size
+}
+
 // ModTime implements the `goproxy.Cache`.
 func (dc *diskCache) ModTime() time.Time {
 	return dc.modTime
+}
+
+// Checksum implements the `goproxy.Cache`.
+func (dc *diskCache) Checksum() []byte {
+	return dc.checksum
 }
