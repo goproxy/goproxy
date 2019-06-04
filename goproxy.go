@@ -66,7 +66,7 @@ type Goproxy struct {
 
 	// Cacher is the `Cacher` that used to cache module files.
 	//
-	// Default: `&LocalCacher{}`
+	// Default: `&DiskCacher{}`
 	Cacher Cacher `mapstructure:"-"`
 
 	// SupportedSUMDBHosts is the supported checksum database hosts.
@@ -96,7 +96,7 @@ func New() *Goproxy {
 	return &Goproxy{
 		GoBinName:           "go",
 		MaxGoBinWorkers:     8,
-		Cacher:              &LocalCacher{},
+		Cacher:              &DiskCacher{},
 		SupportedSUMDBHosts: []string{"sum.golang.org"},
 		loadOnce:            &sync.Once{},
 		supportedSUMDBHosts: map[string]bool{},

@@ -44,8 +44,8 @@ type Cache interface {
 	ModTime() time.Time
 }
 
-// LocalCacher implements the `Cacher` by using the local disk.
-type LocalCacher struct {
+// DiskCacher implements the `Cacher` by using the disk.
+type DiskCacher struct {
 	// Root is the root of the caches.
 	//
 	// If the `Root` is empty, the `os.TempDir` is used.
@@ -55,8 +55,8 @@ type LocalCacher struct {
 }
 
 // Get implements the `Cacher`.
-func (c *LocalCacher) Get(ctx context.Context, name string) (Cache, error) {
-	file, err := os.Open(c.localName(name))
+func (dc *DiskCacher) Get(ctx context.Context, name string) (Cache, error) {
+	file, err := os.Open(dc.filename(name))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, ErrCacheNotFound
@@ -70,7 +70,7 @@ func (c *LocalCacher) Get(ctx context.Context, name string) (Cache, error) {
 		return nil, err
 	}
 
-	return &localCache{
+	return &diskCache{
 		file:    file,
 		name:    name,
 		modTime: fileInfo.ModTime(),
@@ -78,61 +78,61 @@ func (c *LocalCacher) Get(ctx context.Context, name string) (Cache, error) {
 }
 
 // Set implements the `Cacher`.
-func (c *LocalCacher) Set(ctx context.Context, name string, r io.Reader) error {
+func (dc *DiskCacher) Set(ctx context.Context, name string, r io.Reader) error {
 	b, err := ioutil.ReadAll(r)
 	if err != nil {
 		return err
 	}
 
-	localName := c.localName(name)
+	filename := dc.filename(name)
 	if err := os.MkdirAll(
-		filepath.Dir(localName),
+		filepath.Dir(filename),
 		os.ModePerm,
 	); err != nil {
 		return err
 	}
 
-	return ioutil.WriteFile(localName, b, os.ModePerm)
+	return ioutil.WriteFile(filename, b, os.ModePerm)
 }
 
-// localName returns the local representation of the name.
-func (c *LocalCacher) localName(name string) string {
+// filename returns the disk file representation of the name.
+func (dc *DiskCacher) filename(name string) string {
 	name = filepath.FromSlash(name)
-	if c.Root != "" {
-		return filepath.Join(filepath.FromSlash(c.Root), name)
+	if dc.Root != "" {
+		return filepath.Join(filepath.FromSlash(dc.Root), name)
 	}
 
 	return filepath.Join(os.TempDir(), name)
 }
 
-// localCache implements the `Cache`. It is the cache unit of the `LocalCacher`.
-type localCache struct {
+// diskCache implements the `Cache`. It is the cache unit of the `DiskCacher`.
+type diskCache struct {
 	file    *os.File
 	name    string
 	modTime time.Time
 }
 
 // Read implements the `Cache`.
-func (lc *localCache) Read(b []byte) (int, error) {
-	return lc.file.Read(b)
+func (dc *diskCache) Read(b []byte) (int, error) {
+	return dc.file.Read(b)
 }
 
 // Seek implements the `Cache`.
-func (lc *localCache) Seek(offset int64, whence int) (int64, error) {
-	return lc.file.Seek(offset, whence)
+func (dc *diskCache) Seek(offset int64, whence int) (int64, error) {
+	return dc.file.Seek(offset, whence)
 }
 
 // Close implements the `Cache`.
-func (lc *localCache) Close() error {
-	return lc.file.Close()
+func (dc *diskCache) Close() error {
+	return dc.file.Close()
 }
 
 // Name implements the `Cache`.
-func (lc *localCache) Name() string {
-	return lc.name
+func (dc *diskCache) Name() string {
+	return dc.name
 }
 
 // ModTime implements the `Cache`.
-func (lc *localCache) ModTime() time.Time {
-	return lc.modTime
+func (dc *diskCache) ModTime() time.Time {
+	return dc.modTime
 }
