@@ -2,6 +2,10 @@ module github.com/goproxy/goproxy
 
 require (
 	cloud.google.com/go v0.39.0
+	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/qiniu/api.v7 v7.2.5+incompatible
+	github.com/qiniu/x v7.0.8+incompatible // indirect
+	github.com/stretchr/testify v1.3.0 // indirect
 	go.opencensus.io v0.22.0 // indirect
 	golang.org/x/mod v0.1.0
 	golang.org/x/net v0.0.0-20190603091049-60506f45cf65
@@ -11,4 +15,5 @@ require (
 	google.golang.org/appengine v1.6.0 // indirect
 	google.golang.org/genproto v0.0.0-20190530194941-fb225487d101 // indirect
 	google.golang.org/grpc v1.21.1 // indirect
+	qiniupkg.com/x v7.0.8+incompatible // indirect
 )

@@ -124,6 +124,7 @@ func (g *GCS) SetCache(ctx context.Context, c goproxy.Cache) error {
 	}
 
 	w := g.bucket.Object(path.Join(g.Root, c.Name())).NewWriter(ctx)
+	w.ContentType = mimeTypeByExtension(path.Ext(c.Name()))
 	if _, err := io.Copy(w, c); err != nil {
 		return err
 	}
