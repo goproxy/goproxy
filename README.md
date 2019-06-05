@@ -10,7 +10,7 @@ Goproxy has fully implemented the Go's
 Our goal is to find the most dead simple way to provide a minimalist handler
 that can act as a full-featured Go module proxy for those who want to build
 their own proxies. Yeah, there is no `Makefile`, no configuration files, no
-**HUGE** file organization, no lengthy documentation, no annoying stuff, just a
+crazy file organization, no lengthy documentation, no annoying stuff, just a
 [`Goproxy`](https://godoc.org/github.com/goproxy/goproxy#Goproxy) that
 implements the [`http.Handler`](https://godoc.org/net/http#Handler).
 
