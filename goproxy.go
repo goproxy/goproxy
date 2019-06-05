@@ -172,9 +172,9 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		sumdbReq = sumdbReq.WithContext(r.Context())
-
-		sumdbRes, err := http.DefaultClient.Do(sumdbReq)
+		sumdbRes, err := http.DefaultClient.Do(
+			sumdbReq.WithContext(r.Context()),
+		)
 		if err != nil {
 			if ue, ok := err.(*url.Error); ok && ue.Timeout() {
 				responseBadGateway(rw)

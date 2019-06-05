@@ -86,26 +86,50 @@ func (k *Kodo) Cache(ctx context.Context, name string) (goproxy.Cache, error) {
 		deadline = time.Now().Add(time.Hour)
 	}
 
+	url := storage.MakePrivateURL(
+		k.mac,
+		k.BucketEndpoint,
+		objectName,
+		deadline.Unix(),
+	)
+
 	checksum, err := base64.URLEncoding.DecodeString(objectInfo.Hash)
 	if err != nil {
 		return nil, err
 	}
 
+	if checksum[0] == 0x16 {
+		checksum = checksum[1:]
+	} else {
+		req, err := http.NewRequest(http.MethodGet, url, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		res, err := http.DefaultClient.Do(req.WithContext(ctx))
+		if err != nil {
+			return nil, err
+		}
+		defer res.Body.Close()
+
+		h := sha1.New()
+		if _, err := io.Copy(h, res.Body); err != nil {
+			return nil, err
+		}
+
+		checksum = h.Sum(nil)
+	}
+
 	return &kodoCache{
-		ctx: ctx,
-		url: storage.MakePrivateURL(
-			k.mac,
-			k.BucketEndpoint,
-			objectName,
-			deadline.Unix(),
-		),
+		ctx:  ctx,
+		url:  url,
 		name: name,
 		size: objectInfo.Fsize,
 		modTime: time.Unix(
 			objectInfo.PutTime*100/int64(time.Second),
 			0,
 		),
-		checksum: checksum[1:],
+		checksum: checksum,
 	}, nil
 }
 
@@ -159,7 +183,7 @@ func (kc *kodoCache) Read(b []byte) (int, error) {
 
 	req.Header.Set("Range", fmt.Sprintf("bytes=%d-", kc.offset))
 
-	res, err := http.DefaultClient.Do(req)
+	res, err := http.DefaultClient.Do(req.WithContext(kc.ctx))
 	if err != nil {
 		return 0, err
 	}
