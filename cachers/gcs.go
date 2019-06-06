@@ -29,9 +29,6 @@ type GCS struct {
 	// usually do not need to provide the `CredentialsJSON`.
 	CredentialsJSON string `mapstructure:"credentials_json"`
 
-	// ProjectID is the ID of the Google Cloud Platform project.
-	ProjectID string `mapstructure:"project_id"`
-
 	// BucketName is the name of the bucket.
 	BucketName string `mapstructure:"bucket_name"`
 
@@ -68,7 +65,7 @@ func (g *GCS) load() {
 		return
 	}
 
-	g.bucket = client.Bucket(g.BucketName).UserProject(g.ProjectID)
+	g.bucket = client.Bucket(g.BucketName)
 }
 
 // NewHash implements the `goproxy.Cacher`.
