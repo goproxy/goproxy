@@ -158,7 +158,10 @@ func (gc *gcsCache) Read(b []byte) (int, error) {
 	}
 	defer r.Close()
 
-	return r.Read(b)
+	n, err := r.Read(b)
+	gc.offset += int64(n)
+
+	return n, err
 }
 
 // Seek implements the `goproxy.Cache`.

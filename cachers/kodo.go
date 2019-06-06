@@ -189,7 +189,10 @@ func (kc *kodoCache) Read(b []byte) (int, error) {
 	}
 	defer res.Body.Close()
 
-	return res.Body.Read(b)
+	n, err := res.Body.Read(b)
+	kc.offset += int64(n)
+
+	return n, err
 }
 
 // Seek implements the `goproxy.Cache`.
