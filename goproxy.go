@@ -63,8 +63,8 @@ type Goproxy struct {
 
 	// Cacher is the `Cacher` that used to cache module files.
 	//
-	// If the `Cacher` is nil, all module files will disappear as the
-	// request ends.
+	// If the `Cacher` is nil, the module files will be temporarily stored
+	// in runtime memory and discarded as the request ends.
 	//
 	// Default: nil
 	Cacher Cacher `mapstructure:"cacher"`

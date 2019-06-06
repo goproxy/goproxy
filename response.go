@@ -43,28 +43,27 @@ func responseStatusCode(rw http.ResponseWriter, sc int) {
 	rw.Write([]byte(http.StatusText(sc)))
 }
 
-// responseNotFound responses "404 Not Found" to the client.
+// responseNotFound responses "Not Found" to the client.
 func responseNotFound(rw http.ResponseWriter) {
 	responseStatusCode(rw, http.StatusNotFound)
 }
 
-// responseMethodNotAllowed responses "405 Method Not Allowed" to the client.
+// responseMethodNotAllowed responses "Method Not Allowed" to the client.
 func responseMethodNotAllowed(rw http.ResponseWriter) {
 	responseStatusCode(rw, http.StatusMethodNotAllowed)
 }
 
-// responseGone responses "410 Gone" to the client.
+// responseGone responses "Gone" to the client.
 func responseGone(rw http.ResponseWriter) {
 	responseStatusCode(rw, http.StatusGone)
 }
 
-// responseInternalServerError responses "500 Internal Server Error" to the
-// client.
+// responseInternalServerError responses "Internal Server Error" to the client.
 func responseInternalServerError(rw http.ResponseWriter) {
 	responseStatusCode(rw, http.StatusInternalServerError)
 }
 
-// responseBadGateway responses "502 Status Bad Gateway" to the client.
+// responseBadGateway responses "Status Bad Gateway" to the client.
 func responseBadGateway(rw http.ResponseWriter) {
 	responseStatusCode(rw, http.StatusBadGateway)
 }

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"hash"
 	"io"
-	"io/ioutil"
 	"os"
 	"path"
 	"sync"
@@ -46,28 +45,14 @@ type GCS struct {
 
 // load loads the stuff of the m up.
 func (g *GCS) load() {
-	credentialsJSON := g.CredentialsJSON
-	if credentialsJSON == "" {
-		gac := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
-		if gac != "" {
-			b, err := ioutil.ReadFile(gac)
-			if err != nil {
-				g.loadError = err
-				return
-			}
-
-			credentialsJSON = string(b)
-		}
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
 	cos := []option.ClientOption{}
-	if credentialsJSON != "" {
+	if g.CredentialsJSON != "" {
 		creds, err := google.CredentialsFromJSON(
 			ctx,
-			[]byte(credentialsJSON),
+			[]byte(g.CredentialsJSON),
 		)
 		if err != nil {
 			g.loadError = err
@@ -77,7 +62,7 @@ func (g *GCS) load() {
 		cos = append(cos, option.WithCredentials(creds))
 	}
 
-	client, err := storage.NewClient(context.Background(), cos...)
+	client, err := storage.NewClient(ctx, cos...)
 	if err != nil {
 		g.loadError = err
 		return
