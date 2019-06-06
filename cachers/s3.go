@@ -57,31 +57,30 @@ type S3 struct {
 
 // load loads the stuff of the m up.
 func (s *S3) load() {
-	sess, err := session.NewSession()
-	if err != nil {
-		s.loadError = err
+	var sess *session.Session
+	if sess, s.loadError = session.NewSession(); s.loadError != nil {
 		return
 	}
 
-	gblo, err := s3.New(sess).GetBucketLocation(&s3.GetBucketLocationInput{
-		Bucket: &s.BucketName,
-	})
-	if err != nil {
-		s.loadError = err
+	var gblo *s3.GetBucketLocationOutput
+	if gblo, s.loadError = s3.New(sess).GetBucketLocation(
+		&s3.GetBucketLocationInput{
+			Bucket: &s.BucketName,
+		},
+	); s.loadError != nil {
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	region, err := s3manager.GetBucketRegion(
+	var region string
+	if region, s.loadError = s3manager.GetBucketRegion(
 		ctx,
 		sess,
 		s.BucketName,
 		*gblo.LocationConstraint,
-	)
-	if err != nil {
-		s.loadError = err
+	); s.loadError != nil {
 		return
 	}
 
@@ -96,9 +95,8 @@ func (s *S3) load() {
 		)
 	}
 
-	sess, err = session.NewSession(config)
-	if err != nil {
-		s.loadError = err
+	sess, s.loadError = session.NewSession(config)
+	if s.loadError != nil {
 		return
 	}
 

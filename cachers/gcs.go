@@ -47,21 +47,22 @@ func (g *GCS) load() {
 
 	cos := []option.ClientOption{}
 	if g.CredentialsJSON != "" {
-		creds, err := google.CredentialsFromJSON(
+		var creds *google.Credentials
+		if creds, g.loadError = google.CredentialsFromJSON(
 			ctx,
 			[]byte(g.CredentialsJSON),
-		)
-		if err != nil {
-			g.loadError = err
+		); g.loadError != nil {
 			return
 		}
 
 		cos = append(cos, option.WithCredentials(creds))
 	}
 
-	client, err := storage.NewClient(ctx, cos...)
-	if err != nil {
-		g.loadError = err
+	var client *storage.Client
+	if client, g.loadError = storage.NewClient(
+		ctx,
+		cos...,
+	); g.loadError != nil {
 		return
 	}
 

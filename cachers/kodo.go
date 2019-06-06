@@ -47,9 +47,11 @@ type Kodo struct {
 func (k *Kodo) load() {
 	k.mac = qbox.NewMac(k.AccessKey, k.SecretKey)
 
-	zone, err := storage.GetZone(k.AccessKey, k.BucketName)
-	if err != nil {
-		k.loadError = err
+	var zone *storage.Zone
+	if zone, k.loadError = storage.GetZone(
+		k.AccessKey,
+		k.BucketName,
+	); k.loadError != nil {
 		return
 	}
 

@@ -39,24 +39,19 @@ type MinIO struct {
 
 // load loads the stuff of the m up.
 func (m *MinIO) load() {
-	u, err := url.Parse(m.Endpoint)
-	if err != nil {
-		m.loadError = err
+	var u *url.URL
+	if u, m.loadError = url.Parse(m.Endpoint); m.loadError != nil {
 		return
 	}
 
 	secure := strings.ToLower(u.Scheme) == "https"
 	u.Scheme = ""
-	m.client, err = minio.New(
+	m.client, m.loadError = minio.New(
 		u.String(),
 		m.AccessKeyID,
 		m.SecretAccessKey,
 		secure,
 	)
-	if err != nil {
-		m.loadError = err
-		return
-	}
 }
 
 // NewHash implements the `goproxy.Cacher`.
