@@ -26,6 +26,7 @@ production-ready yet. Issues welcome! PRs welcome!**
 * Built-in [`GONOPROXY`](https://tip.golang.org/cmd/go/#hdr-Environment_variables) (it will be introduced in Go 1.13) support
 * Supports multiple mainstream implementations of the [`goproxy.Cacher`](https://godoc.org/github.com/goproxy/goproxy#Cacher)
 	* Disk: [`cachers.Disk`](https://godoc.org/github.com/goproxy/goproxy/cachers#Disk)
+	* MinIO: [`cachers.MinIO`](https://godoc.org/github.com/goproxy/goproxy/cachers#MinIO)
 	* Google Cloud Storage: [`cachers.GCS`](https://godoc.org/github.com/goproxy/goproxy/cachers#GCS)
 	* Amazon Simple Storage Service: [`cachers.S3`](https://godoc.org/github.com/goproxy/goproxy/cachers#S3)
 	* Qiniu Cloud Kodo: [`cachers.Kodo`](https://godoc.org/github.com/goproxy/goproxy/cachers#Kodo)

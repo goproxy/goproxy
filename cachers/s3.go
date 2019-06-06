@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -130,6 +131,11 @@ func (s *S3) Cache(ctx context.Context, name string) (goproxy.Cache, error) {
 		},
 	)
 	if err != nil {
+		if ae, ok := err.(awserr.Error); ok &&
+			ae.Code() == s3.ErrCodeNoSuchKey {
+			return nil, goproxy.ErrCacheNotFound
+		}
+
 		return nil, err
 	}
 
