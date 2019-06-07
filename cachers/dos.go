@@ -45,6 +45,7 @@ func (d *DOS) load() {
 		SecretAccessKey: d.SecretKey,
 		BucketName:      d.SpaceName,
 		Root:            d.Root,
+		virtualHosted:   true,
 	}
 }
 

@@ -45,6 +45,7 @@ func (k *Kodo) load() {
 		SecretAccessKey: k.SecretKey,
 		BucketName:      k.BucketName,
 		Root:            k.Root,
+		virtualHosted:   true,
 	}
 }
 

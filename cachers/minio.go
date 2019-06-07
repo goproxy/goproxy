@@ -14,6 +14,8 @@ import (
 
 	"github.com/goproxy/goproxy"
 	"github.com/minio/minio-go/v6"
+	"github.com/minio/minio-go/v6/pkg/credentials"
+	"github.com/minio/minio-go/v6/pkg/s3utils"
 )
 
 // MinIO implements the `goproxy.Cacher` by using the MinIO.
@@ -33,9 +35,10 @@ type MinIO struct {
 	// Root is the root of the caches.
 	Root string `mapstructure:"root"`
 
-	loadOnce  sync.Once
-	loadError error
-	client    *minio.Client
+	loadOnce      sync.Once
+	loadError     error
+	client        *minio.Client
+	virtualHosted bool
 }
 
 // load loads the stuff of the m up.
@@ -45,13 +48,29 @@ func (m *MinIO) load() {
 		return
 	}
 
-	secure := strings.ToLower(u.Scheme) == "https"
+	signerType := credentials.SignatureDefault
+	if s3utils.IsGoogleEndpoint(*u) {
+		signerType = credentials.SignatureV2
+	}
+
+	options := &minio.Options{
+		Creds: credentials.NewStatic(
+			m.AccessKeyID,
+			m.SecretAccessKey,
+			"",
+			signerType,
+		),
+		Secure:       strings.ToLower(u.Scheme) == "https",
+		BucketLookup: minio.BucketLookupPath,
+	}
+	if m.virtualHosted {
+		options.BucketLookup = minio.BucketLookupDNS
+	}
+
 	u.Scheme = ""
-	m.client, m.loadError = minio.New(
+	m.client, m.loadError = minio.NewWithOptions(
 		strings.TrimPrefix(u.String(), "//"),
-		m.AccessKeyID,
-		m.SecretAccessKey,
-		secure,
+		options,
 	)
 }
 
@@ -73,8 +92,7 @@ func (m *MinIO) Cache(ctx context.Context, name string) (goproxy.Cache, error) {
 		minio.GetObjectOptions{},
 	)
 	if err != nil {
-		if er, ok := err.(minio.ErrorResponse); ok &&
-			er.StatusCode == http.StatusNotFound {
+		if isMinIOObjectNotExist(err) {
 			return nil, goproxy.ErrCacheNotFound
 		}
 
@@ -83,6 +101,12 @@ func (m *MinIO) Cache(ctx context.Context, name string) (goproxy.Cache, error) {
 
 	objectInfo, err := object.Stat()
 	if err != nil {
+		// Somehow it should be checked again. The check above for some
+		// implementations (such as `Kodo`) is not sufficient.
+		if isMinIOObjectNotExist(err) {
+			return nil, goproxy.ErrCacheNotFound
+		}
+
 		return nil, err
 	}
 
@@ -118,6 +142,12 @@ func (m *MinIO) SetCache(ctx context.Context, c goproxy.Cache) error {
 	)
 
 	return err
+}
+
+// isMinIOObjectNotExist reports whether the err means that the MinIO object
+// does not exist.
+func isMinIOObjectNotExist(err error) bool {
+	return minio.ToErrorResponse(err).StatusCode == http.StatusNotFound
 }
 
 // minioCache implements the `goproxy.Cache`. It is the cache unit of the
