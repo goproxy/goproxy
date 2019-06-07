@@ -2,7 +2,6 @@ package cachers
 
 import (
 	"context"
-	"fmt"
 	"hash"
 	"sync"
 
@@ -12,6 +11,12 @@ import (
 // MABS implements the `goproxy.Cacher` by using the Microsoft Azure Blob
 // Storage.
 type MABS struct {
+	// Endpoint is the endpoint of the Microsoft Azure Blob Storage.
+	//
+	// If the `Endpoint` is empty, the
+	// "https://<AccountName>.blob.core.windows.net" is used.
+	Endpoint string `mapstructure:"endpoint"`
+
 	// AccountName is the account name of the Microsoft Azure.
 	AccountName string `mapstructure:"account_name"`
 
@@ -30,11 +35,13 @@ type MABS struct {
 
 // load loads the stuff of the m up.
 func (m *MABS) load() {
+	endpoint := m.Endpoint
+	if endpoint == "" {
+		endpoint = "https://" + m.AccountName + ".blob.core.windows.net"
+	}
+
 	m.minio = &MinIO{
-		Endpoint: fmt.Sprintf(
-			"https://%s.blob.core.windows.net",
-			m.AccountName,
-		),
+		Endpoint:        endpoint,
 		AccessKeyID:     m.AccountName,
 		SecretAccessKey: m.AccountKey,
 		BucketName:      m.ContainerName,
