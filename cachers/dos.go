@@ -19,8 +19,8 @@ type DOS struct {
 	// AccessKey is the access key of the DigitalOcean.
 	AccessKey string `mapstructure:"access_key"`
 
-	// Secret is the secret of the DigitalOcean.
-	Secret string `mapstructure:"secret"`
+	// SecretKey is the secret_key of the DigitalOcean.
+	SecretKey string `mapstructure:"secret_key"`
 
 	// SpaceName is the name of the space.
 	SpaceName string `mapstructure:"space_name"`
@@ -42,7 +42,7 @@ func (d *DOS) load() {
 	d.minio = &MinIO{
 		Endpoint:        endpoint,
 		AccessKeyID:     d.AccessKey,
-		SecretAccessKey: d.Secret,
+		SecretAccessKey: d.SecretKey,
 		BucketName:      d.SpaceName,
 		Root:            d.Root,
 	}

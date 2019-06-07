@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"hash"
+	"net/http"
 	"net/url"
 	"path"
 	"strings"
@@ -73,7 +74,7 @@ func (m *MinIO) Cache(ctx context.Context, name string) (goproxy.Cache, error) {
 	)
 	if err != nil {
 		if er, ok := err.(minio.ErrorResponse); ok &&
-			er.Code == "NoSuchKey" {
+			er.StatusCode == http.StatusNotFound {
 			return nil, goproxy.ErrCacheNotFound
 		}
 
