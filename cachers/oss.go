@@ -79,7 +79,7 @@ func (o *OSS) Cache(ctx context.Context, name string) (goproxy.Cache, error) {
 		return nil, err
 	}
 
-	contentLength, err := strconv.ParseInt(h.Get("Last-Modified"), 10, 64)
+	contentLength, err := strconv.ParseInt(h.Get("Content-Length"), 10, 64)
 	if err != nil {
 		return nil, err
 	}
