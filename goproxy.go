@@ -156,8 +156,15 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 
 		sumdbPath := sumdbURL[sumdbPathOffset:]
-		if sumdbPath == "/supported" {
+		switch {
+		case sumdbPath == "/supported":
 			rw.Write(nil) // 200 OK
+			return
+		case sumdbPath == "/latest",
+			strings.HasPrefix(sumdbPath, "/lookup/"),
+			strings.HasPrefix(sumdbPath, "/tile/"):
+		default:
+			responseNotFound(rw)
 			return
 		}
 
@@ -189,7 +196,9 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 		switch sumdbRes.StatusCode {
 		case http.StatusOK:
-		case http.StatusNotFound, http.StatusGone:
+		case http.StatusBadRequest,
+			http.StatusNotFound,
+			http.StatusGone:
 			responseNotFound(rw)
 			return
 		default:
