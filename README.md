@@ -29,6 +29,7 @@ production-ready yet. Issues welcome! PRs welcome!**
 	* MinIO: [`cachers.MinIO`](https://godoc.org/github.com/goproxy/goproxy/cachers#MinIO)
 	* Google Cloud Storage: [`cachers.GCS`](https://godoc.org/github.com/goproxy/goproxy/cachers#GCS)
 	* Amazon Simple Storage Service: [`cachers.S3`](https://godoc.org/github.com/goproxy/goproxy/cachers#S3)
+	* Microsoft Azure Blob Storage: [`cachers.MABS`](https://godoc.org/github.com/goproxy/goproxy/cachers#MABS)
 	* Alibaba Cloud Object Storage Service: [`cachers.OSS`](https://godoc.org/github.com/goproxy/goproxy/cachers#OSS)
 	* Qiniu Cloud Kodo: [`cachers.Kodo`](https://godoc.org/github.com/goproxy/goproxy/cachers#Kodo)
 
