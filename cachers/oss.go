@@ -23,6 +23,9 @@ import (
 // Service.
 type OSS struct {
 	// Endpoint is the endpoint of the Alibaba Cloud Object Storage Service.
+	//
+	// If the `Endpoint` is empty,
+	// the "https://oss-cn-hangzhou.aliyuncs.com" is used.
 	Endpoint string `mapstructure:"endpoint"`
 
 	// AccessKeyID is the access key ID of the Alibaba Cloud.
@@ -44,9 +47,14 @@ type OSS struct {
 
 // load loads the stuff of the m up.
 func (o *OSS) load() {
+	endpoint := o.Endpoint
+	if endpoint == "" {
+		endpoint = "https://oss-cn-hangzhou.aliyuncs.com"
+	}
+
 	var client *oss.Client
 	if client, o.loadError = oss.New(
-		o.Endpoint,
+		endpoint,
 		o.AccessKeyID,
 		o.AccessKeySecret,
 	); o.loadError != nil {

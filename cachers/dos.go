@@ -19,7 +19,7 @@ type DOS struct {
 	// AccessKey is the access key of the DigitalOcean.
 	AccessKey string `mapstructure:"access_key"`
 
-	// SecretKey is the secret_key of the DigitalOcean.
+	// SecretKey is the secret key of the DigitalOcean.
 	SecretKey string `mapstructure:"secret_key"`
 
 	// SpaceName is the name of the space.
