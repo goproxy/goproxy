@@ -47,7 +47,7 @@ func (m *MinIO) load() {
 	secure := strings.ToLower(u.Scheme) == "https"
 	u.Scheme = ""
 	m.client, m.loadError = minio.New(
-		u.String(),
+		strings.TrimPrefix(u.String(), "//"),
 		m.AccessKeyID,
 		m.SecretAccessKey,
 		secure,
