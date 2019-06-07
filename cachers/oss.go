@@ -22,7 +22,7 @@ import (
 // OSS implements the `goproxy.Cacher` by using the Alibaba Cloud Object Storage
 // Service.
 type OSS struct {
-	// Endpoint is the endpoint key of the Alibaba Cloud.
+	// Endpoint is the endpoint of the Alibaba Cloud Object Storage Service.
 	Endpoint string `mapstructure:"endpoint"`
 
 	// AccessKeyID is the access key ID of the Alibaba Cloud.

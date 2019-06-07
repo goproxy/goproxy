@@ -2,15 +2,11 @@ module github.com/goproxy/goproxy
 
 require (
 	cloud.google.com/go v0.39.0
-	github.com/Azure/azure-pipeline-go v0.1.9 // indirect
-	github.com/Azure/azure-storage-blob-go v0.6.0
 	github.com/aliyun/aliyun-oss-go-sdk v1.9.8
-	github.com/aws/aws-sdk-go v1.19.45
 	github.com/baiyubin/aliyun-sts-go-sdk v0.0.0-20180326062324-cfa1a18b161f // indirect
 	github.com/gopherjs/gopherjs v0.0.0-20190430165422-3e4dfb77656c // indirect
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/minio/minio-go/v6 v6.0.28
-	github.com/pkg/errors v0.8.1 // indirect
 	github.com/qiniu/api.v7 v7.2.5+incompatible
 	github.com/qiniu/x v7.0.8+incompatible // indirect
 	github.com/satori/go.uuid v1.2.0 // indirect
