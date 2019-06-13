@@ -43,7 +43,7 @@ func (o *OSS) load() {
 	o.minio = &MinIO{
 		Endpoint:        endpoint,
 		AccessKeyID:     o.AccessKeyID,
-		SecretAccessKey: o.SecretKeySecret,
+		SecretAccessKey: o.AccessKeySecret,
 		BucketName:      o.BucketName,
 		Root:            o.Root,
 		virtualHosted:   true,
