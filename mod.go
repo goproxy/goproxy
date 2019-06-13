@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path"
-	"path/filepath"
 	"strings"
 
 	"golang.org/x/mod/module"
@@ -271,8 +270,9 @@ func executeGoCommand(
 	cmd.Env = append(
 		append(os.Environ(), env...),
 		"GO111MODULE=on",
-		fmt.Sprint("GOCACHE=", filepath.Join(goproxyRoot, "gocache")),
-		fmt.Sprint("GOPATH=", filepath.Join(goproxyRoot, "gopath")),
+		fmt.Sprint("GOCACHE=", goproxyRoot),
+		fmt.Sprint("GOPATH=", goproxyRoot),
+		fmt.Sprint("GOTMPDIR=", goproxyRoot),
 	)
 	cmd.Dir = goproxyRoot
 	stdout, err := cmd.Output()
