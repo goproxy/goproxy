@@ -126,7 +126,13 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	trimedPath := strings.TrimPrefix(r.URL.Path, g.PathPrefix)
+	if !strings.HasPrefix(r.URL.Path, "/") {
+		responseNotFound(rw)
+		return
+	}
+
+	trimedPath := path.Clean(r.URL.Path)
+	trimedPath = strings.TrimPrefix(trimedPath, g.PathPrefix)
 	trimedPath = strings.TrimLeft(trimedPath, "/")
 
 	name, err := url.PathUnescape(trimedPath)
@@ -222,46 +228,29 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	nameParts := strings.Split(name, "/@")
+	isList := false
+	switch {
+	case strings.HasSuffix(name, "/@latest"):
+		name = fmt.Sprint(
+			strings.TrimSuffix(name, "latest"),
+			"v/latest.info",
+		)
+	case strings.HasSuffix(name, "/@v/list"):
+		name = fmt.Sprint(
+			strings.TrimSuffix(name, "list"),
+			"latest.info",
+		)
+		isList = true
+	}
+
+	nameParts := strings.Split(name, "/@v/")
 	if len(nameParts) != 2 {
 		responseNotFound(rw)
 		return
 	}
 
 	escapedModulePath := nameParts[0]
-	switch nameParts[1] {
-	case "latest", "v/list":
-		mlr, err := modList(
-			r.Context(),
-			g.goBinWorkerChan,
-			g.GoBinName,
-			escapedModulePath,
-			"latest",
-			nameParts[1] == "v/list",
-		)
-		if err != nil {
-			if err == errModuleVersionNotFound {
-				responseNotFound(rw)
-			} else {
-				g.logInternalServerError(err)
-				responseInternalServerError(rw)
-			}
-
-			return
-		}
-
-		setResponseCacheControlHeader(rw, false)
-		switch nameParts[1] {
-		case "latest":
-			responseJSON(rw, mlr)
-		case "v/list":
-			responseString(rw, strings.Join(mlr.Versions, "\n"))
-		}
-
-		return
-	}
-
-	nameBase := path.Base(nameParts[1])
+	nameBase := nameParts[1]
 	nameExt := path.Ext(nameBase)
 	switch nameExt {
 	case ".info", ".mod", ".zip":
@@ -285,7 +274,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			g.GoBinName,
 			escapedModulePath,
 			escapedModuleVersion,
-			false,
+			isList,
 		)
 		if err != nil {
 			if err == errModuleVersionNotFound {
@@ -295,6 +284,12 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				responseInternalServerError(rw)
 			}
 
+			return
+		}
+
+		if isList {
+			setResponseCacheControlHeader(rw, false)
+			responseString(rw, strings.Join(mlr.Versions, "\n"))
 			return
 		}
 
