@@ -266,10 +266,9 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isModuleVersionValid := semver.IsValid(moduleVersion)
+	isModuleVersionValid := !isList && semver.IsValid(moduleVersion)
 	if !isModuleVersionValid {
 		mlr, err := modList(
-			r.Context(),
 			g.goBinWorkerChan,
 			g.GoBinName,
 			escapedModulePath,
@@ -315,7 +314,6 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	cache, err := cacher.Cache(r.Context(), name)
 	if err == ErrCacheNotFound {
 		if _, err := modDownload(
-			r.Context(),
 			g.goBinWorkerChan,
 			g.GoBinName,
 			cacher,

@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path"
 	"strings"
+	"time"
 
 	"golang.org/x/mod/module"
 )
@@ -41,7 +42,6 @@ type modListResult struct {
 // modList executes
 // `go list -json -m -versions escapedModulePath@escapedModuleVersion`.
 func modList(
-	ctx context.Context,
 	workerChan chan struct{},
 	goBinName string,
 	escapedModulePath string,
@@ -77,7 +77,6 @@ func modList(
 	args = append(args, fmt.Sprint(modulePath, "@", moduleVersion))
 
 	stdout, err := executeGoCommand(
-		ctx,
 		workerChan,
 		goBinName,
 		args,
@@ -107,7 +106,6 @@ type modDownloadResult struct {
 // modDownload executes
 // `go mod download -json escapedModulePath@escapedModuleVersion`.
 func modDownload(
-	ctx context.Context,
 	workerChan chan struct{},
 	goBinName string,
 	cacher Cacher,
@@ -136,7 +134,6 @@ func modDownload(
 	}
 
 	stdout, err := executeGoCommand(
-		ctx,
 		workerChan,
 		goBinName,
 		[]string{
@@ -156,6 +153,9 @@ func modDownload(
 	if err := json.Unmarshal(stdout, mdr); err != nil {
 		return nil, err
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
 
 	namePrefix := path.Join(escapedModulePath, "@v", escapedModuleVersion)
 
@@ -254,7 +254,6 @@ func modDownload(
 
 // executeGoCommand executes go command with the args.
 func executeGoCommand(
-	ctx context.Context,
 	workerChan chan struct{},
 	goBinName string,
 	args []string,
@@ -266,7 +265,7 @@ func executeGoCommand(
 		<-workerChan
 	}()
 
-	cmd := exec.CommandContext(ctx, goBinName, args...)
+	cmd := exec.Command(goBinName, args...)
 	cmd.Env = append(
 		append(os.Environ(), env...),
 		"GO111MODULE=on",
