@@ -20,6 +20,7 @@ import (
 var (
 	modOutputNotFoundKeywords = [][]byte{
 		[]byte("could not read username"),
+		[]byte("go.mod has post-v0 module path"),
 		[]byte("invalid"),
 		[]byte("malformed"),
 		[]byte("no matching"),
