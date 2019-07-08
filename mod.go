@@ -2,19 +2,13 @@ package goproxy
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
 	"strings"
-	"time"
-
-	"golang.org/x/mod/module"
 )
 
 var (
@@ -35,245 +29,66 @@ var (
 // modListResult is the result of
 // `go list -json -m -versions <MODULE_PATH>@<MODULE_VERSION>`.
 type modListResult struct {
-	Version  string   `json:"Version"`
-	Time     string   `json:"Time"`
-	Versions []string `json:"Versions,omitempty"`
-}
-
-// modList executes
-// `go list -json -m -versions escapedModulePath@escapedModuleVersion`.
-func modList(
-	workerChan chan struct{},
-	goBinName string,
-	escapedModulePath string,
-	escapedModuleVersion string,
-	allVersions bool,
-) (*modListResult, error) {
-	modulePath, err := module.UnescapePath(escapedModulePath)
-	if err != nil {
-		return nil, errModuleVersionNotFound
-	}
-
-	moduleVersion, err := module.UnescapeVersion(escapedModuleVersion)
-	if err != nil {
-		return nil, errModuleVersionNotFound
-	}
-
-	goproxyRoot, err := ioutil.TempDir("", "goproxy")
-	if err != nil {
-		return nil, err
-	}
-	defer os.RemoveAll(goproxyRoot)
-
-	var env []string
-	if globsMatchPath(os.Getenv("GONOPROXY"), modulePath) {
-		env = []string{"GOPROXY=direct", "GONOPROXY="}
-	}
-
-	args := []string{"list", "-json", "-m"}
-	if allVersions {
-		args = append(args, "-versions")
-	}
-
-	args = append(args, fmt.Sprint(modulePath, "@", moduleVersion))
-
-	stdout, err := executeGoCommand(
-		workerChan,
-		goBinName,
-		args,
-		env,
-		goproxyRoot,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	mlr := &modListResult{}
-	if err := json.Unmarshal(stdout, mlr); err != nil {
-		return nil, err
-	}
-
-	return mlr, nil
+	Version  string
+	Time     string
+	Versions []string
 }
 
 // modDownloadResult is the result of
 // `go mod download -json <MODULE_PATH>@<MODULE_VERSION>`.
 type modDownloadResult struct {
-	Info  string `json:"Info"`
-	GoMod string `json:"GoMod"`
-	Zip   string `json:"Zip"`
+	Info  string
+	GoMod string
+	Zip   string
 }
 
-// modDownload executes
-// `go mod download -json escapedModulePath@escapedModuleVersion`.
-func modDownload(
+// mod executes the Go modules related commands based on the type of the result.
+func mod(
 	workerChan chan struct{},
-	goBinName string,
-	cacher Cacher,
-	escapedModulePath string,
-	escapedModuleVersion string,
-) (*modDownloadResult, error) {
-	modulePath, err := module.UnescapePath(escapedModulePath)
-	if err != nil {
-		return nil, errModuleVersionNotFound
-	}
-
-	moduleVersion, err := module.UnescapeVersion(escapedModuleVersion)
-	if err != nil {
-		return nil, errModuleVersionNotFound
-	}
-
-	goproxyRoot, err := ioutil.TempDir("", "goproxy")
-	if err != nil {
-		return nil, err
-	}
-	defer os.RemoveAll(goproxyRoot)
-
-	var env []string
-	if globsMatchPath(os.Getenv("GONOPROXY"), modulePath) {
-		env = []string{"GOPROXY=direct", "GONOPROXY="}
-	}
-
-	stdout, err := executeGoCommand(
-		workerChan,
-		goBinName,
-		[]string{
-			"mod",
-			"download",
-			"-json",
-			fmt.Sprint(modulePath, "@", moduleVersion),
-		},
-		env,
-		goproxyRoot,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	mdr := &modDownloadResult{}
-	if err := json.Unmarshal(stdout, mdr); err != nil {
-		return nil, err
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-
-	namePrefix := path.Join(escapedModulePath, "@v", escapedModuleVersion)
-
-	infoFile, err := os.Open(mdr.Info)
-	if err != nil {
-		return nil, err
-	}
-	defer infoFile.Close()
-
-	infoFileInfo, err := infoFile.Stat()
-	if err != nil {
-		return nil, err
-	}
-
-	infoFileHash := cacher.NewHash()
-	if _, err := io.Copy(infoFileHash, infoFile); err != nil {
-		return nil, err
-	}
-
-	if _, err := infoFile.Seek(0, io.SeekStart); err != nil {
-		return nil, err
-	}
-
-	if err := cacher.SetCache(ctx, &tempCache{
-		readSeeker: infoFile,
-		name:       fmt.Sprint(namePrefix, ".info"),
-		size:       infoFileInfo.Size(),
-		modTime:    infoFileInfo.ModTime(),
-		checksum:   infoFileHash.Sum(nil),
-	}); err != nil {
-		return nil, err
-	}
-
-	modFile, err := os.Open(mdr.GoMod)
-	if err != nil {
-		return nil, err
-	}
-	defer modFile.Close()
-
-	modFileInfo, err := modFile.Stat()
-	if err != nil {
-		return nil, err
-	}
-
-	modFileHash := cacher.NewHash()
-	if _, err := io.Copy(modFileHash, modFile); err != nil {
-		return nil, err
-	}
-
-	if _, err := modFile.Seek(0, io.SeekStart); err != nil {
-		return nil, err
-	}
-
-	if err := cacher.SetCache(ctx, &tempCache{
-		readSeeker: modFile,
-		name:       fmt.Sprint(namePrefix, ".mod"),
-		size:       modFileInfo.Size(),
-		modTime:    modFileInfo.ModTime(),
-		checksum:   modFileHash.Sum(nil),
-	}); err != nil {
-		return nil, err
-	}
-
-	zipFile, err := os.Open(mdr.Zip)
-	if err != nil {
-		return nil, err
-	}
-	defer zipFile.Close()
-
-	zipFileInfo, err := zipFile.Stat()
-	if err != nil {
-		return nil, err
-	}
-
-	zipFileHash := cacher.NewHash()
-	if _, err := io.Copy(zipFileHash, zipFile); err != nil {
-		return nil, err
-	}
-
-	if _, err := zipFile.Seek(0, io.SeekStart); err != nil {
-		return nil, err
-	}
-
-	if err := cacher.SetCache(ctx, &tempCache{
-		readSeeker: zipFile,
-		name:       fmt.Sprint(namePrefix, ".zip"),
-		size:       zipFileInfo.Size(),
-		modTime:    zipFileInfo.ModTime(),
-		checksum:   zipFileHash.Sum(nil),
-	}); err != nil {
-		return nil, err
-	}
-
-	return mdr, nil
-}
-
-// executeGoCommand executes go command with the args.
-func executeGoCommand(
-	workerChan chan struct{},
-	goBinName string,
-	args []string,
-	env []string,
 	goproxyRoot string,
-) ([]byte, error) {
+	goBinName string,
+	modulePath string,
+	moduleVersion string,
+	result interface{},
+) error {
 	workerChan <- struct{}{}
 	defer func() {
 		<-workerChan
 	}()
 
+	var args []string
+	switch result.(type) {
+	case *modListResult:
+		args = []string{
+			"list",
+			"-json",
+			"-m",
+			"-versions",
+			fmt.Sprint(modulePath, "@", moduleVersion),
+		}
+	case *modDownloadResult:
+		args = []string{
+			"mod",
+			"download",
+			"-json",
+			fmt.Sprint(modulePath, "@", moduleVersion),
+		}
+	default:
+		return errors.New("invalid result type")
+	}
+
 	cmd := exec.Command(goBinName, args...)
 	cmd.Env = append(
-		append(os.Environ(), env...),
+		os.Environ(),
 		"GO111MODULE=on",
 		fmt.Sprint("GOCACHE=", goproxyRoot),
 		fmt.Sprint("GOPATH=", goproxyRoot),
 		fmt.Sprint("GOTMPDIR=", goproxyRoot),
 	)
+	if globsMatchPath(os.Getenv("GONOPROXY"), modulePath) {
+		cmd.Env = append(cmd.Env, "GOPROXY=direct", "GONOPROXY=")
+	}
+
 	cmd.Dir = goproxyRoot
 	stdout, err := cmd.Output()
 	if err != nil {
@@ -285,14 +100,14 @@ func executeGoCommand(
 		lowercasedOutput := bytes.ToLower(output)
 		for _, k := range modOutputNotFoundKeywords {
 			if bytes.Contains(lowercasedOutput, k) {
-				return nil, errModuleVersionNotFound
+				return errModuleVersionNotFound
 			}
 		}
 
-		return nil, fmt.Errorf("go command: %v: %s", err, output)
+		return fmt.Errorf("go command: %v: %s", err, output)
 	}
 
-	return stdout, nil
+	return json.Unmarshal(stdout, result)
 }
 
 // globsMatchPath reports whether any path prefix of target matches one of the

@@ -1,13 +1,11 @@
 package goproxy
 
 import (
-	"bytes"
 	"context"
 	"crypto/md5"
 	"errors"
 	"hash"
 	"io"
-	"io/ioutil"
 	"os"
 	"time"
 )
@@ -57,10 +55,8 @@ type Cache interface {
 	Checksum() []byte
 }
 
-// tempCacher implements the `Cacher` by using the `map[string]tempCache`.
-type tempCacher struct {
-	caches map[string]*tempCache
-}
+// tempCacher implements the `Cacher` without doing anything.
+type tempCacher struct{}
 
 // NewHash implements the `Cacher`.
 func (tc *tempCacher) NewHash() hash.Hash {
@@ -69,69 +65,66 @@ func (tc *tempCacher) NewHash() hash.Hash {
 
 // Cache implements the `Cacher`.
 func (tc *tempCacher) Cache(ctx context.Context, name string) (Cache, error) {
-	c, ok := tc.caches[name]
-	if !ok {
-		return nil, ErrCacheNotFound
-	}
-
-	return c, nil
+	return nil, ErrCacheNotFound
 }
 
 // SetCache implements the `Cacher`.
 func (tc *tempCacher) SetCache(ctx context.Context, c Cache) error {
-	b, err := ioutil.ReadAll(c)
-	if err != nil {
-		return err
-	}
-
-	tc.caches[c.Name()] = &tempCache{
-		readSeeker: bytes.NewReader(b),
-		name:       c.Name(),
-		size:       c.Size(),
-		modTime:    c.ModTime(),
-		checksum:   c.Checksum(),
-	}
-
 	return nil
 }
 
 // tempCache implements the `Cache`. It is the cache unit of the `tempCacher`.
 type tempCache struct {
-	readSeeker io.ReadSeeker
-	closed     bool
-	name       string
-	size       int64
-	modTime    time.Time
-	checksum   []byte
+	file     *os.File
+	name     string
+	size     int64
+	modTime  time.Time
+	checksum []byte
+}
+
+// newTempCache returns a new instance of the `tempCache` with the filename, the
+// name and the fileHash.
+func newTempCache(filename, name string, fileHash hash.Hash) (Cache, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := io.Copy(fileHash, file); err != nil {
+		return nil, err
+	}
+
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+
+	return &tempCache{
+		file:     file,
+		name:     name,
+		size:     fileInfo.Size(),
+		modTime:  fileInfo.ModTime(),
+		checksum: fileHash.Sum(nil),
+	}, nil
 }
 
 // Read implements the `Cache`.
 func (tc *tempCache) Read(b []byte) (int, error) {
-	if tc.closed {
-		return 0, os.ErrClosed
-	}
-
-	return tc.readSeeker.Read(b)
+	return tc.file.Read(b)
 }
 
 // Seek implements the `Cache`.
 func (tc *tempCache) Seek(offset int64, whence int) (int64, error) {
-	if tc.closed {
-		return 0, os.ErrClosed
-	}
-
-	return tc.readSeeker.Seek(offset, whence)
+	return tc.file.Seek(offset, whence)
 }
 
 // Close implements the `Cache`.
 func (tc *tempCache) Close() error {
-	if tc.closed {
-		return os.ErrClosed
-	}
-
-	tc.closed = true
-
-	return nil
+	return tc.file.Close()
 }
 
 // Name implements the `Cache`.

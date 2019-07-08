@@ -7,9 +7,11 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"strings"
 	"sync"
@@ -250,6 +252,12 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	escapedModulePath := nameParts[0]
+	modulePath, err := module.UnescapePath(escapedModulePath)
+	if err != nil {
+		responseNotFound(rw)
+		return
+	}
+
 	nameBase := nameParts[1]
 	nameExt := path.Ext(nameBase)
 	switch nameExt {
@@ -266,16 +274,25 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	goproxyRoot, err := ioutil.TempDir("", "goproxy")
+	if err != nil {
+		g.logInternalServerError(err)
+		responseInternalServerError(rw)
+		return
+	}
+	defer os.RemoveAll(goproxyRoot)
+
 	isModuleVersionValid := !isList && semver.IsValid(moduleVersion)
 	if !isModuleVersionValid {
-		mlr, err := modList(
+		mlr := &modListResult{}
+		if err := mod(
 			g.goBinWorkerChan,
+			goproxyRoot,
 			g.GoBinName,
-			escapedModulePath,
-			escapedModuleVersion,
-			isList,
-		)
-		if err != nil {
+			modulePath,
+			moduleVersion,
+			mlr,
+		); err != nil {
 			if err == errModuleVersionNotFound {
 				responseNotFound(rw)
 			} else {
@@ -306,19 +323,19 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	cacher := g.Cacher
 	if cacher == nil {
-		cacher = &tempCacher{
-			caches: make(map[string]*tempCache, 3),
-		}
+		cacher = &tempCacher{}
 	}
 
 	cache, err := cacher.Cache(r.Context(), name)
 	if err == ErrCacheNotFound {
-		if _, err := modDownload(
+		mdr := &modDownloadResult{}
+		if err := mod(
 			g.goBinWorkerChan,
+			goproxyRoot,
 			g.GoBinName,
-			cacher,
-			escapedModulePath,
-			escapedModuleVersion,
+			modulePath,
+			moduleVersion,
+			mdr,
 		); err != nil {
 			if err == errModuleVersionNotFound {
 				responseNotFound(rw)
@@ -330,8 +347,72 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		cache, err = cacher.Cache(r.Context(), name)
+		namePrefix := strings.TrimSuffix(name, nameExt)
+
+		infoCache, err := newTempCache(
+			mdr.Info,
+			fmt.Sprint(namePrefix, ".info"),
+			cacher.NewHash(),
+		)
 		if err != nil {
+			g.logInternalServerError(err)
+			responseInternalServerError(rw)
+			return
+		}
+		defer infoCache.Close()
+
+		if err := cacher.SetCache(r.Context(), infoCache); err != nil {
+			g.logInternalServerError(err)
+			responseInternalServerError(rw)
+			return
+		}
+
+		modCache, err := newTempCache(
+			mdr.GoMod,
+			fmt.Sprint(namePrefix, ".mod"),
+			cacher.NewHash(),
+		)
+		if err != nil {
+			g.logInternalServerError(err)
+			responseInternalServerError(rw)
+			return
+		}
+		defer modCache.Close()
+
+		if err := cacher.SetCache(r.Context(), modCache); err != nil {
+			g.logInternalServerError(err)
+			responseInternalServerError(rw)
+			return
+		}
+
+		zipCache, err := newTempCache(
+			mdr.Zip,
+			fmt.Sprint(namePrefix, ".zip"),
+			cacher.NewHash(),
+		)
+		if err != nil {
+			g.logInternalServerError(err)
+			responseInternalServerError(rw)
+			return
+		}
+		defer zipCache.Close()
+
+		if err := cacher.SetCache(r.Context(), zipCache); err != nil {
+			g.logInternalServerError(err)
+			responseInternalServerError(rw)
+			return
+		}
+
+		switch nameExt {
+		case ".info":
+			cache = infoCache
+		case ".mod":
+			cache = modCache
+		case ".zip":
+			cache = zipCache
+		}
+
+		if _, err := cache.Seek(0, io.SeekStart); err != nil {
 			g.logInternalServerError(err)
 			responseInternalServerError(rw)
 			return
@@ -340,8 +421,9 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		g.logInternalServerError(err)
 		responseInternalServerError(rw)
 		return
+	} else {
+		defer cache.Close()
 	}
-	defer cache.Close()
 
 	contentType := ""
 	switch nameExt {
