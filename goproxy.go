@@ -176,7 +176,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			nil,
 		)
 		if err != nil {
-			g.logError(err)
+			g.logErrorf("%v", err)
 			responseInternalServerError(rw)
 			return
 		}
@@ -188,7 +188,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			if ue, ok := err.(*url.Error); ok && ue.Timeout() {
 				responseBadGateway(rw)
 			} else {
-				g.logError(err)
+				g.logErrorf("%v", err)
 				responseInternalServerError(rw)
 			}
 
@@ -270,7 +270,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	goproxyRoot, err := ioutil.TempDir("", "goproxy")
 	if err != nil {
-		g.logError(err)
+		g.logErrorf("%v", err)
 		responseInternalServerError(rw)
 		return
 	}
@@ -290,7 +290,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			if err == errModuleVersionNotFound {
 				responseNotFound(rw)
 			} else {
-				g.logError(err)
+				g.logErrorf("%v", err)
 				responseInternalServerError(rw)
 			}
 
@@ -306,7 +306,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		moduleVersion = mlr.Version
 		escapedModuleVersion, err = module.EscapeVersion(moduleVersion)
 		if err != nil {
-			g.logError(err)
+			g.logErrorf("%v", err)
 			responseInternalServerError(rw)
 			return
 		}
@@ -334,7 +334,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			if err == errModuleVersionNotFound {
 				responseNotFound(rw)
 			} else {
-				g.logError(err)
+				g.logErrorf("%v", err)
 				responseInternalServerError(rw)
 			}
 
@@ -349,14 +349,14 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			cacher.NewHash(),
 		)
 		if err != nil {
-			g.logError(err)
+			g.logErrorf("%v", err)
 			responseInternalServerError(rw)
 			return
 		}
 		defer infoCache.Close()
 
 		if err := cacher.SetCache(r.Context(), infoCache); err != nil {
-			g.logError(err)
+			g.logErrorf("%v", err)
 			responseInternalServerError(rw)
 			return
 		}
@@ -367,14 +367,14 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			cacher.NewHash(),
 		)
 		if err != nil {
-			g.logError(err)
+			g.logErrorf("%v", err)
 			responseInternalServerError(rw)
 			return
 		}
 		defer modCache.Close()
 
 		if err := cacher.SetCache(r.Context(), modCache); err != nil {
-			g.logError(err)
+			g.logErrorf("%v", err)
 			responseInternalServerError(rw)
 			return
 		}
@@ -385,14 +385,14 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			cacher.NewHash(),
 		)
 		if err != nil {
-			g.logError(err)
+			g.logErrorf("%v", err)
 			responseInternalServerError(rw)
 			return
 		}
 		defer zipCache.Close()
 
 		if err := cacher.SetCache(r.Context(), zipCache); err != nil {
-			g.logError(err)
+			g.logErrorf("%v", err)
 			responseInternalServerError(rw)
 			return
 		}
@@ -412,12 +412,12 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		// being accidentally closed.
 		cache, err = newTempCache(filename, name, cacher.NewHash())
 		if err != nil {
-			g.logError(err)
+			g.logErrorf("%v", err)
 			responseInternalServerError(rw)
 			return
 		}
 	} else if err != nil {
-		g.logError(err)
+		g.logErrorf("%v", err)
 		responseInternalServerError(rw)
 		return
 	}
@@ -447,20 +447,12 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	http.ServeContent(rw, r, "", cache.ModTime(), cache)
 }
 
-// logError logs the err.
-func (g *Goproxy) logError(err error) {
-	if err == nil {
-		return
-	}
-
-	es := err.Error()
-	if !strings.HasPrefix(es, "goproxy: ") {
-		es = fmt.Sprint("goproxy: ", es)
-	}
-
+// logErrorf logs the v as an error in the format.
+func (g *Goproxy) logErrorf(format string, v ...interface{}) {
+	s := fmt.Sprintf(format, v...)
 	if g.ErrorLogger != nil {
-		g.ErrorLogger.Output(2, es)
+		g.ErrorLogger.Output(2, s)
 	} else {
-		log.Output(2, es)
+		log.Output(2, s)
 	}
 }
