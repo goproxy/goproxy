@@ -397,16 +397,21 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		var filename string
 		switch nameExt {
 		case ".info":
-			cache = infoCache
+			filename = mdr.Info
 		case ".mod":
-			cache = modCache
+			filename = mdr.GoMod
 		case ".zip":
-			cache = zipCache
+			filename = mdr.Zip
 		}
 
-		if _, err := cache.Seek(0, io.SeekStart); err != nil {
+		// Note that we need to create a new instance of the `tempCache`
+		// here instead of reusing the above instances to avoid them
+		// being accidentally closed.
+		cache, err = newTempCache(filename, name, cacher.NewHash())
+		if err != nil {
 			g.logError(err)
 			responseInternalServerError(rw)
 			return
@@ -415,9 +420,8 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		g.logError(err)
 		responseInternalServerError(rw)
 		return
-	} else {
-		defer cache.Close()
 	}
+	defer cache.Close()
 
 	contentType := ""
 	switch nameExt {
