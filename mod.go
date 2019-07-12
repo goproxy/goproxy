@@ -1,7 +1,6 @@
 package goproxy
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,21 +8,6 @@ import (
 	"os/exec"
 	"path"
 	"strings"
-)
-
-var (
-	modOutputNotFoundKeywords = [][]byte{
-		[]byte("could not read username"),
-		[]byte("go.mod has post-v0 module path"),
-		[]byte("invalid"),
-		[]byte("malformed"),
-		[]byte("no matching"),
-		[]byte("not found"),
-		[]byte("unknown"),
-		[]byte("unrecognized"),
-	}
-
-	errModuleVersionNotFound = errors.New("module version not found")
 )
 
 // modListResult is the result of
@@ -93,15 +77,8 @@ func mod(
 	stdout, err := cmd.Output()
 	if err != nil {
 		output := stdout
-		if ee, ok := err.(*exec.ExitError); ok {
-			output = append(output, ee.Stderr...)
-		}
-
-		lowercasedOutput := bytes.ToLower(output)
-		for _, k := range modOutputNotFoundKeywords {
-			if bytes.Contains(lowercasedOutput, k) {
-				return errModuleVersionNotFound
-			}
+		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) != 0 {
+			output = ee.Stderr
 		}
 
 		return fmt.Errorf("go command: %v: %s", err, output)

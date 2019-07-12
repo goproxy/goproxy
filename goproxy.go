@@ -13,12 +13,27 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"regexp"
 	"strings"
 	"sync"
 
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
 	"golang.org/x/net/idna"
+)
+
+// regModuleVersionNotFound is a regular expression that used to report whether
+// a message means a module version is not found.
+var regModuleVersionNotFound = regexp.MustCompile(
+	`(does not contain package)|` +
+		`(fatal: could not read Username)|` +
+		`(go.mod has non-\.\.\.(\.v1|/v[2-9][0-9]*) module path)|` +
+		`(go.mod has post-v0 module path)|` +
+		`(invalid version)|` +
+		`(missing .*/go.mod and .*/go.mod at revision)|` +
+		`(no matching versions)|` +
+		`(unknown revision)|` +
+		`(unrecognized import path)`,
 )
 
 // Goproxy is the top-level struct of this project.
@@ -287,7 +302,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			moduleVersion,
 			mlr,
 		); err != nil {
-			if err == errModuleVersionNotFound {
+			if regModuleVersionNotFound.MatchString(err.Error()) {
 				responseNotFound(rw)
 			} else {
 				g.logErrorf("%v", err)
@@ -331,7 +346,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			moduleVersion,
 			mdr,
 		); err != nil {
-			if err == errModuleVersionNotFound {
+			if regModuleVersionNotFound.MatchString(err.Error()) {
 				responseNotFound(rw)
 			} else {
 				g.logErrorf("%v", err)
