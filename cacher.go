@@ -18,7 +18,7 @@ var ErrCacheNotFound = errors.New("cache not found")
 // files for the `Goproxy`.
 //
 // If you are looking for some useful implementations of the `Cacher`, simply
-// visit the "github.com/goproxy/goproxy/cachers" package.
+// visit the "github.com/goproxy/goproxy/cacher" package.
 type Cacher interface {
 	// NewHash returns a new instance of the `hash.Hash` used to compute the
 	// checksums of the caches in the underlying cacher.

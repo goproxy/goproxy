@@ -1,4 +1,4 @@
-package cachers
+package cacher
 
 import (
 	"mime"

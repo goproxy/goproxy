@@ -25,14 +25,14 @@ production-ready yet. Issues welcome! PRs welcome!**
 * Can be served under other Go module proxies by setting [`GOPROXY`](https://golang.org/cmd/go/#hdr-Environment_variables)
 * Built-in [`GONOPROXY`](https://tip.golang.org/cmd/go/#hdr-Environment_variables) (it will be introduced in Go 1.13) support
 * Supports multiple mainstream implementations of the [`goproxy.Cacher`](https://godoc.org/github.com/goproxy/goproxy#Cacher)
-	* Disk: [`cachers.Disk`](https://godoc.org/github.com/goproxy/goproxy/cachers#Disk)
-	* MinIO: [`cachers.MinIO`](https://godoc.org/github.com/goproxy/goproxy/cachers#MinIO)
-	* Google Cloud Storage: [`cachers.GCS`](https://godoc.org/github.com/goproxy/goproxy/cachers#GCS)
-	* Amazon Simple Storage Service: [`cachers.S3`](https://godoc.org/github.com/goproxy/goproxy/cachers#S3)
-	* Microsoft Azure Blob Storage: [`cachers.MABS`](https://godoc.org/github.com/goproxy/goproxy/cachers#MABS)
-	* DigitalOcean Spaces: [`cachers.DOS`](https://godoc.org/github.com/goproxy/goproxy/cachers#DOS)
-	* Alibaba Cloud Object Storage Service: [`cachers.OSS`](https://godoc.org/github.com/goproxy/goproxy/cachers#OSS)
-	* Qiniu Cloud Kodo: [`cachers.Kodo`](https://godoc.org/github.com/goproxy/goproxy/cachers#Kodo)
+	* Disk: [`cacher.Disk`](https://godoc.org/github.com/goproxy/goproxy/cacher#Disk)
+	* MinIO: [`cacher.MinIO`](https://godoc.org/github.com/goproxy/goproxy/cacher#MinIO)
+	* Google Cloud Storage: [`cacher.GCS`](https://godoc.org/github.com/goproxy/goproxy/cacher#GCS)
+	* Amazon Simple Storage Service: [`cacher.S3`](https://godoc.org/github.com/goproxy/goproxy/cacher#S3)
+	* Microsoft Azure Blob Storage: [`cacher.MABS`](https://godoc.org/github.com/goproxy/goproxy/cacher#MABS)
+	* DigitalOcean Spaces: [`cacher.DOS`](https://godoc.org/github.com/goproxy/goproxy/cacher#DOS)
+	* Alibaba Cloud Object Storage Service: [`cacher.OSS`](https://godoc.org/github.com/goproxy/goproxy/cacher#OSS)
+	* Qiniu Cloud Kodo: [`cacher.Kodo`](https://godoc.org/github.com/goproxy/goproxy/cacher#Kodo)
 
 ## Installation
 
