@@ -77,8 +77,10 @@ func mod(
 	stdout, err := cmd.Output()
 	if err != nil {
 		output := stdout
-		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) != 0 {
-			output = ee.Stderr
+		if len(output) == 0 {
+			if ee, ok := err.(*exec.ExitError); ok {
+				output = ee.Stderr
+			}
 		}
 
 		return fmt.Errorf("go command: %v: %s", err, output)

@@ -32,6 +32,8 @@ var regModuleVersionNotFound = regexp.MustCompile(
 		`(invalid version)|` +
 		`(missing .*/go.mod and .*/go.mod at revision)|` +
 		`(no matching versions)|` +
+		`(unexpected status \(.*\): 404 Not Found)|` +
+		`(unexpected status \(.*\): 410 Gone)|` +
 		`(unknown revision)|` +
 		`(unrecognized import path)`,
 )
