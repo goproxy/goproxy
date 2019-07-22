@@ -67,7 +67,9 @@ type Goproxy struct {
 	// MaxGoBinWorkers is the maximum number of the Go binary commands that
 	// are allowed to execute at the same time.
 	//
-	// Default: 8
+	// If the `MaxGoBinWorkers` is zero, then there will be no limitations.
+	//
+	// Default: 0
 	MaxGoBinWorkers int `mapstructure:"max_go_bin_workers"`
 
 	// PathPrefix is the prefix of all request paths. It will be used to
@@ -113,24 +115,28 @@ type Goproxy struct {
 func New() *Goproxy {
 	return &Goproxy{
 		GoBinName:           "go",
-		MaxGoBinWorkers:     8,
 		SupportedSUMDBHosts: []string{"sum.golang.org"},
 		loadOnce:            &sync.Once{},
 		supportedSUMDBHosts: map[string]bool{},
 	}
 }
 
-// ServeHTTP implements `http.Handler`.
-func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
-	g.loadOnce.Do(func() {
+// load loads the stuff of the g up.
+func (g *Goproxy) load() {
+	if g.MaxGoBinWorkers != 0 {
 		g.goBinWorkerChan = make(chan struct{}, g.MaxGoBinWorkers)
+	}
 
-		for _, host := range g.SupportedSUMDBHosts {
-			if h, err := idna.Lookup.ToASCII(host); err == nil {
-				g.supportedSUMDBHosts[h] = true
-			}
+	for _, host := range g.SupportedSUMDBHosts {
+		if h, err := idna.Lookup.ToASCII(host); err == nil {
+			g.supportedSUMDBHosts[h] = true
 		}
-	})
+	}
+}
+
+// ServeHTTP implements the `http.Handler`.
+func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
+	g.loadOnce.Do(g.load)
 
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:

@@ -35,10 +35,12 @@ func mod(
 	moduleVersion string,
 	result interface{},
 ) error {
-	workerChan <- struct{}{}
-	defer func() {
-		<-workerChan
-	}()
+	if workerChan != nil {
+		workerChan <- struct{}{}
+		defer func() {
+			<-workerChan
+		}()
+	}
 
 	var args []string
 	switch result.(type) {
