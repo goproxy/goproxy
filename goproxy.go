@@ -26,14 +26,14 @@ import (
 // a message means a module version is not found.
 var regModuleVersionNotFound = regexp.MustCompile(
 	`(does not contain package)|` +
-		`(fatal: could not read Username)|` +
+		`(could not read Username)|` +
 		`(go.mod has non-\.\.\.(\.v1|/v[2-9][0-9]*) module path)|` +
 		`(go.mod has post-v0 module path)|` +
 		`(invalid version)|` +
 		`(missing .*/go.mod and .*/go.mod at revision)|` +
 		`(no matching versions)|` +
-		`(unexpected status \(.*\): 404 Not Found)|` +
-		`(unexpected status \(.*\): 410 Gone)|` +
+		`(404 Not Found)|` +
+		`(410 Gone)|` +
 		`(unknown revision)|` +
 		`(unrecognized import path)`,
 )

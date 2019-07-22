@@ -42,9 +42,13 @@ func mod(
 		}()
 	}
 
-	var args []string
+	var (
+		operation string
+		args      []string
+	)
 	switch result.(type) {
 	case *modListResult:
+		operation = "list"
 		args = []string{
 			"list",
 			"-json",
@@ -53,6 +57,7 @@ func mod(
 			fmt.Sprint(modulePath, "@", moduleVersion),
 		}
 	case *modDownloadResult:
+		operation = "download"
 		args = []string{
 			"mod",
 			"download",
@@ -79,13 +84,26 @@ func mod(
 	stdout, err := cmd.Output()
 	if err != nil {
 		output := stdout
-		if len(output) == 0 {
-			if ee, ok := err.(*exec.ExitError); ok {
-				output = ee.Stderr
+		if len(output) > 0 {
+			m := map[string]interface{}{}
+			if err := json.Unmarshal(output, &m); err != nil {
+				return err
 			}
+
+			if es, ok := m["Error"].(string); ok {
+				output = []byte(es)
+			}
+		} else if ee, ok := err.(*exec.ExitError); ok {
+			output = ee.Stderr
 		}
 
-		return fmt.Errorf("go command: %v: %s", err, output)
+		return fmt.Errorf(
+			"mod %s %s@%s: %s",
+			operation,
+			modulePath,
+			moduleVersion,
+			output,
+		)
 	}
 
 	return json.Unmarshal(stdout, result)
