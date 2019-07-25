@@ -110,7 +110,9 @@ func (m *MinIO) Cache(ctx context.Context, name string) (goproxy.Cache, error) {
 		return nil, err
 	}
 
-	checksum, err := hex.DecodeString(strings.Trim(objectInfo.ETag, `"`))
+	checksum, err := hex.DecodeString(
+		objectInfo.Metadata.Get("X-AMZ-Meta-Checksum"),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -137,6 +139,9 @@ func (m *MinIO) SetCache(ctx context.Context, c goproxy.Cache) error {
 		c,
 		c.Size(),
 		minio.PutObjectOptions{
+			UserMetadata: map[string]string{
+				"Checksum": hex.EncodeToString(c.Checksum()),
+			},
 			ContentType: mimeTypeByExtension(path.Ext(c.Name())),
 		},
 	)
