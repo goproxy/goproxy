@@ -3,13 +3,13 @@ package goproxy
 import "net/http"
 
 // setResponseCacheControlHeader sets the Cache-Control header based on the
-// cacheable.
-func setResponseCacheControlHeader(rw http.ResponseWriter, cacheable bool) {
+// cachedForever.
+func setResponseCacheControlHeader(rw http.ResponseWriter, cachedForever bool) {
 	cacheControl := ""
-	if cacheable {
+	if cachedForever {
 		cacheControl = "max-age=31536000"
 	} else {
-		cacheControl = "must-revalidate, no-cache, no-store"
+		cacheControl = "max-age=60"
 	}
 
 	rw.Header().Set("Cache-Control", cacheControl)

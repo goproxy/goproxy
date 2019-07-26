@@ -181,12 +181,15 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 
 		sumdbPath := sumdbURL[sumdbPathOffset:]
+		isLatest := false
 		switch {
 		case sumdbPath == "/supported":
+			setResponseCacheControlHeader(rw, false)
 			rw.Write(nil) // 200 OK
 			return
-		case sumdbPath == "/latest",
-			strings.HasPrefix(sumdbPath, "/lookup/"),
+		case sumdbPath == "/latest":
+			isLatest = true
+		case strings.HasPrefix(sumdbPath, "/lookup/"),
 			strings.HasPrefix(sumdbPath, "/tile/"):
 		default:
 			responseNotFound(rw)
@@ -240,13 +243,14 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			sumdbRes.Header.Get("Content-Length"),
 		)
 
-		setResponseCacheControlHeader(rw, false)
+		setResponseCacheControlHeader(rw, !isLatest)
 
 		io.Copy(rw, sumdbRes.Body)
 
 		return
 	}
 
+	isLatest := false
 	isList := false
 	switch {
 	case strings.HasSuffix(name, "/@latest"):
@@ -254,6 +258,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			strings.TrimSuffix(name, "latest"),
 			"v/latest.info",
 		)
+		isLatest = true
 	case strings.HasSuffix(name, "/@v/list"):
 		name = fmt.Sprint(
 			strings.TrimSuffix(name, "list"),
@@ -299,8 +304,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 	defer os.RemoveAll(goproxyRoot)
 
-	isModuleVersionValid := !isList && semver.IsValid(moduleVersion)
-	if !isModuleVersionValid {
+	if isLatest || isList || !semver.IsValid(moduleVersion) {
 		mlr := &modListResult{}
 		if err := mod(
 			g.goBinWorkerChan,
@@ -465,7 +469,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		),
 	)
 
-	setResponseCacheControlHeader(rw, isModuleVersionValid)
+	setResponseCacheControlHeader(rw, !isLatest && !isList)
 
 	http.ServeContent(rw, r, "", cache.ModTime(), cache)
 }
