@@ -7,9 +7,9 @@ import "net/http"
 func setResponseCacheControlHeader(rw http.ResponseWriter, cachedForever bool) {
 	cacheControl := ""
 	if cachedForever {
-		cacheControl = "max-age=31536000"
+		cacheControl = "public, max-age=31536000"
 	} else {
-		cacheControl = "max-age=60"
+		cacheControl = "public, max-age=60"
 	}
 
 	rw.Header().Set("Cache-Control", cacheControl)
