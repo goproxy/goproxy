@@ -1,15 +1,18 @@
 package goproxy
 
-import "net/http"
+import (
+	"fmt"
+	"net/http"
+)
 
 // setResponseCacheControlHeader sets the Cache-Control header based on the
-// cachedForever.
-func setResponseCacheControlHeader(rw http.ResponseWriter, cachedForever bool) {
+// maxAge.
+func setResponseCacheControlHeader(rw http.ResponseWriter, maxAge int) {
 	cacheControl := ""
-	if cachedForever {
-		cacheControl = "public, max-age=31536000"
+	if maxAge >= 0 {
+		cacheControl = fmt.Sprintf("public, max-age=%d", maxAge)
 	} else {
-		cacheControl = "public, max-age=60"
+		cacheControl = "must-revalidate, no-cache, no-store"
 	}
 
 	rw.Header().Set("Cache-Control", cacheControl)

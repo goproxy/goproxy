@@ -13,11 +13,15 @@ func TestSetResponseCacheControlHeader(t *testing.T) {
 
 	assert.Empty(t, rec.Header().Get("Cache-Control"))
 
-	setResponseCacheControlHeader(rec, false)
-	assert.Equal(t, "max-age=60", rec.Header().Get("Cache-Control"))
+	setResponseCacheControlHeader(rec, 60)
+	assert.Equal(t, "public, max-age=60", rec.Header().Get("Cache-Control"))
 
-	setResponseCacheControlHeader(rec, true)
-	assert.Equal(t, "max-age=31536000", rec.Header().Get("Cache-Control"))
+	setResponseCacheControlHeader(rec, -1)
+	assert.Equal(
+		t,
+		"must-revalidate, no-cache, no-store",
+		rec.Header().Get("Cache-Control"),
+	)
 }
 
 func TestResponseString(t *testing.T) {
