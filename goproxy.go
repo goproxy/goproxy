@@ -12,10 +12,13 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path"
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
@@ -107,6 +110,7 @@ type Goproxy struct {
 	loadOnce            *sync.Once
 	goBinWorkerChan     chan struct{}
 	supportedSUMDBHosts map[string]bool
+	osRemoveAllFailures *sync.Map
 }
 
 // New returns a new instance of the `Goproxy` with default field values.
@@ -119,6 +123,7 @@ func New() *Goproxy {
 		SupportedSUMDBHosts: []string{"sum.golang.org"},
 		loadOnce:            &sync.Once{},
 		supportedSUMDBHosts: map[string]bool{},
+		osRemoveAllFailures: &sync.Map{},
 	}
 }
 
@@ -133,6 +138,21 @@ func (g *Goproxy) load() {
 			g.supportedSUMDBHosts[h] = true
 		}
 	}
+
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		gracefulStopChan := make(chan os.Signal, 1)
+		signal.Notify(gracefulStopChan, os.Interrupt, syscall.SIGTERM)
+		for {
+			select {
+			case <-ticker.C:
+				g.retryOSRemoveAllFailures()
+			case <-gracefulStopChan:
+				ticker.Stop()
+				return
+			}
+		}
+	}()
 }
 
 // ServeHTTP implements the `http.Handler`.
@@ -303,7 +323,11 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		responseInternalServerError(rw)
 		return
 	}
-	defer os.RemoveAll(goproxyRoot)
+	defer func() {
+		if err := os.RemoveAll(goproxyRoot); err != nil {
+			g.osRemoveAllFailures.Store(goproxyRoot, time.Now())
+		}
+	}()
 
 	if isLatest || isList || !semver.IsValid(moduleVersion) {
 		mlr := &modListResult{}
@@ -473,6 +497,23 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	setResponseCacheControlHeader(rw, !isLatest && !isList)
 
 	http.ServeContent(rw, r, "", cache.ModTime(), cache)
+}
+
+// retryOSRemoveAllFailures retries the `osRemoveAllFailures`.
+func (g *Goproxy) retryOSRemoveAllFailures() {
+	g.osRemoveAllFailures.Range(func(key, value interface{}) bool {
+		path := key.(string)
+		failedAt := value.(time.Time)
+		if time.Now().Sub(failedAt) >= time.Minute {
+			if err := os.RemoveAll(path); err != nil {
+				g.osRemoveAllFailures.Store(path, time.Now())
+			} else {
+				g.osRemoveAllFailures.Delete(path)
+			}
+		}
+
+		return true
+	})
 }
 
 // logErrorf logs the v as an error in the format.
