@@ -45,16 +45,16 @@ var regModuleVersionNotFound = regexp.MustCompile(
 // Goproxy is the top-level struct of this project.
 //
 // Note that the `Goproxy` will not mess with your environment variables, it
-// will still follow your GOPROXY, GONOPROXY, GOSUMDB, and GONOSUMDB. This means
-// that you can set GOPROXY to serve the `Goproxy` itself under other proxies,
-// and by setting GONOPROXY to indicate which modules the `Goproxy` should
-// download directly instead of using GOPROXY. And of course, you can also set
-// GOSUMDB and GONOSUMDB to indicate how the `Goproxy` should verify the
-// modules.
+// will still follow your GOPROXY, GONOPROXY, GOSUMDB, GONOSUMDB, and GOPRIVATE.
+// It means that you can set GOPROXY to serve the `Goproxy` itself under other
+// proxies, and by setting GONOPROXY and GOPRIVATE to indicate which modules the
+// `Goproxy` should download directly instead of using GOPROXY. And of course,
+// you can also set GOSUMDB, GONOSUMDB, and GOPRIVATE to indicate how the
+// `Goproxy` should verify the modules.
 //
-// ATTENTION: Since GONOPROXY has not yet been released (it will be introduced
-// in Go 1.13), so we implemented a built-in GONOPROXY support for the
-// `Goproxy`. Now, you can set GONOPROXY even before Go 1.13.
+// ATTENTION: Since GONOPROXY and GOPRIVATE have not yet been released (they
+// will be introduced in Go 1.13), so we implemented a built-in support for
+// them. Now, you can set them even before Go 1.13.
 //
 // It is highly recommended not to modify the value of any field of the
 // `Goproxy` after calling the `Goproxy.ServeHTTP`, which will cause

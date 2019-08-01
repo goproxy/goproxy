@@ -14,16 +14,13 @@ crazy file organization, no lengthy documentation, no annoying stuff, just a
 [`goproxy.Goproxy`](https://godoc.org/github.com/goproxy/goproxy#Goproxy) that
 implements the [`http.Handler`](https://godoc.org/net/http#Handler).
 
-**The project was created on 2019-06-03 and is still very young, so it's not
-production-ready yet. Issues welcome! PRs welcome!**
-
 ## Features
 
 * Extremely easy to use
 	* One struct: [`goproxy.Goproxy`](https://godoc.org/github.com/goproxy/goproxy#Goproxy)
 	* Two interfaces: [`goproxy.Cacher`](https://godoc.org/github.com/goproxy/goproxy#Cacher) and [`goproxy.Cache`](https://godoc.org/github.com/goproxy/goproxy#Cache)
 * Can be served under other Go module proxies by setting [`GOPROXY`](https://golang.org/cmd/go/#hdr-Environment_variables)
-* Built-in [`GONOPROXY`](https://tip.golang.org/cmd/go/#hdr-Environment_variables) (it will be introduced in Go 1.13) support
+* Built-in `GONOPROXY` and `GOPRIVATE` support
 * Supports multiple mainstream implementations of the [`goproxy.Cacher`](https://godoc.org/github.com/goproxy/goproxy#Cacher)
 	* Disk: [`cacher.Disk`](https://godoc.org/github.com/goproxy/goproxy/cacher#Disk)
 	* MinIO: [`cacher.MinIO`](https://godoc.org/github.com/goproxy/goproxy/cacher#MinIO)

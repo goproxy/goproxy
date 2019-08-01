@@ -76,8 +76,9 @@ func mod(
 		fmt.Sprint("GOPATH=", goproxyRoot),
 		fmt.Sprint("GOTMPDIR=", goproxyRoot),
 	)
-	if globsMatchPath(os.Getenv("GONOPROXY"), modulePath) {
-		cmd.Env = append(cmd.Env, "GOPROXY=direct", "GONOPROXY=")
+	if globsMatchPath(os.Getenv("GONOPROXY"), modulePath) ||
+		globsMatchPath(os.Getenv("GOPRIVATE"), modulePath) {
+		cmd.Env = append(cmd.Env, "GOPROXY=direct")
 	}
 
 	cmd.Dir = goproxyRoot
