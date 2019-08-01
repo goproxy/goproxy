@@ -28,7 +28,8 @@ import (
 // regModuleVersionNotFound is a regular expression that used to report whether
 // a message means a module version is not found.
 var regModuleVersionNotFound = regexp.MustCompile(
-	`(404 Not Found)|` +
+	`(400 Bad Request)|` +
+		`(404 Not Found)|` +
 		`(410 Gone)|` +
 		`(could not read Username)|` +
 		`(does not contain package)|` +
@@ -345,7 +346,32 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	if isLatest || isList || !semver.IsValid(moduleVersion) {
+	if isList {
+		mlar := &modListAllResult{}
+		if err := mod(
+			g.goBinWorkerChan,
+			goproxyRoot,
+			g.GoBinName,
+			modulePath,
+			moduleVersion,
+			mlar,
+		); err != nil {
+			if regModuleVersionNotFound.MatchString(err.Error()) {
+				setResponseCacheControlHeader(rw, 60)
+				responseNotFound(rw)
+			} else {
+				g.logError(err)
+				responseInternalServerError(rw)
+			}
+
+			return
+		}
+
+		setResponseCacheControlHeader(rw, 60)
+		responseString(rw, strings.Join(mlar.Versions, "\n"))
+
+		return
+	} else if isLatest || !semver.IsValid(moduleVersion) {
 		mlr := &modListResult{}
 		if err := mod(
 			g.goBinWorkerChan,
@@ -363,12 +389,6 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				responseInternalServerError(rw)
 			}
 
-			return
-		}
-
-		if isList {
-			setResponseCacheControlHeader(rw, 60)
-			responseString(rw, strings.Join(mlr.Versions, "\n"))
 			return
 		}
 

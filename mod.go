@@ -1,24 +1,36 @@
 package goproxy
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"io/ioutil"
+	"net/http"
 	"os"
 	"os/exec"
 	"path"
+	"sort"
 	"strings"
+
+	"golang.org/x/mod/module"
+	"golang.org/x/mod/semver"
 )
 
-// modListResult is the result of
-// `go list -json -m -versions <MODULE_PATH>@<MODULE_VERSION>`.
+// modListResult is a simplified result of
+// `go list -json -m <MODULE_PATH>@<MODULE_VERSION>`.
 type modListResult struct {
-	Version  string
-	Time     string
+	Version string
+}
+
+// modListAllResult is a simplified result of
+// `go list -json -m -versions <MODULE_PATH>@<MODULE_VERSION>`.
+type modListAllResult struct {
 	Versions []string
 }
 
-// modDownloadResult is the result of
+// modDownloadResult is a simplified result of
 // `go mod download -json <MODULE_PATH>@<MODULE_VERSION>`.
 type modDownloadResult struct {
 	Info  string
@@ -42,13 +54,305 @@ func mod(
 		}()
 	}
 
-	var (
-		operation string
-		args      []string
-	)
+	var operation string
 	switch result.(type) {
 	case *modListResult:
 		operation = "list"
+	case *modListAllResult:
+		operation = "list all"
+	case *modDownloadResult:
+		operation = "download"
+	default:
+		return errors.New("invalid result type")
+	}
+
+	explicitDirect := globsMatchPath(os.Getenv("GONOPROXY"), modulePath) ||
+		globsMatchPath(os.Getenv("GOPRIVATE"), modulePath)
+
+OuterSwitch:
+	switch envGOPROXY := os.Getenv("GOPROXY"); envGOPROXY {
+	case "", "direct":
+	default:
+		if explicitDirect {
+			break
+		}
+
+		escapedModulePath, err := module.EscapePath(modulePath)
+		if err != nil {
+			return err
+		}
+
+		escapedModuleVersion, err := module.EscapeVersion(moduleVersion)
+		if err != nil {
+			return err
+		}
+
+		for _, goproxy := range strings.Split(envGOPROXY, ",") {
+			if goproxy == "direct" {
+				explicitDirect = true
+				break OuterSwitch
+			}
+
+			switch operation {
+			case "list":
+				var url string
+				if moduleVersion == "latest" {
+					url = fmt.Sprintf(
+						"%s/%s/@latest",
+						goproxy,
+						escapedModulePath,
+					)
+				} else {
+					url = fmt.Sprintf(
+						"%s/%s/@v/%s.info",
+						goproxy,
+						escapedModulePath,
+						escapedModuleVersion,
+					)
+				}
+
+				res, err := http.Get(url)
+				if err != nil {
+					return err
+				}
+				defer res.Body.Close()
+
+				switch res.StatusCode {
+				case http.StatusOK:
+				case http.StatusBadRequest,
+					http.StatusNotFound,
+					http.StatusGone:
+					break
+				default:
+					return fmt.Errorf(
+						"mod list %s@%s: %s",
+						modulePath,
+						moduleVersion,
+						http.StatusText(res.StatusCode),
+					)
+				}
+
+				return json.NewDecoder(res.Body).Decode(result)
+			case "list all":
+				res, err := http.Get(fmt.Sprintf(
+					"%s/%s/@v/list",
+					goproxy,
+					escapedModulePath,
+				))
+				if err != nil {
+					return err
+				}
+				defer res.Body.Close()
+
+				switch res.StatusCode {
+				case http.StatusOK:
+				case http.StatusBadRequest,
+					http.StatusNotFound,
+					http.StatusGone:
+					break
+				default:
+					return fmt.Errorf(
+						"mod list all %s@%s: %s",
+						modulePath,
+						moduleVersion,
+						http.StatusText(res.StatusCode),
+					)
+				}
+
+				b, err := ioutil.ReadAll(res.Body)
+				if err != nil {
+					return err
+				}
+
+				mlar := result.(*modListAllResult)
+				for _, b := range bytes.Split(b, []byte{'\n'}) {
+					if len(b) == 0 {
+						continue
+					}
+
+					mlar.Versions = append(
+						mlar.Versions,
+						string(b),
+					)
+				}
+
+				sort.Slice(mlar.Versions, func(i, j int) bool {
+					return semver.Compare(
+						mlar.Versions[i],
+						mlar.Versions[j],
+					) < 0
+				})
+
+				return nil
+			case "download":
+				infoFileRes, err := http.Get(fmt.Sprintf(
+					"%s/%s/@v/%s.info",
+					goproxy,
+					escapedModulePath,
+					escapedModuleVersion,
+				))
+				if err != nil {
+					return err
+				}
+				defer infoFileRes.Body.Close()
+
+				switch infoFileRes.StatusCode {
+				case http.StatusOK:
+				case http.StatusBadRequest,
+					http.StatusNotFound,
+					http.StatusGone:
+					break
+				default:
+					return fmt.Errorf(
+						"mod download %s@%s: %s",
+						modulePath,
+						moduleVersion,
+						http.StatusText(
+							infoFileRes.StatusCode,
+						),
+					)
+				}
+
+				infoFile, err := ioutil.TempFile(
+					goproxyRoot,
+					"info",
+				)
+				if err != nil {
+					return err
+				}
+
+				if _, err := io.Copy(
+					infoFile,
+					infoFileRes.Body,
+				); err != nil {
+					return err
+				}
+
+				if err := infoFile.Close(); err != nil {
+					return err
+				}
+
+				modFileRes, err := http.Get(fmt.Sprintf(
+					"%s/%s/@v/%s.mod",
+					goproxy,
+					escapedModulePath,
+					escapedModuleVersion,
+				))
+				if err != nil {
+					return err
+				}
+				defer modFileRes.Body.Close()
+
+				switch modFileRes.StatusCode {
+				case http.StatusOK:
+				case http.StatusBadRequest,
+					http.StatusNotFound,
+					http.StatusGone:
+					break
+				default:
+					return fmt.Errorf(
+						"mod download %s@%s: %s",
+						modulePath,
+						moduleVersion,
+						http.StatusText(
+							modFileRes.StatusCode,
+						),
+					)
+				}
+
+				modFile, err := ioutil.TempFile(
+					goproxyRoot,
+					"mod",
+				)
+				if err != nil {
+					return err
+				}
+
+				if _, err := io.Copy(
+					modFile,
+					modFileRes.Body,
+				); err != nil {
+					return err
+				}
+
+				if err := modFile.Close(); err != nil {
+					return err
+				}
+
+				zipFileRes, err := http.Get(fmt.Sprintf(
+					"%s/%s/@v/%s.zip",
+					goproxy,
+					escapedModulePath,
+					escapedModuleVersion,
+				))
+				if err != nil {
+					return err
+				}
+				defer zipFileRes.Body.Close()
+
+				switch zipFileRes.StatusCode {
+				case http.StatusOK:
+				case http.StatusBadRequest,
+					http.StatusNotFound,
+					http.StatusGone:
+					break
+				default:
+					return fmt.Errorf(
+						"mod download %s@%s: %s",
+						modulePath,
+						moduleVersion,
+						http.StatusText(
+							zipFileRes.StatusCode,
+						),
+					)
+				}
+
+				zipFile, err := ioutil.TempFile(
+					goproxyRoot,
+					"zip",
+				)
+				if err != nil {
+					return err
+				}
+
+				if _, err := io.Copy(
+					zipFile,
+					zipFileRes.Body,
+				); err != nil {
+					return err
+				}
+
+				if err := zipFile.Close(); err != nil {
+					return err
+				}
+
+				mdr := result.(*modDownloadResult)
+				mdr.Info = infoFile.Name()
+				mdr.GoMod = modFile.Name()
+				mdr.Zip = zipFile.Name()
+
+				return nil
+			}
+		}
+
+		return fmt.Errorf(
+			"mod %s %s@%s: 404 Not Found",
+			operation,
+			modulePath,
+			moduleVersion,
+		)
+	}
+
+	var args []string
+	switch operation {
+	case "list":
+		args = []string{
+			"list",
+			"-json",
+			"-m",
+			fmt.Sprint(modulePath, "@", moduleVersion),
+		}
+	case "list all":
 		args = []string{
 			"list",
 			"-json",
@@ -56,16 +360,13 @@ func mod(
 			"-versions",
 			fmt.Sprint(modulePath, "@", moduleVersion),
 		}
-	case *modDownloadResult:
-		operation = "download"
+	case "download":
 		args = []string{
 			"mod",
 			"download",
 			"-json",
 			fmt.Sprint(modulePath, "@", moduleVersion),
 		}
-	default:
-		return errors.New("invalid result type")
 	}
 
 	cmd := exec.Command(goBinName, args...)
@@ -76,8 +377,7 @@ func mod(
 		fmt.Sprint("GOPATH=", goproxyRoot),
 		fmt.Sprint("GOTMPDIR=", goproxyRoot),
 	)
-	if globsMatchPath(os.Getenv("GONOPROXY"), modulePath) ||
-		globsMatchPath(os.Getenv("GOPRIVATE"), modulePath) {
+	if explicitDirect {
 		cmd.Env = append(cmd.Env, "GOPROXY=direct")
 	}
 
