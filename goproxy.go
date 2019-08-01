@@ -184,6 +184,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	cachingForever := false
 	if strings.HasPrefix(name, "sumdb/") {
 		sumdbURL := strings.TrimPrefix(name, "sumdb/")
 		sumdbPathOffset := strings.Index(sumdbURL, "/")
@@ -208,16 +209,15 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 
 		sumdbPath := sumdbURL[sumdbPathOffset:]
-		isLatest := false
 		switch {
 		case sumdbPath == "/supported":
 			setResponseCacheControlHeader(rw, 60)
 			rw.Write(nil) // 200 OK
 			return
 		case sumdbPath == "/latest":
-			isLatest = true
 		case strings.HasPrefix(sumdbPath, "/lookup/"),
 			strings.HasPrefix(sumdbPath, "/tile/"):
+			cachingForever = true
 		default:
 			setResponseCacheControlHeader(rw, 3600)
 			responseNotFound(rw)
@@ -272,10 +272,10 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			sumdbRes.Header.Get("Content-Length"),
 		)
 
-		if isLatest {
-			setResponseCacheControlHeader(rw, 60)
-		} else {
+		if cachingForever {
 			setResponseCacheControlHeader(rw, 365*24*3600)
+		} else {
+			setResponseCacheControlHeader(rw, 60)
 		}
 
 		io.Copy(rw, sumdbRes.Body)
@@ -382,6 +382,8 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 		nameBase = fmt.Sprint(escapedModuleVersion, nameExt)
 		name = path.Join(path.Dir(name), nameBase)
+	} else {
+		cachingForever = true
 	}
 
 	cacher := g.Cacher
@@ -512,10 +514,10 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		),
 	)
 
-	if isLatest || isList {
-		setResponseCacheControlHeader(rw, 60)
-	} else {
+	if cachingForever {
 		setResponseCacheControlHeader(rw, 365*24*3600)
+	} else {
+		setResponseCacheControlHeader(rw, 60)
 	}
 
 	http.ServeContent(rw, r, "", cache.ModTime(), cache)
