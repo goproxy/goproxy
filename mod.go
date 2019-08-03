@@ -122,7 +122,7 @@ OuterSwitch:
 				case http.StatusBadRequest,
 					http.StatusNotFound,
 					http.StatusGone:
-					break
+					continue
 				default:
 					return fmt.Errorf(
 						"mod list %s@%s: %s",
@@ -149,7 +149,7 @@ OuterSwitch:
 				case http.StatusBadRequest,
 					http.StatusNotFound,
 					http.StatusGone:
-					break
+					continue
 				default:
 					return fmt.Errorf(
 						"mod list all %s@%s: %s",
@@ -201,7 +201,7 @@ OuterSwitch:
 				case http.StatusBadRequest,
 					http.StatusNotFound,
 					http.StatusGone:
-					break
+					continue
 				default:
 					return fmt.Errorf(
 						"mod download %s@%s: %s",
@@ -248,7 +248,7 @@ OuterSwitch:
 				case http.StatusBadRequest,
 					http.StatusNotFound,
 					http.StatusGone:
-					break
+					continue
 				default:
 					return fmt.Errorf(
 						"mod download %s@%s: %s",
@@ -295,7 +295,7 @@ OuterSwitch:
 				case http.StatusBadRequest,
 					http.StatusNotFound,
 					http.StatusGone:
-					break
+					continue
 				default:
 					return fmt.Errorf(
 						"mod download %s@%s: %s",
