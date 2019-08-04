@@ -323,15 +323,15 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	defer os.RemoveAll(goproxyRoot)
 
 	if isList {
-		mlar := &modListAllResult{}
-		if err := mod(
+		mr, err := mod(
 			g.goBinWorkerChan,
 			goproxyRoot,
+			"list",
 			g.GoBinName,
 			modulePath,
 			moduleVersion,
-			mlar,
-		); err != nil {
+		)
+		if err != nil {
 			if regModuleVersionNotFound.MatchString(err.Error()) {
 				setResponseCacheControlHeader(rw, 60)
 				responseNotFound(rw)
@@ -344,19 +344,26 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 
 		setResponseCacheControlHeader(rw, 60)
-		responseString(rw, strings.Join(mlar.Versions, "\n"))
+		responseString(rw, strings.Join(mr.Versions, "\n"))
 
 		return
 	} else if isLatest || !semver.IsValid(moduleVersion) {
-		mlr := &modListResult{}
-		if err := mod(
+		var operation string
+		if isLatest {
+			operation = "latest"
+		} else {
+			operation = "lookup"
+		}
+
+		mr, err := mod(
 			g.goBinWorkerChan,
 			goproxyRoot,
+			operation,
 			g.GoBinName,
 			modulePath,
 			moduleVersion,
-			mlr,
-		); err != nil {
+		)
+		if err != nil {
 			if regModuleVersionNotFound.MatchString(err.Error()) {
 				setResponseCacheControlHeader(rw, 60)
 				responseNotFound(rw)
@@ -368,7 +375,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		moduleVersion = mlr.Version
+		moduleVersion = mr.Version
 		escapedModuleVersion, err = module.EscapeVersion(moduleVersion)
 		if err != nil {
 			g.logError(err)
@@ -389,15 +396,15 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	cache, err := cacher.Cache(r.Context(), name)
 	if err == ErrCacheNotFound {
-		mdr := &modDownloadResult{}
-		if err := mod(
+		mr, err := mod(
 			g.goBinWorkerChan,
 			goproxyRoot,
+			"download",
 			g.GoBinName,
 			modulePath,
 			moduleVersion,
-			mdr,
-		); err != nil {
+		)
+		if err != nil {
 			if regModuleVersionNotFound.MatchString(err.Error()) {
 				setResponseCacheControlHeader(rw, 60)
 				responseNotFound(rw)
@@ -412,7 +419,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		namePrefix := strings.TrimSuffix(name, nameExt)
 
 		infoCache, err := newTempCache(
-			mdr.Info,
+			mr.Info,
 			fmt.Sprint(namePrefix, ".info"),
 			cacher.NewHash(),
 		)
@@ -430,7 +437,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 
 		modCache, err := newTempCache(
-			mdr.GoMod,
+			mr.GoMod,
 			fmt.Sprint(namePrefix, ".mod"),
 			cacher.NewHash(),
 		)
@@ -448,7 +455,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 
 		zipCache, err := newTempCache(
-			mdr.Zip,
+			mr.Zip,
 			fmt.Sprint(namePrefix, ".zip"),
 			cacher.NewHash(),
 		)
@@ -468,11 +475,11 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		var filename string
 		switch nameExt {
 		case ".info":
-			filename = mdr.Info
+			filename = mr.Info
 		case ".mod":
-			filename = mdr.GoMod
+			filename = mr.GoMod
 		case ".zip":
-			filename = mdr.Zip
+			filename = mr.Zip
 		}
 
 		// Note that we need to create a new instance of the `tempCache`

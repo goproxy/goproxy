@@ -18,35 +18,24 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-// modListResult is a simplified result of
-// `go list -json -m <MODULE_PATH>@<MODULE_VERSION>`.
-type modListResult struct {
-	Version string
-}
-
-// modListAllResult is a simplified result of
-// `go list -json -m -versions <MODULE_PATH>@<MODULE_VERSION>`.
-type modListAllResult struct {
+// modResult is an unified result of the `mod`.
+type modResult struct {
+	Version  string
 	Versions []string
+	Info     string
+	GoMod    string
+	Zip      string
 }
 
-// modDownloadResult is a simplified result of
-// `go mod download -json <MODULE_PATH>@<MODULE_VERSION>`.
-type modDownloadResult struct {
-	Info  string
-	GoMod string
-	Zip   string
-}
-
-// mod executes the Go modules related commands based on the type of the result.
+// mod executes the Go modules related commands based on the operation.
 func mod(
 	workerChan chan struct{},
 	goproxyRoot string,
+	operation string,
 	goBinName string,
 	modulePath string,
 	moduleVersion string,
-	result interface{},
-) error {
+) (*modResult, error) {
 	if workerChan != nil {
 		workerChan <- struct{}{}
 		defer func() {
@@ -54,16 +43,10 @@ func mod(
 		}()
 	}
 
-	var operation string
-	switch result.(type) {
-	case *modListResult:
-		operation = "list"
-	case *modListAllResult:
-		operation = "list all"
-	case *modDownloadResult:
-		operation = "download"
+	switch operation {
+	case "lookup", "latest", "list", "download":
 	default:
-		return errors.New("invalid result type")
+		return nil, errors.New("invalid result type")
 	}
 
 	explicitDirect := globsMatchPath(os.Getenv("GONOPROXY"), modulePath) ||
@@ -79,12 +62,12 @@ OuterSwitch:
 
 		escapedModulePath, err := module.EscapePath(modulePath)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		escapedModuleVersion, err := module.EscapeVersion(moduleVersion)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		for _, goproxy := range strings.Split(envGOPROXY, ",") {
@@ -94,26 +77,26 @@ OuterSwitch:
 			}
 
 			switch operation {
-			case "list":
+			case "lookup", "latest":
 				var url string
-				if moduleVersion == "latest" {
-					url = fmt.Sprintf(
-						"%s/%s/@latest",
-						goproxy,
-						escapedModulePath,
-					)
-				} else {
+				if operation == "lookup" {
 					url = fmt.Sprintf(
 						"%s/%s/@v/%s.info",
 						goproxy,
 						escapedModulePath,
 						escapedModuleVersion,
 					)
+				} else {
+					url = fmt.Sprintf(
+						"%s/%s/@latest",
+						goproxy,
+						escapedModulePath,
+					)
 				}
 
 				res, err := http.Get(url)
 				if err != nil {
-					return err
+					return nil, err
 				}
 				defer res.Body.Close()
 
@@ -124,23 +107,31 @@ OuterSwitch:
 					http.StatusGone:
 					continue
 				default:
-					return fmt.Errorf(
-						"mod list %s@%s: %s",
+					return nil, fmt.Errorf(
+						"mod %s %s@%s: %s",
+						operation,
 						modulePath,
 						moduleVersion,
 						http.StatusText(res.StatusCode),
 					)
 				}
 
-				return json.NewDecoder(res.Body).Decode(result)
-			case "list all":
+				mr := modResult{}
+				if err := json.NewDecoder(res.Body).Decode(
+					&mr,
+				); err != nil {
+					return nil, err
+				}
+
+				return &mr, nil
+			case "list":
 				res, err := http.Get(fmt.Sprintf(
 					"%s/%s/@v/list",
 					goproxy,
 					escapedModulePath,
 				))
 				if err != nil {
-					return err
+					return nil, err
 				}
 				defer res.Body.Close()
 
@@ -151,8 +142,8 @@ OuterSwitch:
 					http.StatusGone:
 					continue
 				default:
-					return fmt.Errorf(
-						"mod list all %s@%s: %s",
+					return nil, fmt.Errorf(
+						"mod list %s@%s: %s",
 						modulePath,
 						moduleVersion,
 						http.StatusText(res.StatusCode),
@@ -161,29 +152,28 @@ OuterSwitch:
 
 				b, err := ioutil.ReadAll(res.Body)
 				if err != nil {
-					return err
+					return nil, err
 				}
 
-				mlar := result.(*modListAllResult)
+				versions := []string{}
 				for _, b := range bytes.Split(b, []byte{'\n'}) {
 					if len(b) == 0 {
 						continue
 					}
 
-					mlar.Versions = append(
-						mlar.Versions,
-						string(b),
-					)
+					versions = append(versions, string(b))
 				}
 
-				sort.Slice(mlar.Versions, func(i, j int) bool {
+				sort.Slice(versions, func(i, j int) bool {
 					return semver.Compare(
-						mlar.Versions[i],
-						mlar.Versions[j],
+						versions[i],
+						versions[j],
 					) < 0
 				})
 
-				return nil
+				return &modResult{
+					Versions: versions,
+				}, nil
 			case "download":
 				infoFileRes, err := http.Get(fmt.Sprintf(
 					"%s/%s/@v/%s.info",
@@ -192,7 +182,7 @@ OuterSwitch:
 					escapedModuleVersion,
 				))
 				if err != nil {
-					return err
+					return nil, err
 				}
 				defer infoFileRes.Body.Close()
 
@@ -203,7 +193,7 @@ OuterSwitch:
 					http.StatusGone:
 					continue
 				default:
-					return fmt.Errorf(
+					return nil, fmt.Errorf(
 						"mod download %s@%s: %s",
 						modulePath,
 						moduleVersion,
@@ -218,18 +208,18 @@ OuterSwitch:
 					"info",
 				)
 				if err != nil {
-					return err
+					return nil, err
 				}
 
 				if _, err := io.Copy(
 					infoFile,
 					infoFileRes.Body,
 				); err != nil {
-					return err
+					return nil, err
 				}
 
 				if err := infoFile.Close(); err != nil {
-					return err
+					return nil, err
 				}
 
 				modFileRes, err := http.Get(fmt.Sprintf(
@@ -239,7 +229,7 @@ OuterSwitch:
 					escapedModuleVersion,
 				))
 				if err != nil {
-					return err
+					return nil, err
 				}
 				defer modFileRes.Body.Close()
 
@@ -250,7 +240,7 @@ OuterSwitch:
 					http.StatusGone:
 					continue
 				default:
-					return fmt.Errorf(
+					return nil, fmt.Errorf(
 						"mod download %s@%s: %s",
 						modulePath,
 						moduleVersion,
@@ -265,18 +255,18 @@ OuterSwitch:
 					"mod",
 				)
 				if err != nil {
-					return err
+					return nil, err
 				}
 
 				if _, err := io.Copy(
 					modFile,
 					modFileRes.Body,
 				); err != nil {
-					return err
+					return nil, err
 				}
 
 				if err := modFile.Close(); err != nil {
-					return err
+					return nil, err
 				}
 
 				zipFileRes, err := http.Get(fmt.Sprintf(
@@ -286,7 +276,7 @@ OuterSwitch:
 					escapedModuleVersion,
 				))
 				if err != nil {
-					return err
+					return nil, err
 				}
 				defer zipFileRes.Body.Close()
 
@@ -297,7 +287,7 @@ OuterSwitch:
 					http.StatusGone:
 					continue
 				default:
-					return fmt.Errorf(
+					return nil, fmt.Errorf(
 						"mod download %s@%s: %s",
 						modulePath,
 						moduleVersion,
@@ -312,30 +302,29 @@ OuterSwitch:
 					"zip",
 				)
 				if err != nil {
-					return err
+					return nil, err
 				}
 
 				if _, err := io.Copy(
 					zipFile,
 					zipFileRes.Body,
 				); err != nil {
-					return err
+					return nil, err
 				}
 
 				if err := zipFile.Close(); err != nil {
-					return err
+					return nil, err
 				}
 
-				mdr := result.(*modDownloadResult)
-				mdr.Info = infoFile.Name()
-				mdr.GoMod = modFile.Name()
-				mdr.Zip = zipFile.Name()
-
-				return nil
+				return &modResult{
+					Info:  infoFile.Name(),
+					GoMod: modFile.Name(),
+					Zip:   zipFile.Name(),
+				}, nil
 			}
 		}
 
-		return fmt.Errorf(
+		return nil, fmt.Errorf(
 			"mod %s %s@%s: 404 Not Found",
 			operation,
 			modulePath,
@@ -345,14 +334,14 @@ OuterSwitch:
 
 	var args []string
 	switch operation {
-	case "list":
+	case "lookup", "latest":
 		args = []string{
 			"list",
 			"-json",
 			"-m",
 			fmt.Sprint(modulePath, "@", moduleVersion),
 		}
-	case "list all":
+	case "list":
 		args = []string{
 			"list",
 			"-json",
@@ -388,7 +377,7 @@ OuterSwitch:
 		if len(output) > 0 {
 			m := map[string]interface{}{}
 			if err := json.Unmarshal(output, &m); err != nil {
-				return err
+				return nil, err
 			}
 
 			if es, ok := m["Error"].(string); ok {
@@ -398,7 +387,7 @@ OuterSwitch:
 			output = ee.Stderr
 		}
 
-		return fmt.Errorf(
+		return nil, fmt.Errorf(
 			"mod %s %s@%s: %s",
 			operation,
 			modulePath,
@@ -407,7 +396,12 @@ OuterSwitch:
 		)
 	}
 
-	return json.Unmarshal(stdout, result)
+	mr := modResult{}
+	if err := json.Unmarshal(stdout, &mr); err != nil {
+		return nil, err
+	}
+
+	return &mr, nil
 }
 
 // globsMatchPath reports whether any path prefix of target matches one of the
