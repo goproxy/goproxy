@@ -522,17 +522,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 	defer cache.Close()
 
-	contentType := ""
-	switch nameExt {
-	case ".info":
-		contentType = "application/json; charset=utf-8"
-	case ".mod":
-		contentType = "text/plain; charset=utf-8"
-	case ".zip":
-		contentType = "application/zip"
-	}
-
-	rw.Header().Set("Content-Type", contentType)
+	rw.Header().Set("Content-Type", cache.MIMEType())
 	rw.Header().Set(
 		"ETag",
 		fmt.Sprintf(

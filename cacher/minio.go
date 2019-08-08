@@ -120,6 +120,7 @@ func (m *MinIO) Cache(ctx context.Context, name string) (goproxy.Cache, error) {
 	return &minioCache{
 		object:   object,
 		name:     name,
+		mimeType: objectInfo.ContentType,
 		size:     objectInfo.Size,
 		modTime:  objectInfo.LastModified,
 		checksum: checksum,
@@ -142,7 +143,7 @@ func (m *MinIO) SetCache(ctx context.Context, c goproxy.Cache) error {
 			UserMetadata: map[string]string{
 				"Checksum": hex.EncodeToString(c.Checksum()),
 			},
-			ContentType: mimeTypeByExtension(path.Ext(c.Name())),
+			ContentType: c.MIMEType(),
 		},
 	)
 
@@ -160,6 +161,7 @@ func isMinIOObjectNotExist(err error) bool {
 type minioCache struct {
 	object   *minio.Object
 	name     string
+	mimeType string
 	size     int64
 	modTime  time.Time
 	checksum []byte
@@ -183,6 +185,11 @@ func (mc *minioCache) Close() error {
 // Name implements the `goproxy.Cache`.
 func (mc *minioCache) Name() string {
 	return mc.name
+}
+
+// MIMEType implements the `goproxy.Cache`.
+func (mc *minioCache) MIMEType() string {
+	return mc.mimeType
 }
 
 // Size implements the `goproxy.Cache`.

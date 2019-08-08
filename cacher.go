@@ -6,7 +6,10 @@ import (
 	"errors"
 	"hash"
 	"io"
+	"mime"
 	"os"
+	"path"
+	"strings"
 	"time"
 )
 
@@ -45,6 +48,9 @@ type Cache interface {
 	// Name returns the unique Unix path style name of the underlying cache.
 	Name() string
 
+	// MIMEType returns the MIME type of the underlying cache.
+	MIMEType() string
+
 	// Size returns the length in bytes of the underlying cache.
 	Size() int64
 
@@ -77,17 +83,30 @@ func (tc *tempCacher) SetCache(ctx context.Context, c Cache) error {
 type tempCache struct {
 	file     *os.File
 	name     string
+	mimeType string
 	size     int64
 	modTime  time.Time
 	checksum []byte
 }
 
 // newTempCache returns a new instance of the `tempCache` with the filename, the
-// name and the fileHash.
+// name, and the fileHash.
 func newTempCache(filename, name string, fileHash hash.Hash) (Cache, error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, err
+	}
+
+	var mimeType string
+	switch ext := strings.ToLower(path.Ext(name)); ext {
+	case ".info":
+		mimeType = "application/json; charset=utf-8"
+	case ".mod":
+		mimeType = "text/plain; charset=utf-8"
+	case ".zip":
+		mimeType = "application/zip"
+	default:
+		mimeType = mime.TypeByExtension(ext)
 	}
 
 	fileInfo, err := file.Stat()
@@ -106,6 +125,7 @@ func newTempCache(filename, name string, fileHash hash.Hash) (Cache, error) {
 	return &tempCache{
 		file:     file,
 		name:     name,
+		mimeType: mimeType,
 		size:     fileInfo.Size(),
 		modTime:  fileInfo.ModTime(),
 		checksum: fileHash.Sum(nil),
@@ -130,6 +150,11 @@ func (tc *tempCache) Close() error {
 // Name implements the `Cache`.
 func (tc *tempCache) Name() string {
 	return tc.name
+}
+
+// MIMEType implements the `Cache`.
+func (tc *tempCache) MIMEType() string {
+	return tc.mimeType
 }
 
 // Size implements the `Cache`.

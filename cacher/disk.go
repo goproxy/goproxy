@@ -6,8 +6,11 @@ import (
 	"hash"
 	"io"
 	"io/ioutil"
+	"mime"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/goproxy/goproxy"
@@ -35,6 +38,18 @@ func (d *Disk) Cache(ctx context.Context, name string) (goproxy.Cache, error) {
 		return nil, err
 	}
 
+	var mimeType string
+	switch ext := strings.ToLower(path.Ext(name)); ext {
+	case ".info":
+		mimeType = "application/json; charset=utf-8"
+	case ".mod":
+		mimeType = "text/plain; charset=utf-8"
+	case ".zip":
+		mimeType = "application/zip"
+	default:
+		mimeType = mime.TypeByExtension(ext)
+	}
+
 	fileInfo, err := file.Stat()
 	if err != nil {
 		return nil, err
@@ -52,6 +67,7 @@ func (d *Disk) Cache(ctx context.Context, name string) (goproxy.Cache, error) {
 	return &diskCache{
 		file:     file,
 		name:     name,
+		mimeType: mimeType,
 		size:     fileInfo.Size(),
 		modTime:  fileInfo.ModTime(),
 		checksum: fileHash.Sum(nil),
@@ -80,6 +96,7 @@ func (d *Disk) SetCache(ctx context.Context, c goproxy.Cache) error {
 type diskCache struct {
 	file     *os.File
 	name     string
+	mimeType string
 	size     int64
 	modTime  time.Time
 	checksum []byte
@@ -103,6 +120,11 @@ func (dc *diskCache) Close() error {
 // Name implements the `goproxy.Cache`.
 func (dc *diskCache) Name() string {
 	return dc.name
+}
+
+// MIMEType implements the `goproxy.Cache`.
+func (dc *diskCache) MIMEType() string {
+	return dc.mimeType
 }
 
 // Size implements the `goproxy.Cache`.
