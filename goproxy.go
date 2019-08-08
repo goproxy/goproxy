@@ -211,15 +211,20 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 
 		sumdbPath := sumdbURL[sumdbPathOffset:]
+		var contentType string
 		switch {
 		case sumdbPath == "/supported":
 			setResponseCacheControlHeader(rw, 60)
 			rw.Write(nil) // 200 OK
 			return
 		case sumdbPath == "/latest":
-		case strings.HasPrefix(sumdbPath, "/lookup/"),
-			strings.HasPrefix(sumdbPath, "/tile/"):
+			contentType = "text/plain; charset=utf-8"
+		case strings.HasPrefix(sumdbPath, "/lookup/"):
 			cachingForever = true
+			contentType = "text/plain; charset=utf-8"
+		case strings.HasPrefix(sumdbPath, "/tile/"):
+			cachingForever = true
+			contentType = "application/octet-stream"
 		default:
 			setResponseCacheControlHeader(rw, 3600)
 			responseNotFound(rw)
@@ -265,10 +270,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		rw.Header().Set(
-			"Content-Type",
-			sumdbRes.Header.Get("Content-Type"),
-		)
+		rw.Header().Set("Content-Type", contentType)
 		rw.Header().Set(
 			"Content-Length",
 			sumdbRes.Header.Get("Content-Length"),

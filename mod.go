@@ -376,10 +376,11 @@ func mod(
 
 	cmd.Env = append(
 		cmd.Env,
-		"GO111MODULE=on",
 		fmt.Sprint("GOCACHE=", goproxyRoot),
 		fmt.Sprint("GOPATH=", goproxyRoot),
-		fmt.Sprint("GOPROXY=", envGOPROXY),
+		"GO111MODULE=on",
+		"GOPROXY=direct",
+		"GONOPROXY=",
 		fmt.Sprint("GOTMPDIR=", goproxyRoot),
 	)
 
