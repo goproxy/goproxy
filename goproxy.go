@@ -63,15 +63,24 @@ var regModuleVersionNotFound = regexp.MustCompile(
 type Goproxy struct {
 	// GoBinName is the name of the Go binary.
 	//
-	// Default: "go"
+	// Default value: "go"
 	GoBinName string `mapstructure:"go_bin_name"`
+
+	// GoBinEnv is the environment of the Go binary. Each entry is of the
+	// form "key=value".
+	//
+	// If the `GoBinEnv` contains duplicate environment keys, only the last
+	// value in the slice for each duplicate key is used.
+	//
+	// Default value: `os.Environ()`
+	GoBinEnv []string
 
 	// MaxGoBinWorkers is the maximum number of the Go binary commands that
 	// are allowed to execute at the same time.
 	//
 	// If the `MaxGoBinWorkers` is zero, then there will be no limitations.
 	//
-	// Default: 0
+	// Default value: 0
 	MaxGoBinWorkers int `mapstructure:"max_go_bin_workers"`
 
 	// PathPrefix is the prefix of all request paths. It will be used to
@@ -80,7 +89,7 @@ type Goproxy struct {
 	// Note that when the `PathPrefix` is not empty, then it should start
 	// with "/".
 	//
-	// Default: ""
+	// Default value: ""
 	PathPrefix string `mapstructure:"path_prefix"`
 
 	// Cacher is the `Cacher` that used to cache module files.
@@ -88,12 +97,12 @@ type Goproxy struct {
 	// If the `Cacher` is nil, the module files will be temporarily stored
 	// in runtime memory and discarded as the request ends.
 	//
-	// Default: nil
+	// Default value: nil
 	Cacher Cacher `mapstructure:"cacher"`
 
 	// SupportedSUMDBHosts is the supported checksum database hosts.
 	//
-	// Default: ["sum.golang.org"]
+	// Default value: ["sum.golang.org"]
 	SupportedSUMDBHosts []string `mapstructure:"supported_sumdb_hosts"`
 
 	// ErrorLogger is the `log.Logger` that logs errors that occur while
@@ -102,10 +111,11 @@ type Goproxy struct {
 	// If the `ErrorLogger` is nil, logging is done via the log package's
 	// standard logger.
 	//
-	// Default: nil
+	// Default value: nil
 	ErrorLogger *log.Logger `mapstructure:"-"`
 
 	loadOnce            *sync.Once
+	goBinEnv            map[string]string
 	goBinWorkerChan     chan struct{}
 	supportedSUMDBHosts map[string]bool
 }
@@ -117,14 +127,25 @@ type Goproxy struct {
 func New() *Goproxy {
 	return &Goproxy{
 		GoBinName:           "go",
+		GoBinEnv:            os.Environ(),
 		SupportedSUMDBHosts: []string{"sum.golang.org"},
 		loadOnce:            &sync.Once{},
+		goBinEnv:            map[string]string{},
 		supportedSUMDBHosts: map[string]bool{},
 	}
 }
 
 // load loads the stuff of the g up.
 func (g *Goproxy) load() {
+	for _, env := range g.GoBinEnv {
+		parts := strings.SplitN(env, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		g.goBinEnv[parts[0]] = parts[1]
+	}
+
 	if g.MaxGoBinWorkers != 0 {
 		g.goBinWorkerChan = make(chan struct{}, g.MaxGoBinWorkers)
 	}
@@ -328,6 +349,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			goproxyRoot,
 			"list",
 			g.GoBinName,
+			g.goBinEnv,
 			modulePath,
 			moduleVersion,
 		)
@@ -360,6 +382,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			goproxyRoot,
 			operation,
 			g.GoBinName,
+			g.goBinEnv,
 			modulePath,
 			moduleVersion,
 		)
@@ -401,6 +424,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			goproxyRoot,
 			"download",
 			g.GoBinName,
+			g.goBinEnv,
 			modulePath,
 			moduleVersion,
 		)

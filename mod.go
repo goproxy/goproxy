@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
-	"os"
 	"os/exec"
 	"path"
 	"sort"
@@ -33,6 +32,7 @@ func mod(
 	goproxyRoot string,
 	operation string,
 	goBinName string,
+	goBinEnv map[string]string,
 	modulePath string,
 	moduleVersion string,
 ) (*modResult, error) {
@@ -49,15 +49,23 @@ func mod(
 		return nil, errors.New("invalid result type")
 	}
 
-	explicitDirect := globsMatchPath(os.Getenv("GONOPROXY"), modulePath) ||
-		globsMatchPath(os.Getenv("GOPRIVATE"), modulePath)
+	var envGOPROXY string
+	if globsMatchPath(goBinEnv["GONOPROXY"], modulePath) ||
+		globsMatchPath(goBinEnv["GOPRIVATE"], modulePath) {
+		envGOPROXY = "direct"
+	} else {
+		envGOPROXY = goBinEnv["GOPROXY"]
+	}
 
-OuterSwitch:
-	switch envGOPROXY := os.Getenv("GOPROXY"); envGOPROXY {
-	case "", "direct":
-	default:
-		if explicitDirect {
-			break
+	if envGOPROXY != "direct" {
+		var goproxies []string
+		if envGOPROXY != "" {
+			goproxies = strings.Split(envGOPROXY, ",")
+		} else {
+			goproxies = []string{
+				"https://proxy.golang.org",
+				"direct",
+			}
 		}
 
 		escapedModulePath, err := module.EscapePath(modulePath)
@@ -70,10 +78,10 @@ OuterSwitch:
 			return nil, err
 		}
 
-		for _, goproxy := range strings.Split(envGOPROXY, ",") {
+		for _, goproxy := range goproxies {
 			if goproxy == "direct" {
-				explicitDirect = true
-				break OuterSwitch
+				envGOPROXY = "direct"
+				break
 			}
 
 			switch operation {
@@ -324,12 +332,14 @@ OuterSwitch:
 			}
 		}
 
-		return nil, fmt.Errorf(
-			"mod %s %s@%s: 404 Not Found",
-			operation,
-			modulePath,
-			moduleVersion,
-		)
+		if envGOPROXY != "direct" {
+			return nil, fmt.Errorf(
+				"mod %s %s@%s: 404 Not Found",
+				operation,
+				modulePath,
+				moduleVersion,
+			)
+		}
 	}
 
 	var args []string
@@ -359,16 +369,19 @@ OuterSwitch:
 	}
 
 	cmd := exec.Command(goBinName, args...)
+	cmd.Env = make([]string, 0, len(goBinEnv)+5)
+	for k, v := range goBinEnv {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+	}
+
 	cmd.Env = append(
-		os.Environ(),
+		cmd.Env,
 		"GO111MODULE=on",
 		fmt.Sprint("GOCACHE=", goproxyRoot),
 		fmt.Sprint("GOPATH=", goproxyRoot),
+		fmt.Sprint("GOPROXY=", envGOPROXY),
 		fmt.Sprint("GOTMPDIR=", goproxyRoot),
 	)
-	if explicitDirect {
-		cmd.Env = append(cmd.Env, "GOPROXY=direct")
-	}
 
 	cmd.Dir = goproxyRoot
 	stdout, err := cmd.Output()
