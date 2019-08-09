@@ -19,6 +19,8 @@ import (
 
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
+	"golang.org/x/mod/sumdb"
+	"golang.org/x/mod/sumdb/dirhash"
 	"golang.org/x/net/idna"
 )
 
@@ -50,9 +52,9 @@ var regModuleVersionNotFound = regexp.MustCompile(
 // you can also set GOSUMDB, GONOSUMDB, and GOPRIVATE to indicate how the
 // `Goproxy` should verify the modules.
 //
-// ATTENTION: Since GONOPROXY and GOPRIVATE have not yet been released (they
-// will be introduced in Go 1.13), so we implemented a built-in support for
-// them. Now, you can set them even before Go 1.13.
+// ATTENTION: Since GONOPROXY, GOSUMDB, GONOSUMDB, and GOPRIVATE have not yet
+// been released (they will be introduced in Go 1.13), so we implemented a
+// built-in support for them. Now, you can set them even before Go 1.13.
 //
 // It is highly recommended not to modify the value of any field of the
 // `Goproxy` after calling the `Goproxy.ServeHTTP`, which will cause
@@ -117,6 +119,7 @@ type Goproxy struct {
 	loadOnce            *sync.Once
 	goBinEnv            map[string]string
 	goBinWorkerChan     chan struct{}
+	sumdbClient         *sumdb.Client
 	supportedSUMDBHosts map[string]bool
 }
 
@@ -149,6 +152,18 @@ func (g *Goproxy) load() {
 	if g.MaxGoBinWorkers != 0 {
 		g.goBinWorkerChan = make(chan struct{}, g.MaxGoBinWorkers)
 	}
+
+	envGOSUMDB := g.goBinEnv["GOSUMDB"]
+	switch envGOSUMDB {
+	case "", "sum.golang.org":
+		envGOSUMDB = "sum.golang.org" +
+			"+033de0ae+Ac4zctda0e5eza+HJyk9SxEdh+s3Ux18htTTAD8OuAn8"
+	}
+
+	g.sumdbClient = sumdb.NewClient(&sumdbClientOps{
+		envGOSUMDB:  envGOSUMDB,
+		errorLogger: g.ErrorLogger,
+	})
 
 	for _, host := range g.SupportedSUMDBHosts {
 		if h, err := idna.Lookup.ToASCII(host); err == nil {
@@ -442,6 +457,49 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		var envGOSUMDB string
+		if globsMatchPath(g.goBinEnv["GONOSUMDB"], modulePath) ||
+			globsMatchPath(g.goBinEnv["GOPRIVATE"], modulePath) {
+			envGOSUMDB = "off"
+		} else {
+			envGOSUMDB = g.goBinEnv["GOSUMDB"]
+		}
+
+		if envGOSUMDB != "off" {
+			zipHash, err := dirhash.HashZip(
+				mr.Zip,
+				dirhash.DefaultHash,
+			)
+			if err != nil {
+				g.logError(err)
+				responseInternalServerError(rw)
+				return
+			}
+
+			zipHashLine := fmt.Sprintf(
+				"%s %s %s",
+				modulePath,
+				moduleVersion,
+				zipHash,
+			)
+
+			lines, err := g.sumdbClient.Lookup(
+				modulePath,
+				moduleVersion,
+			)
+			if err != nil {
+				g.logError(err)
+				responseInternalServerError(rw)
+				return
+			}
+
+			if !stringSliceContains(lines, zipHashLine) {
+				setResponseCacheControlHeader(rw, 3600)
+				responseNotFound(rw)
+				return
+			}
+		}
+
 		namePrefix := strings.TrimSuffix(name, nameExt)
 
 		infoCache, err := newTempCache(
@@ -555,4 +613,64 @@ func (g *Goproxy) logErrorf(format string, v ...interface{}) {
 // logError logs the err.
 func (g *Goproxy) logError(err error) {
 	g.logErrorf("%v", err)
+}
+
+// stringSliceContains reports whether the ss contains the s.
+func stringSliceContains(ss []string, s string) bool {
+	for _, v := range ss {
+		if v == s {
+			return true
+		}
+	}
+
+	return false
+}
+
+// globsMatchPath reports whether any path prefix of target matches one of the
+// glob patterns (as defined by the `path.Match`) in the comma-separated globs
+// list. It ignores any empty or malformed patterns in the list.
+func globsMatchPath(globs, target string) bool {
+	for globs != "" {
+		// Extract next non-empty glob in comma-separated list.
+		var glob string
+		if i := strings.Index(globs, ","); i >= 0 {
+			glob, globs = globs[:i], globs[i+1:]
+		} else {
+			glob, globs = globs, ""
+		}
+
+		if glob == "" {
+			continue
+		}
+
+		// A glob with N+1 path elements (N slashes) needs to be matched
+		// against the first N+1 path elements of target, which end just
+		// before the N+1'th slash.
+		n := strings.Count(glob, "/")
+		prefix := target
+
+		// Walk target, counting slashes, truncating at the N+1'th
+		// slash.
+		for i := 0; i < len(target); i++ {
+			if target[i] == '/' {
+				if n == 0 {
+					prefix = target[:i]
+					break
+				}
+
+				n--
+			}
+		}
+
+		if n > 0 {
+			// Not enough prefix elements.
+			continue
+		}
+
+		if matched, _ := path.Match(glob, prefix); matched {
+			return true
+		}
+	}
+
+	return false
 }

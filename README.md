@@ -20,7 +20,10 @@ implements the [`http.Handler`](https://godoc.org/net/http#Handler).
 	* One struct: [`goproxy.Goproxy`](https://godoc.org/github.com/goproxy/goproxy#Goproxy)
 	* Two interfaces: [`goproxy.Cacher`](https://godoc.org/github.com/goproxy/goproxy#Cacher) and [`goproxy.Cache`](https://godoc.org/github.com/goproxy/goproxy#Cache)
 * Can be served under other Go module proxies by setting [`GOPROXY`](https://golang.org/cmd/go/#hdr-Environment_variables)
-* Built-in [`GONOPROXY`](https://tip.golang.org/cmd/go/#hdr-Environment_variables) and [`GOPRIVATE`](https://tip.golang.org/cmd/go/#hdr-Environment_variables) support
+* Built-in [`GONOPROXY`](https://tip.golang.org/cmd/go/#hdr-Environment_variables) support
+* Built-in [`GOSUMDB`](https://tip.golang.org/cmd/go/#hdr-Environment_variables) support
+* Built-in [`GONOSUMDB`](https://tip.golang.org/cmd/go/#hdr-Environment_variables) support
+* Built-in [`GOPRIVATE`](https://tip.golang.org/cmd/go/#hdr-Environment_variables) support
 * Supports multiple mainstream implementations of the [`goproxy.Cacher`](https://godoc.org/github.com/goproxy/goproxy#Cacher)
 	* Disk: [`cacher.Disk`](https://godoc.org/github.com/goproxy/goproxy/cacher#Disk)
 	* MinIO: [`cacher.MinIO`](https://godoc.org/github.com/goproxy/goproxy/cacher#MinIO)
