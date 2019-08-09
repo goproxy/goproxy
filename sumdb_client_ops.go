@@ -5,28 +5,83 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
+	"sync"
 )
 
 // sumdbClientOps implements the `sumdb.ClientOps`.
 type sumdbClientOps struct {
+	endpoint    string
+	envGOPROXY  string
 	envGOSUMDB  string
 	errorLogger *log.Logger
+
+	loadOnce  sync.Once
+	loadError error
 }
 
-// ReadRemote implements the `sumdb.ClientOps`.
-func (sco *sumdbClientOps) ReadRemote(path string) ([]byte, error) {
+// load loads the stuff of the sco up.
+func (sco *sumdbClientOps) load() {
 	host := sco.envGOSUMDB
 	if i := strings.Index(host, "+"); i >= 0 {
 		host = host[:i]
 	}
 
-	var url string
-	if strings.HasPrefix(host, "https://") {
-		url = fmt.Sprint(host, path)
-	} else {
-		url = fmt.Sprint("https://", host, path)
+	for _, goproxy := range strings.Split(sco.envGOPROXY, ",") {
+		goproxy = strings.TrimSpace(goproxy)
+		if goproxy == "" {
+			continue
+		}
+
+		if goproxy == "direct" || goproxy == "off" {
+			break
+		}
+
+		endpoint := fmt.Sprintf("%s/sumdb/%s", goproxy, host)
+		url := fmt.Sprint(endpoint, "/supported")
+
+		var res *http.Response
+		if res, sco.loadError = http.Get(url); sco.loadError != nil {
+			return
+		}
+		defer res.Body.Close()
+
+		switch res.StatusCode {
+		case http.StatusOK:
+			sco.endpoint = endpoint
+		case http.StatusNotFound, http.StatusGone:
+			continue
+		default:
+			sco.loadError = fmt.Errorf(
+				"GET %s: %s",
+				url,
+				res.Status,
+			)
+		}
+
+		return
 	}
+
+	var hostURL *url.URL
+	if hostURL, sco.loadError = url.Parse(host); sco.loadError != nil {
+		return
+	}
+
+	if hostURL.Scheme == "" {
+		hostURL.Scheme = "https"
+	}
+
+	sco.endpoint = hostURL.String()
+}
+
+// ReadRemote implements the `sumdb.ClientOps`.
+func (sco *sumdbClientOps) ReadRemote(path string) ([]byte, error) {
+	if sco.loadOnce.Do(sco.load); sco.loadError != nil {
+		return nil, sco.loadError
+	}
+
+	url := fmt.Sprint(sco.endpoint, path)
 
 	res, err := http.Get(url)
 	if err != nil {
@@ -48,6 +103,10 @@ func (sco *sumdbClientOps) ReadRemote(path string) ([]byte, error) {
 
 // ReadConfig implements the `sumdb.ClientOps`.
 func (sco *sumdbClientOps) ReadConfig(file string) ([]byte, error) {
+	if sco.loadOnce.Do(sco.load); sco.loadError != nil {
+		return nil, sco.loadError
+	}
+
 	if file == "key" {
 		return []byte(sco.envGOSUMDB), nil
 	}
@@ -61,23 +120,33 @@ func (sco *sumdbClientOps) ReadConfig(file string) ([]byte, error) {
 }
 
 // WriteConfig implements the `sumdb.ClientOps`.
-func (*sumdbClientOps) WriteConfig(file string, old, new []byte) error {
-	return nil
+func (sco *sumdbClientOps) WriteConfig(file string, old, new []byte) error {
+	sco.loadOnce.Do(sco.load)
+	return sco.loadError
 }
 
 // ReadCache implements the `sumdb.ClientOps`.
-func (*sumdbClientOps) ReadCache(file string) ([]byte, error) {
+func (sco *sumdbClientOps) ReadCache(file string) ([]byte, error) {
+	if sco.loadOnce.Do(sco.load); sco.loadError != nil {
+		return nil, sco.loadError
+	}
+
 	return nil, ErrCacheNotFound
 }
 
 // WriteCache implements the `sumdb.ClientOps`.
-func (*sumdbClientOps) WriteCache(file string, data []byte) {}
+func (sco *sumdbClientOps) WriteCache(file string, data []byte) {
+	sco.loadOnce.Do(sco.load)
+}
 
 // Log implements the `sumdb.ClientOps`.
-func (*sumdbClientOps) Log(msg string) {}
+func (sco *sumdbClientOps) Log(msg string) {
+	sco.loadOnce.Do(sco.load)
+}
 
 // SecurityError implements the `sumdb.ClientOps`.
 func (sco *sumdbClientOps) SecurityError(msg string) {
+	sco.loadOnce.Do(sco.load)
 	if sco.errorLogger != nil {
 		sco.errorLogger.Print(msg)
 	} else {

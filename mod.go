@@ -114,9 +114,7 @@ func mod(
 
 				switch res.StatusCode {
 				case http.StatusOK:
-				case http.StatusBadRequest,
-					http.StatusNotFound,
-					http.StatusGone:
+				case http.StatusNotFound, http.StatusGone:
 					continue
 				default:
 					return nil, fmt.Errorf(
@@ -149,9 +147,7 @@ func mod(
 
 				switch res.StatusCode {
 				case http.StatusOK:
-				case http.StatusBadRequest,
-					http.StatusNotFound,
-					http.StatusGone:
+				case http.StatusNotFound, http.StatusGone:
 					continue
 				default:
 					return nil, fmt.Errorf(
@@ -200,9 +196,7 @@ func mod(
 
 				switch infoFileRes.StatusCode {
 				case http.StatusOK:
-				case http.StatusBadRequest,
-					http.StatusNotFound,
-					http.StatusGone:
+				case http.StatusNotFound, http.StatusGone:
 					continue
 				default:
 					return nil, fmt.Errorf(
@@ -247,9 +241,7 @@ func mod(
 
 				switch modFileRes.StatusCode {
 				case http.StatusOK:
-				case http.StatusBadRequest,
-					http.StatusNotFound,
-					http.StatusGone:
+				case http.StatusNotFound, http.StatusGone:
 					continue
 				default:
 					return nil, fmt.Errorf(
@@ -294,9 +286,7 @@ func mod(
 
 				switch zipFileRes.StatusCode {
 				case http.StatusOK:
-				case http.StatusBadRequest,
-					http.StatusNotFound,
-					http.StatusGone:
+				case http.StatusNotFound, http.StatusGone:
 					continue
 				default:
 					return nil, fmt.Errorf(

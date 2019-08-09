@@ -161,6 +161,7 @@ func (g *Goproxy) load() {
 	}
 
 	g.sumdbClient = sumdb.NewClient(&sumdbClientOps{
+		envGOPROXY:  g.goBinEnv["GOPROXY"],
 		envGOSUMDB:  envGOSUMDB,
 		errorLogger: g.ErrorLogger,
 	})
