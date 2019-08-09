@@ -56,7 +56,7 @@ func mod(
 		envGOPROXY = goBinEnv["GOPROXY"]
 	}
 
-	if envGOPROXY != "direct" {
+	if envGOPROXY != "direct" && envGOPROXY != "off" {
 		var goproxies []string
 		if envGOPROXY != "" {
 			goproxies = strings.Split(envGOPROXY, ",")
@@ -78,8 +78,13 @@ func mod(
 		}
 
 		for _, goproxy := range goproxies {
-			if goproxy == "direct" {
-				envGOPROXY = "direct"
+			goproxy = strings.TrimSpace(goproxy)
+			if goproxy == "" {
+				continue
+			}
+
+			if goproxy == "direct" || goproxy == "off" {
+				envGOPROXY = goproxy
 				break
 			}
 
@@ -331,7 +336,7 @@ func mod(
 			}
 		}
 
-		if envGOPROXY != "direct" {
+		if envGOPROXY != "direct" && envGOPROXY != "off" {
 			return nil, fmt.Errorf(
 				"mod %s %s@%s: 404 Not Found",
 				operation,
@@ -378,7 +383,7 @@ func mod(
 		fmt.Sprint("GOCACHE=", goproxyRoot),
 		fmt.Sprint("GOPATH=", goproxyRoot),
 		"GO111MODULE=on",
-		"GOPROXY=direct",
+		fmt.Sprint("GOPROXY=", envGOPROXY),
 		"GONOPROXY=",
 		"GOSUMDB=off",
 		"GONOSUMDB=",
