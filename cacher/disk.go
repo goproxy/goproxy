@@ -3,14 +3,11 @@ package cacher
 import (
 	"context"
 	"crypto/md5"
+	"fmt"
 	"hash"
-	"io"
 	"io/ioutil"
-	"mime"
 	"os"
-	"path"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/goproxy/goproxy"
@@ -29,7 +26,8 @@ func (d *Disk) NewHash() hash.Hash {
 
 // Cache implements the `goproxy.Cacher`.
 func (d *Disk) Cache(ctx context.Context, name string) (goproxy.Cache, error) {
-	file, err := os.Open(filepath.Join(d.Root, filepath.FromSlash(name)))
+	filename := filepath.Join(d.Root, filepath.FromSlash(name))
+	file, err := os.Open(filename)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, goproxy.ErrCacheNotFound
@@ -38,54 +36,67 @@ func (d *Disk) Cache(ctx context.Context, name string) (goproxy.Cache, error) {
 		return nil, err
 	}
 
-	var mimeType string
-	switch ext := strings.ToLower(path.Ext(name)); ext {
-	case ".info":
-		mimeType = "application/json; charset=utf-8"
-	case ".mod":
-		mimeType = "text/plain; charset=utf-8"
-	case ".zip":
-		mimeType = "application/zip"
-	default:
-		mimeType = mime.TypeByExtension(ext)
-	}
-
 	fileInfo, err := file.Stat()
 	if err != nil {
 		return nil, err
 	}
 
-	fileHash := d.NewHash()
-	if _, err := io.Copy(fileHash, file); err != nil {
+	fileMIMEType, err := ioutil.ReadFile(fmt.Sprint(filename, ".mime-type"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, goproxy.ErrCacheNotFound
+		}
+
 		return nil, err
 	}
 
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
+	fileChecksum, err := ioutil.ReadFile(fmt.Sprint(filename, ".checksum"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, goproxy.ErrCacheNotFound
+		}
+
 		return nil, err
 	}
 
 	return &diskCache{
 		file:     file,
 		name:     name,
-		mimeType: mimeType,
+		mimeType: string(fileMIMEType),
 		size:     fileInfo.Size(),
 		modTime:  fileInfo.ModTime(),
-		checksum: fileHash.Sum(nil),
+		checksum: fileChecksum,
 	}, nil
 }
 
 // SetCache implements the `goproxy.Cacher`.
 func (d *Disk) SetCache(ctx context.Context, c goproxy.Cache) error {
-	b, err := ioutil.ReadAll(c)
-	if err != nil {
-		return err
-	}
-
 	filename := filepath.Join(d.Root, filepath.FromSlash(c.Name()))
 	if err := os.MkdirAll(
 		filepath.Dir(filename),
 		os.ModePerm,
 	); err != nil {
+		return err
+	}
+
+	if err := ioutil.WriteFile(
+		fmt.Sprint(filename, ".mime-type"),
+		[]byte(c.MIMEType()),
+		os.ModePerm,
+	); err != nil {
+		return err
+	}
+
+	if err := ioutil.WriteFile(
+		fmt.Sprint(filename, ".checksum"),
+		c.Checksum(),
+		os.ModePerm,
+	); err != nil {
+		return err
+	}
+
+	b, err := ioutil.ReadAll(c)
+	if err != nil {
 		return err
 	}
 
