@@ -4,6 +4,7 @@ Package goproxy implements a minimalist Go module proxy handler.
 package goproxy
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
@@ -503,6 +505,14 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 		namePrefix := strings.TrimSuffix(name, nameExt)
 
+		// NOTE: Use a new `context.Context` instead of the `r.Context`
+		// to avoid early timeouts.
+		ctx, cancel := context.WithTimeout(
+			context.Background(),
+			2*time.Minute,
+		)
+		defer cancel()
+
 		infoCache, err := newTempCache(
 			mr.Info,
 			fmt.Sprint(namePrefix, ".info"),
@@ -515,7 +525,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 		defer infoCache.Close()
 
-		if err := cacher.SetCache(r.Context(), infoCache); err != nil {
+		if err := cacher.SetCache(ctx, infoCache); err != nil {
 			g.logError(err)
 			responseInternalServerError(rw)
 			return
@@ -533,7 +543,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 		defer modCache.Close()
 
-		if err := cacher.SetCache(r.Context(), modCache); err != nil {
+		if err := cacher.SetCache(ctx, modCache); err != nil {
 			g.logError(err)
 			responseInternalServerError(rw)
 			return
@@ -551,7 +561,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 		defer zipCache.Close()
 
-		if err := cacher.SetCache(r.Context(), zipCache); err != nil {
+		if err := cacher.SetCache(ctx, zipCache); err != nil {
 			g.logError(err)
 			responseInternalServerError(rw)
 			return
