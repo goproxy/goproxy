@@ -45,7 +45,7 @@ func mod(
 	switch operation {
 	case "lookup", "latest", "list", "download":
 	default:
-		return nil, errors.New("invalid result type")
+		return nil, errors.New("invalid mod operation")
 	}
 
 	var envGOPROXY string
