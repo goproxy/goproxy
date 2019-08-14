@@ -365,11 +365,11 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	if isList {
 		mr, err := mod(
-			g.goBinWorkerChan,
-			goproxyRoot,
 			"list",
 			g.GoBinName,
 			g.goBinEnv,
+			g.goBinWorkerChan,
+			goproxyRoot,
 			modulePath,
 			moduleVersion,
 		)
@@ -398,11 +398,11 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 
 		mr, err := mod(
-			g.goBinWorkerChan,
-			goproxyRoot,
 			operation,
 			g.GoBinName,
 			g.goBinEnv,
+			g.goBinWorkerChan,
+			goproxyRoot,
 			modulePath,
 			moduleVersion,
 		)
@@ -440,11 +440,11 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	cache, err := cacher.Cache(r.Context(), name)
 	if err == ErrCacheNotFound {
 		mr, err := mod(
-			g.goBinWorkerChan,
-			goproxyRoot,
 			"download",
 			g.GoBinName,
 			g.goBinEnv,
+			g.goBinWorkerChan,
+			goproxyRoot,
 			modulePath,
 			moduleVersion,
 		)

@@ -27,21 +27,14 @@ type modResult struct {
 
 // mod executes the Go modules related commands based on the operation.
 func mod(
-	workerChan chan struct{},
-	goproxyRoot string,
 	operation string,
 	goBinName string,
 	goBinEnv map[string]string,
+	goBinWorkerChan chan struct{},
+	goproxyRoot string,
 	modulePath string,
 	moduleVersion string,
 ) (*modResult, error) {
-	if workerChan != nil {
-		workerChan <- struct{}{}
-		defer func() {
-			<-workerChan
-		}()
-	}
-
 	switch operation {
 	case "lookup", "latest", "list", "download":
 	default:
@@ -334,6 +327,13 @@ func mod(
 				moduleVersion,
 			)
 		}
+	}
+
+	if goBinWorkerChan != nil {
+		goBinWorkerChan <- struct{}{}
+		defer func() {
+			<-goBinWorkerChan
+		}()
 	}
 
 	var args []string
