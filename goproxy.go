@@ -361,7 +361,13 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		responseInternalServerError(rw)
 		return
 	}
-	defer os.RemoveAll(goproxyRoot)
+
+	hijackedGoproxyRootRemoval := false
+	defer func() {
+		if !hijackedGoproxyRootRemoval {
+			os.RemoveAll(goproxyRoot)
+		}
+	}()
 
 	if isList {
 		mr, err := mod(
@@ -503,69 +509,70 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		namePrefix := strings.TrimSuffix(name, nameExt)
+		// Setting the caches asynchronously to avoid timeouts in
+		// response.
+		hijackedGoproxyRootRemoval = true
+		go func() {
+			defer os.RemoveAll(goproxyRoot)
 
-		// NOTE: Use a new `context.Context` instead of the `r.Context`
-		// to avoid early timeouts.
-		ctx, cancel := context.WithTimeout(
-			context.Background(),
-			2*time.Minute,
-		)
-		defer cancel()
+			namePrefix := strings.TrimSuffix(name, nameExt)
 
-		infoCache, err := newTempCache(
-			mr.Info,
-			fmt.Sprint(namePrefix, ".info"),
-			cacher.NewHash(),
-		)
-		if err != nil {
-			g.logError(err)
-			responseInternalServerError(rw)
-			return
-		}
-		defer infoCache.Close()
+			// Using a new `context.Context` instead of the
+			// `r.Context` to avoid early timeouts.
+			ctx, cancel := context.WithTimeout(
+				context.Background(),
+				2*time.Minute,
+			)
+			defer cancel()
 
-		if err := cacher.SetCache(ctx, infoCache); err != nil {
-			g.logError(err)
-			responseInternalServerError(rw)
-			return
-		}
+			infoCache, err := newTempCache(
+				mr.Info,
+				fmt.Sprint(namePrefix, ".info"),
+				cacher.NewHash(),
+			)
+			if err != nil {
+				g.logError(err)
+				return
+			}
+			defer infoCache.Close()
 
-		modCache, err := newTempCache(
-			mr.GoMod,
-			fmt.Sprint(namePrefix, ".mod"),
-			cacher.NewHash(),
-		)
-		if err != nil {
-			g.logError(err)
-			responseInternalServerError(rw)
-			return
-		}
-		defer modCache.Close()
+			if err := cacher.SetCache(ctx, infoCache); err != nil {
+				g.logError(err)
+				return
+			}
 
-		if err := cacher.SetCache(ctx, modCache); err != nil {
-			g.logError(err)
-			responseInternalServerError(rw)
-			return
-		}
+			modCache, err := newTempCache(
+				mr.GoMod,
+				fmt.Sprint(namePrefix, ".mod"),
+				cacher.NewHash(),
+			)
+			if err != nil {
+				g.logError(err)
+				return
+			}
+			defer modCache.Close()
 
-		zipCache, err := newTempCache(
-			mr.Zip,
-			fmt.Sprint(namePrefix, ".zip"),
-			cacher.NewHash(),
-		)
-		if err != nil {
-			g.logError(err)
-			responseInternalServerError(rw)
-			return
-		}
-		defer zipCache.Close()
+			if err := cacher.SetCache(ctx, modCache); err != nil {
+				g.logError(err)
+				return
+			}
 
-		if err := cacher.SetCache(ctx, zipCache); err != nil {
-			g.logError(err)
-			responseInternalServerError(rw)
-			return
-		}
+			zipCache, err := newTempCache(
+				mr.Zip,
+				fmt.Sprint(namePrefix, ".zip"),
+				cacher.NewHash(),
+			)
+			if err != nil {
+				g.logError(err)
+				return
+			}
+			defer zipCache.Close()
+
+			if err := cacher.SetCache(ctx, zipCache); err != nil {
+				g.logError(err)
+				return
+			}
+		}()
 
 		var filename string
 		switch nameExt {
