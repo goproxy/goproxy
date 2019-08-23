@@ -84,7 +84,7 @@ $ export GOPROXY=http://localhost:8080
 or
 
 ```bash
-$ echo "GOPROXY=http://localhost:8080" >> ~/.profile && source ~/.profile
+$ echo "export GOPROXY=http://localhost:8080" >> ~/.profile && source ~/.profile
 ```
 
 done.

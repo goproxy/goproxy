@@ -112,7 +112,7 @@ type Goproxy struct {
 	// ErrorLogger is the `log.Logger` that logs errors that occur while
 	// proxing.
 	//
-	// If the `ErrorLogger` is nil, logging is done via the log package's
+	// If the `ErrorLogger` is nil, logging is done via the "log" package's
 	// standard logger.
 	//
 	// Default value: nil
