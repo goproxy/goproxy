@@ -21,6 +21,7 @@ func setResponseCacheControlHeader(rw http.ResponseWriter, maxAge int) {
 // responseString responses the s to the client.
 func responseString(rw http.ResponseWriter, s string) {
 	rw.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	rw.WriteHeader(http.StatusOK)
 	rw.Write([]byte(s))
 }
 
