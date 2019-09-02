@@ -381,6 +381,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		)
 		if err != nil {
 			if regModuleVersionNotFound.MatchString(err.Error()) {
+				g.logError(err)
 				setResponseCacheControlHeader(rw, 60)
 				responseNotFound(rw)
 			} else {
@@ -414,6 +415,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		)
 		if err != nil {
 			if regModuleVersionNotFound.MatchString(err.Error()) {
+				g.logError(err)
 				setResponseCacheControlHeader(rw, 60)
 				responseNotFound(rw)
 			} else {
