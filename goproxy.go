@@ -50,9 +50,9 @@ var regModuleVersionNotFound = regexp.MustCompile(
 // will still follow your GOPROXY, GONOPROXY, GOSUMDB, GONOSUMDB, and GOPRIVATE.
 // It means that you can set GOPROXY to serve the `Goproxy` itself under other
 // proxies, and by setting GONOPROXY and GOPRIVATE to indicate which modules the
-// `Goproxy` should download directly instead of using GOPROXY. And of course,
-// you can also set GOSUMDB, GONOSUMDB, and GOPRIVATE to indicate how the
-// `Goproxy` should verify the modules.
+// `Goproxy` should download directly instead of using those proxies. And of
+// course, you can also set GOSUMDB, GONOSUMDB, and GOPRIVATE to indicate how
+// the `Goproxy` should verify the modules.
 //
 // ATTENTION: Since GONOPROXY, GOSUMDB, GONOSUMDB, and GOPRIVATE have not yet
 // been released (they will be introduced in Go 1.13), so we implemented a
@@ -380,20 +380,21 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			moduleVersion,
 		)
 		if err != nil {
+			g.logError(err)
 			if regModuleVersionNotFound.MatchString(err.Error()) {
-				g.logError(err)
 				setResponseCacheControlHeader(rw, 60)
-				responseNotFound(rw)
+				responseNotFound(rw, err)
 			} else {
-				g.logError(err)
 				responseInternalServerError(rw)
 			}
 
 			return
 		}
 
+		versions := strings.Join(mr.Versions, "\n")
+
 		setResponseCacheControlHeader(rw, 60)
-		responseString(rw, strings.Join(mr.Versions, "\n"))
+		responseString(rw, http.StatusOK, versions)
 
 		return
 	} else if isLatest || !semver.IsValid(moduleVersion) {
@@ -414,12 +415,11 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			moduleVersion,
 		)
 		if err != nil {
+			g.logError(err)
 			if regModuleVersionNotFound.MatchString(err.Error()) {
-				g.logError(err)
 				setResponseCacheControlHeader(rw, 60)
-				responseNotFound(rw)
+				responseNotFound(rw, err)
 			} else {
-				g.logError(err)
 				responseInternalServerError(rw)
 			}
 
@@ -457,11 +457,11 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			moduleVersion,
 		)
 		if err != nil {
+			g.logError(err)
 			if regModuleVersionNotFound.MatchString(err.Error()) {
 				setResponseCacheControlHeader(rw, 60)
-				responseNotFound(rw)
+				responseNotFound(rw, err)
 			} else {
-				g.logError(err)
 				responseInternalServerError(rw)
 			}
 
@@ -506,7 +506,11 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 			if !stringSliceContains(lines, zipHashLine) {
 				setResponseCacheControlHeader(rw, 3600)
-				responseNotFound(rw)
+				responseNotFound(
+					rw,
+					"untrusted revision: ",
+					moduleVersion,
+				)
 				return
 			}
 		}
