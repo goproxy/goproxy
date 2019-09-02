@@ -70,6 +70,7 @@ func mod(
 			return nil, err
 		}
 
+		var lastNotFound string
 		for _, goproxy := range goproxies {
 			goproxy = strings.TrimSpace(goproxy)
 			if goproxy == "" {
@@ -108,14 +109,19 @@ func mod(
 				switch res.StatusCode {
 				case http.StatusOK:
 				case http.StatusNotFound, http.StatusGone:
+					b, err := ioutil.ReadAll(res.Body)
+					if err != nil {
+						return nil, err
+					}
+
+					lastNotFound = string(b)
+
 					continue
 				default:
 					return nil, fmt.Errorf(
-						"mod %s %s@%s: %s",
-						operation,
-						modulePath,
-						moduleVersion,
-						http.StatusText(res.StatusCode),
+						"GET %s: %s",
+						url,
+						res.Status,
 					)
 				}
 
@@ -128,32 +134,38 @@ func mod(
 
 				return &mr, nil
 			case "list":
-				res, err := http.Get(fmt.Sprintf(
+				url := fmt.Sprintf(
 					"%s/%s/@v/list",
 					goproxy,
 					escapedModulePath,
-				))
+				)
+
+				res, err := http.Get(url)
 				if err != nil {
 					return nil, err
 				}
 				defer res.Body.Close()
 
 				switch res.StatusCode {
-				case http.StatusOK:
-				case http.StatusNotFound, http.StatusGone:
-					continue
+				case http.StatusOK,
+					http.StatusNotFound,
+					http.StatusGone:
 				default:
 					return nil, fmt.Errorf(
-						"mod list %s@%s: %s",
-						modulePath,
-						moduleVersion,
-						http.StatusText(res.StatusCode),
+						"GET %s: %s",
+						url,
+						res.Status,
 					)
 				}
 
 				b, err := ioutil.ReadAll(res.Body)
 				if err != nil {
 					return nil, err
+				}
+
+				if res.StatusCode != http.StatusOK {
+					lastNotFound = string(b)
+					continue
 				}
 
 				versions := []string{}
@@ -176,12 +188,14 @@ func mod(
 					Versions: versions,
 				}, nil
 			case "download":
-				infoFileRes, err := http.Get(fmt.Sprintf(
+				infoFileURL := fmt.Sprintf(
 					"%s/%s/@v/%s.info",
 					goproxy,
 					escapedModulePath,
 					escapedModuleVersion,
-				))
+				)
+
+				infoFileRes, err := http.Get(infoFileURL)
 				if err != nil {
 					return nil, err
 				}
@@ -190,15 +204,21 @@ func mod(
 				switch infoFileRes.StatusCode {
 				case http.StatusOK:
 				case http.StatusNotFound, http.StatusGone:
+					b, err := ioutil.ReadAll(
+						infoFileRes.Body,
+					)
+					if err != nil {
+						return nil, err
+					}
+
+					lastNotFound = string(b)
+
 					continue
 				default:
 					return nil, fmt.Errorf(
-						"mod download %s@%s: %s",
-						modulePath,
-						moduleVersion,
-						http.StatusText(
-							infoFileRes.StatusCode,
-						),
+						"GET %s: %s",
+						infoFileURL,
+						infoFileRes.Status,
 					)
 				}
 
@@ -221,12 +241,14 @@ func mod(
 					return nil, err
 				}
 
-				modFileRes, err := http.Get(fmt.Sprintf(
+				modFileURL := fmt.Sprintf(
 					"%s/%s/@v/%s.mod",
 					goproxy,
 					escapedModulePath,
 					escapedModuleVersion,
-				))
+				)
+
+				modFileRes, err := http.Get(modFileURL)
 				if err != nil {
 					return nil, err
 				}
@@ -235,15 +257,21 @@ func mod(
 				switch modFileRes.StatusCode {
 				case http.StatusOK:
 				case http.StatusNotFound, http.StatusGone:
+					b, err := ioutil.ReadAll(
+						modFileRes.Body,
+					)
+					if err != nil {
+						return nil, err
+					}
+
+					lastNotFound = string(b)
+
 					continue
 				default:
 					return nil, fmt.Errorf(
-						"mod download %s@%s: %s",
-						modulePath,
-						moduleVersion,
-						http.StatusText(
-							modFileRes.StatusCode,
-						),
+						"GET %s: %s",
+						modFileURL,
+						modFileRes.Status,
 					)
 				}
 
@@ -266,12 +294,14 @@ func mod(
 					return nil, err
 				}
 
-				zipFileRes, err := http.Get(fmt.Sprintf(
+				zipFileURL := fmt.Sprintf(
 					"%s/%s/@v/%s.zip",
 					goproxy,
 					escapedModulePath,
 					escapedModuleVersion,
-				))
+				)
+
+				zipFileRes, err := http.Get(zipFileURL)
 				if err != nil {
 					return nil, err
 				}
@@ -280,15 +310,21 @@ func mod(
 				switch zipFileRes.StatusCode {
 				case http.StatusOK:
 				case http.StatusNotFound, http.StatusGone:
+					b, err := ioutil.ReadAll(
+						zipFileRes.Body,
+					)
+					if err != nil {
+						return nil, err
+					}
+
+					lastNotFound = string(b)
+
 					continue
 				default:
 					return nil, fmt.Errorf(
-						"mod download %s@%s: %s",
-						modulePath,
-						moduleVersion,
-						http.StatusText(
-							zipFileRes.StatusCode,
-						),
+						"GET %s: %s",
+						zipFileURL,
+						zipFileRes.Status,
 					)
 				}
 
@@ -320,12 +356,15 @@ func mod(
 		}
 
 		if envGOPROXY != "direct" && envGOPROXY != "off" {
-			return nil, fmt.Errorf(
-				"mod %s %s@%s: 404 Not Found",
-				operation,
-				modulePath,
-				moduleVersion,
-			)
+			lastNotFound = strings.TrimSpace(lastNotFound)
+			if lastNotFound == "" {
+				lastNotFound = fmt.Sprintf(
+					"unknown revision %s",
+					moduleVersion,
+				)
+			}
+
+			return nil, errors.New(lastNotFound)
 		}
 	}
 

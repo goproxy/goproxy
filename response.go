@@ -3,6 +3,7 @@ package goproxy
 import (
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 // setResponseCacheControlHeader sets the Cache-Control header based on the
@@ -28,9 +29,19 @@ func responseString(rw http.ResponseWriter, statusCode int, s string) {
 
 // responseNotFound responses "Not Found" to the client with the optional msgs.
 func responseNotFound(rw http.ResponseWriter, msgs ...interface{}) {
-	msg := "Not Found"
+	var msg string
 	if len(msgs) > 0 {
-		msg = fmt.Sprint(msg, ": ", fmt.Sprint(msgs...))
+		msg = fmt.Sprint(msgs...)
+		msg = strings.TrimPrefix(msg, "not found: ")
+		msg = strings.TrimPrefix(msg, "Gone: ")
+		msg = strings.TrimPrefix(msg, "gone: ")
+		if !strings.HasPrefix(msg, "Not Found: ") {
+			msg = fmt.Sprint("Not Found: ", msg)
+		}
+	}
+
+	if msg == "" {
+		msg = "Not Found"
 	}
 
 	responseString(rw, http.StatusNotFound, msg)

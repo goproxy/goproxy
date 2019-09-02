@@ -6,6 +6,7 @@ package goproxy
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -37,6 +38,7 @@ var regModuleVersionNotFound = regexp.MustCompile(
 		`(go.mod has non-\.\.\.(\.v1|/v[2-9][0-9]*) module path)|` +
 		`(go.mod has post-v0 module path)|` +
 		`(invalid .* import path)|` +
+		`(invalid pseudo-version)|` +
 		`(invalid version)|` +
 		`(missing .*/go.mod and .*/go.mod at revision)|` +
 		`(no matching versions)|` +
@@ -193,11 +195,11 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	trimedPath := path.Clean(r.URL.Path)
-	trimedPath = strings.TrimPrefix(trimedPath, g.PathPrefix)
-	trimedPath = strings.TrimLeft(trimedPath, "/")
+	trimmedPath := path.Clean(r.URL.Path)
+	trimmedPath = strings.TrimPrefix(trimmedPath, g.PathPrefix)
+	trimmedPath = strings.TrimLeft(trimmedPath, "/")
 
-	name, err := url.PathUnescape(trimedPath)
+	name, err := url.PathUnescape(trimmedPath)
 	if err != nil {
 		setResponseCacheControlHeader(rw, 3600)
 		responseNotFound(rw)
@@ -499,8 +501,25 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				moduleVersion,
 			)
 			if err != nil {
+				err := errors.New(strings.TrimPrefix(
+					err.Error(),
+					fmt.Sprintf(
+						"%s@%s: ",
+						modulePath,
+						moduleVersion,
+					),
+				))
+
 				g.logError(err)
-				responseInternalServerError(rw)
+				if regModuleVersionNotFound.MatchString(
+					err.Error(),
+				) {
+					setResponseCacheControlHeader(rw, 60)
+					responseNotFound(rw, err)
+				} else {
+					responseInternalServerError(rw)
+				}
+
 				return
 			}
 

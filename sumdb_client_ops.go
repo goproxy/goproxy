@@ -1,6 +1,7 @@
 package goproxy
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -89,13 +90,19 @@ func (sco *sumdbClientOps) ReadRemote(path string) ([]byte, error) {
 	}
 	defer res.Body.Close()
 
-	if res.StatusCode != 200 {
+	switch res.StatusCode {
+	case http.StatusOK, http.StatusNotFound, http.StatusGone:
+	default:
 		return nil, fmt.Errorf("GET %s: %s", url, res.Status)
 	}
 
 	b, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		return nil, err
+	}
+
+	if res.StatusCode != http.StatusOK {
+		return nil, errors.New(strings.TrimSpace(string(b)))
 	}
 
 	return b, nil
