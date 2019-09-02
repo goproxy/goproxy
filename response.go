@@ -47,35 +47,21 @@ func responseNotFound(rw http.ResponseWriter, msgs ...interface{}) {
 	responseString(rw, http.StatusNotFound, msg)
 }
 
-// responseMethodNotAllowed responses "Method Not Allowed" to the client with
-// the optional msgs.
-func responseMethodNotAllowed(rw http.ResponseWriter, msgs ...interface{}) {
-	msg := "Method Not Allowed"
-	if len(msgs) > 0 {
-		msg = fmt.Sprint(msg, ": ", fmt.Sprint(msgs...))
-	}
-
-	responseString(rw, http.StatusMethodNotAllowed, msg)
+// responseMethodNotAllowed responses "Method Not Allowed" to the client.
+func responseMethodNotAllowed(rw http.ResponseWriter) {
+	responseString(rw, http.StatusMethodNotAllowed, "Method Not Allowed")
 }
 
-// responseInternalServerError responses "Internal Server Error" to the client
-// with the optional msgs.
-func responseInternalServerError(rw http.ResponseWriter, msgs ...interface{}) {
-	msg := "Internal Server Error"
-	if len(msgs) > 0 {
-		msg = fmt.Sprint(msg, ": ", fmt.Sprint(msgs...))
-	}
-
-	responseString(rw, http.StatusInternalServerError, msg)
+// responseInternalServerError responses "Internal Server Error" to the client.
+func responseInternalServerError(rw http.ResponseWriter) {
+	responseString(
+		rw,
+		http.StatusInternalServerError,
+		"Internal Server Error",
+	)
 }
 
-// responseBadGateway responses "Status Bad Gateway" to the client with the
-// optional msgs.
-func responseBadGateway(rw http.ResponseWriter, msgs ...interface{}) {
-	msg := "Bad Gateway"
-	if len(msgs) > 0 {
-		msg = fmt.Sprint(msg, ": ", fmt.Sprint(msgs...))
-	}
-
-	responseString(rw, http.StatusBadGateway, msg)
+// responseBadGateway responses "Status Bad Gateway" to the client.
+func responseBadGateway(rw http.ResponseWriter) {
+	responseString(rw, http.StatusBadGateway, "Bad Gateway")
 }

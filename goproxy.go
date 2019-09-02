@@ -525,11 +525,10 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 			if !stringSliceContains(lines, zipHashLine) {
 				setResponseCacheControlHeader(rw, 3600)
-				responseNotFound(
-					rw,
-					"untrusted revision: ",
+				responseNotFound(rw, fmt.Sprintf(
+					"untrusted revision %s",
 					moduleVersion,
-				)
+				))
 				return
 			}
 		}

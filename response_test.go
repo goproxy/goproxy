@@ -105,17 +105,6 @@ func TestResponseMethodNotAllowed(t *testing.T) {
 		rec.HeaderMap.Get("Content-Type"),
 	)
 	assert.Equal(t, "Method Not Allowed", rec.Body.String())
-
-	rec = httptest.NewRecorder()
-
-	responseMethodNotAllowed(rec, "foobar")
-	assert.Equal(t, http.StatusMethodNotAllowed, rec.Code)
-	assert.Equal(
-		t,
-		"text/plain; charset=utf-8",
-		rec.HeaderMap.Get("Content-Type"),
-	)
-	assert.Equal(t, "Method Not Allowed: foobar", rec.Body.String())
 }
 
 func TestResponseInternalServerError(t *testing.T) {
@@ -129,17 +118,6 @@ func TestResponseInternalServerError(t *testing.T) {
 		rec.HeaderMap.Get("Content-Type"),
 	)
 	assert.Equal(t, "Internal Server Error", rec.Body.String())
-
-	rec = httptest.NewRecorder()
-
-	responseInternalServerError(rec, "foobar")
-	assert.Equal(t, http.StatusInternalServerError, rec.Code)
-	assert.Equal(
-		t,
-		"text/plain; charset=utf-8",
-		rec.HeaderMap.Get("Content-Type"),
-	)
-	assert.Equal(t, "Internal Server Error: foobar", rec.Body.String())
 }
 
 func TestResponseBadGateway(t *testing.T) {
@@ -153,15 +131,4 @@ func TestResponseBadGateway(t *testing.T) {
 		rec.HeaderMap.Get("Content-Type"),
 	)
 	assert.Equal(t, "Bad Gateway", rec.Body.String())
-
-	rec = httptest.NewRecorder()
-
-	responseBadGateway(rec, "foobar")
-	assert.Equal(t, http.StatusBadGateway, rec.Code)
-	assert.Equal(
-		t,
-		"text/plain; charset=utf-8",
-		rec.HeaderMap.Get("Content-Type"),
-	)
-	assert.Equal(t, "Bad Gateway: foobar", rec.Body.String())
 }
