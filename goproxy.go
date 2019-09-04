@@ -56,9 +56,9 @@ var regModuleVersionNotFound = regexp.MustCompile(
 // course, you can also set GOSUMDB, GONOSUMDB, and GOPRIVATE to indicate how
 // the `Goproxy` should verify the modules.
 //
-// ATTENTION: Since GONOPROXY, GOSUMDB, GONOSUMDB, and GOPRIVATE have not yet
-// been released (they will be introduced in Go 1.13), so we implemented a
-// built-in support for them. Now, you can set them even before Go 1.13.
+// ATTENTION: Since GONOPROXY, GOSUMDB, GONOSUMDB, and GOPRIVATE were first
+// introduced in Go 1.13, so we implemented a built-in support for them. Now,
+// you can set them even before Go 1.13.
 //
 // It is highly recommended not to modify the value of any field of the
 // `Goproxy` after calling the `Goproxy.ServeHTTP`, which will cause
@@ -608,9 +608,6 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			filename = mr.Zip
 		}
 
-		// Note that we need to create a new instance of the `tempCache`
-		// here instead of reusing the above instances to avoid them
-		// being accidentally closed.
 		cache, err = newTempCache(filename, name, cacher.NewHash())
 		if err != nil {
 			g.logError(err)
