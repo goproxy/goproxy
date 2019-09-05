@@ -122,6 +122,11 @@ type Goproxy struct {
 	// Default value: nil
 	ErrorLogger *log.Logger `mapstructure:"-"`
 
+	// DisableNotFoundLog is a switch that disables "Not Found" log.
+	//
+	// Default value: false
+	DisableNotFoundLog bool `mapstructure:"disable_not_found_log"`
+
 	loadOnce            *sync.Once
 	goBinEnv            map[string]string
 	goBinWorkerChan     chan struct{}
@@ -284,8 +289,19 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		case http.StatusBadRequest,
 			http.StatusNotFound,
 			http.StatusGone:
-			setResponseCacheControlHeader(rw, 60)
-			responseNotFound(rw)
+			b, err := ioutil.ReadAll(sumdbRes.Body)
+			if err != nil {
+				g.logError(err)
+				responseInternalServerError(rw)
+			} else {
+				if !g.DisableNotFoundLog {
+					g.logErrorf("%s", b)
+				}
+
+				setResponseCacheControlHeader(rw, 60)
+				responseNotFound(rw, string(b))
+			}
+
 			return
 		default:
 			responseBadGateway(rw)
@@ -384,11 +400,15 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			moduleVersion,
 		)
 		if err != nil {
-			g.logError(err)
 			if regModuleVersionNotFound.MatchString(err.Error()) {
+				if !g.DisableNotFoundLog {
+					g.logError(err)
+				}
+
 				setResponseCacheControlHeader(rw, 60)
 				responseNotFound(rw, err)
 			} else {
+				g.logError(err)
 				responseInternalServerError(rw)
 			}
 
@@ -419,11 +439,15 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			moduleVersion,
 		)
 		if err != nil {
-			g.logError(err)
 			if regModuleVersionNotFound.MatchString(err.Error()) {
+				if !g.DisableNotFoundLog {
+					g.logError(err)
+				}
+
 				setResponseCacheControlHeader(rw, 60)
 				responseNotFound(rw, err)
 			} else {
+				g.logError(err)
 				responseInternalServerError(rw)
 			}
 
@@ -461,11 +485,15 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			moduleVersion,
 		)
 		if err != nil {
-			g.logError(err)
 			if regModuleVersionNotFound.MatchString(err.Error()) {
+				if !g.DisableNotFoundLog {
+					g.logError(err)
+				}
+
 				setResponseCacheControlHeader(rw, 60)
 				responseNotFound(rw, err)
 			} else {
+				g.logError(err)
 				responseInternalServerError(rw)
 			}
 
@@ -512,13 +540,17 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 					),
 				))
 
-				g.logError(err)
 				if regModuleVersionNotFound.MatchString(
 					err.Error(),
 				) {
+					if !g.DisableNotFoundLog {
+						g.logError(err)
+					}
+
 					setResponseCacheControlHeader(rw, 60)
 					responseNotFound(rw, err)
 				} else {
+					g.logError(err)
 					responseInternalServerError(rw)
 				}
 
