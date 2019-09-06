@@ -34,6 +34,7 @@ var regModuleVersionNotFound = regexp.MustCompile(
 		`(403 Forbidden)|` +
 		`(404 Not Found)|` +
 		`(410 Gone)|` +
+		`(^not found: .*)|` +
 		`(could not read Username)|` +
 		`(does not contain package)|` +
 		`(go.mod has non-.* module path)|` +

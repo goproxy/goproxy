@@ -72,26 +72,6 @@ func TestResponseNotFound(t *testing.T) {
 	assert.Equal(t, "Not Found: foobar", rec.Body.String())
 
 	rec = httptest.NewRecorder()
-
-	responseNotFound(rec, "Gone: foobar")
-	assert.Equal(t, http.StatusNotFound, rec.Code)
-	assert.Equal(
-		t,
-		"text/plain; charset=utf-8",
-		rec.HeaderMap.Get("Content-Type"),
-	)
-	assert.Equal(t, "Not Found: foobar", rec.Body.String())
-
-	rec = httptest.NewRecorder()
-
-	responseNotFound(rec, "gone: foobar")
-	assert.Equal(t, http.StatusNotFound, rec.Code)
-	assert.Equal(
-		t,
-		"text/plain; charset=utf-8",
-		rec.HeaderMap.Get("Content-Type"),
-	)
-	assert.Equal(t, "Not Found: foobar", rec.Body.String())
 }
 
 func TestResponseMethodNotAllowed(t *testing.T) {
