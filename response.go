@@ -32,7 +32,7 @@ func responseNotFound(rw http.ResponseWriter, msgs ...interface{}) {
 	var msg string
 	if len(msgs) > 0 {
 		msg = strings.TrimPrefix(fmt.Sprint(msgs...), "not found: ")
-		if !strings.HasPrefix(msg, "Not Found: ") {
+		if msg != "" && !strings.HasPrefix(msg, "Not Found: ") {
 			msg = fmt.Sprint("Not Found: ", msg)
 		}
 	}

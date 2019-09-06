@@ -300,7 +300,12 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 					g.logErrorf("%s", b)
 				}
 
-				setResponseCacheControlHeader(rw, 60)
+				if sumdbRes.StatusCode == http.StatusNotFound {
+					setResponseCacheControlHeader(rw, 60)
+				} else {
+					setResponseCacheControlHeader(rw, 3600)
+				}
+
 				responseNotFound(rw, string(b))
 
 				return
