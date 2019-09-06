@@ -71,7 +71,8 @@ $ go run goproxy.go
 ```
 
 then try it by setting `GOPROXY` to `http://localhost:8080` by following the
-instructions below.
+instructions below. In addition, we also recommend that you set `GO111MODULE` to
+`on` instead of `auto` when you are working with Go modules.
 
 ### Go 1.13 and above (RECOMMENDED)
 
