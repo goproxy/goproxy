@@ -31,6 +31,7 @@ import (
 // a message means a module version is not found.
 var regModuleVersionNotFound = regexp.MustCompile(
 	`(400 Bad Request)|` +
+		`(403 Forbidden)|` +
 		`(404 Not Found)|` +
 		`(410 Gone)|` +
 		`(could not read Username)|` +
