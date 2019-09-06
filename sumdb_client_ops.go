@@ -1,7 +1,6 @@
 package goproxy
 
 import (
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -48,18 +47,30 @@ func (sco *sumdbClientOps) load() {
 		}
 		defer res.Body.Close()
 
+		var b []byte
+		b, sco.loadError = ioutil.ReadAll(res.Body)
+		if sco.loadError != nil {
+			return
+		}
+
 		switch res.StatusCode {
 		case http.StatusOK:
-			sco.endpoint = endpoint
+		case http.StatusBadRequest:
+			sco.loadError = fmt.Errorf("%s", b)
+			return
 		case http.StatusNotFound, http.StatusGone:
 			continue
 		default:
 			sco.loadError = fmt.Errorf(
-				"GET %s: %s",
+				"GET %s: %s: %s",
 				url,
 				res.Status,
+				b,
 			)
+			return
 		}
+
+		sco.endpoint = endpoint
 
 		return
 	}
@@ -90,19 +101,17 @@ func (sco *sumdbClientOps) ReadRemote(path string) ([]byte, error) {
 	}
 	defer res.Body.Close()
 
-	switch res.StatusCode {
-	case http.StatusOK, http.StatusNotFound, http.StatusGone:
-	default:
-		return nil, fmt.Errorf("GET %s: %s", url, res.Status)
-	}
-
 	b, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		return nil, err
 	}
 
-	if res.StatusCode != http.StatusOK {
-		return nil, errors.New(strings.TrimSpace(string(b)))
+	switch res.StatusCode {
+	case http.StatusOK:
+	case http.StatusBadRequest, http.StatusNotFound, http.StatusGone:
+		return nil, fmt.Errorf("%s", b)
+	default:
+		return nil, fmt.Errorf("GET %s: %s: %s", url, res.Status, b)
 	}
 
 	return b, nil

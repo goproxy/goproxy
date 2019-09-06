@@ -106,29 +106,29 @@ func mod(
 				}
 				defer res.Body.Close()
 
+				b, err := ioutil.ReadAll(res.Body)
+				if err != nil {
+					return nil, err
+				}
+
 				switch res.StatusCode {
 				case http.StatusOK:
+				case http.StatusBadRequest:
+					return nil, fmt.Errorf("%s", b)
 				case http.StatusNotFound, http.StatusGone:
-					b, err := ioutil.ReadAll(res.Body)
-					if err != nil {
-						return nil, err
-					}
-
 					lastNotFound = string(b)
-
 					continue
 				default:
 					return nil, fmt.Errorf(
-						"GET %s: %s",
+						"GET %s: %s: %s",
 						url,
 						res.Status,
+						b,
 					)
 				}
 
 				mr := modResult{}
-				if err := json.NewDecoder(res.Body).Decode(
-					&mr,
-				); err != nil {
+				if err := json.Unmarshal(b, &mr); err != nil {
 					return nil, err
 				}
 
@@ -146,26 +146,25 @@ func mod(
 				}
 				defer res.Body.Close()
 
-				switch res.StatusCode {
-				case http.StatusOK,
-					http.StatusNotFound,
-					http.StatusGone:
-				default:
-					return nil, fmt.Errorf(
-						"GET %s: %s",
-						url,
-						res.Status,
-					)
-				}
-
 				b, err := ioutil.ReadAll(res.Body)
 				if err != nil {
 					return nil, err
 				}
 
-				if res.StatusCode != http.StatusOK {
+				switch res.StatusCode {
+				case http.StatusOK:
+				case http.StatusBadRequest:
+					return nil, fmt.Errorf("%s", b)
+				case http.StatusNotFound, http.StatusGone:
 					lastNotFound = string(b)
 					continue
+				default:
+					return nil, fmt.Errorf(
+						"GET %s: %s: %s",
+						url,
+						res.Status,
+						b,
+					)
 				}
 
 				versions := []string{}
@@ -201,9 +200,7 @@ func mod(
 				}
 				defer infoFileRes.Body.Close()
 
-				switch infoFileRes.StatusCode {
-				case http.StatusOK:
-				case http.StatusNotFound, http.StatusGone:
+				if infoFileRes.StatusCode != http.StatusOK {
 					b, err := ioutil.ReadAll(
 						infoFileRes.Body,
 					)
@@ -211,14 +208,20 @@ func mod(
 						return nil, err
 					}
 
-					lastNotFound = string(b)
+					switch infoFileRes.StatusCode {
+					case http.StatusBadRequest:
+						return nil, fmt.Errorf("%s", b)
+					case http.StatusNotFound,
+						http.StatusGone:
+						lastNotFound = string(b)
+						continue
+					}
 
-					continue
-				default:
 					return nil, fmt.Errorf(
-						"GET %s: %s",
+						"GET %s: %s: %s",
 						infoFileURL,
 						infoFileRes.Status,
+						b,
 					)
 				}
 
@@ -254,9 +257,7 @@ func mod(
 				}
 				defer modFileRes.Body.Close()
 
-				switch modFileRes.StatusCode {
-				case http.StatusOK:
-				case http.StatusNotFound, http.StatusGone:
+				if modFileRes.StatusCode != http.StatusOK {
 					b, err := ioutil.ReadAll(
 						modFileRes.Body,
 					)
@@ -264,14 +265,20 @@ func mod(
 						return nil, err
 					}
 
-					lastNotFound = string(b)
+					switch modFileRes.StatusCode {
+					case http.StatusBadRequest:
+						return nil, fmt.Errorf("%s", b)
+					case http.StatusNotFound,
+						http.StatusGone:
+						lastNotFound = string(b)
+						continue
+					}
 
-					continue
-				default:
 					return nil, fmt.Errorf(
-						"GET %s: %s",
+						"GET %s: %s: %s",
 						modFileURL,
 						modFileRes.Status,
+						b,
 					)
 				}
 
@@ -307,9 +314,7 @@ func mod(
 				}
 				defer zipFileRes.Body.Close()
 
-				switch zipFileRes.StatusCode {
-				case http.StatusOK:
-				case http.StatusNotFound, http.StatusGone:
+				if zipFileRes.StatusCode != http.StatusOK {
 					b, err := ioutil.ReadAll(
 						zipFileRes.Body,
 					)
@@ -317,14 +322,20 @@ func mod(
 						return nil, err
 					}
 
-					lastNotFound = string(b)
+					switch zipFileRes.StatusCode {
+					case http.StatusBadRequest:
+						return nil, fmt.Errorf("%s", b)
+					case http.StatusNotFound,
+						http.StatusGone:
+						lastNotFound = string(b)
+						continue
+					}
 
-					continue
-				default:
 					return nil, fmt.Errorf(
-						"GET %s: %s",
+						"GET %s: %s: %s",
 						zipFileURL,
 						zipFileRes.Status,
+						b,
 					)
 				}
 
@@ -356,7 +367,6 @@ func mod(
 		}
 
 		if envGOPROXY != "direct" && envGOPROXY != "off" {
-			lastNotFound = strings.TrimSpace(lastNotFound)
 			if lastNotFound == "" {
 				lastNotFound = fmt.Sprintf(
 					"unknown revision %s",

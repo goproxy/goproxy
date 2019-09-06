@@ -36,8 +36,8 @@ var regModuleVersionNotFound = regexp.MustCompile(
 		`(410 Gone)|` +
 		`(could not read Username)|` +
 		`(does not contain package)|` +
-		`(go.mod has non-\.\.\.(\.v1|/v[2-9][0-9]*) module path)|` +
-		`(go.mod has post-v0 module path)|` +
+		`(go.mod has non-.* module path)|` +
+		`(go.mod has post-.* module path)|` +
 		`(invalid .* import path)|` +
 		`(invalid pseudo-version)|` +
 		`(invalid version)|` +
@@ -259,11 +259,9 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		sumdbReq, err := http.NewRequest(
-			http.MethodGet,
-			fmt.Sprint("https://", sumdbHost, sumdbPath),
-			nil,
-		)
+		sumdbURL = fmt.Sprint("https://", sumdbHost, sumdbPath)
+
+		sumdbReq, err := http.NewRequest(http.MethodGet, sumdbURL, nil)
 		if err != nil {
 			g.logError(err)
 			responseInternalServerError(rw)
@@ -285,27 +283,36 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 		defer sumdbRes.Body.Close()
 
-		switch sumdbRes.StatusCode {
-		case http.StatusOK:
-		case http.StatusBadRequest,
-			http.StatusNotFound,
-			http.StatusGone:
+		if sumdbRes.StatusCode != http.StatusOK {
 			b, err := ioutil.ReadAll(sumdbRes.Body)
 			if err != nil {
 				g.logError(err)
 				responseInternalServerError(rw)
-			} else {
+				return
+			}
+
+			switch sumdbRes.StatusCode {
+			case http.StatusBadRequest,
+				http.StatusNotFound,
+				http.StatusGone:
 				if !g.DisableNotFoundLog {
 					g.logErrorf("%s", b)
 				}
 
 				setResponseCacheControlHeader(rw, 60)
 				responseNotFound(rw, string(b))
+
+				return
 			}
 
-			return
-		default:
+			g.logError(fmt.Errorf(
+				"GET %s: %s: %s",
+				sumdbURL,
+				sumdbRes.Status,
+				b,
+			))
 			responseBadGateway(rw)
+
 			return
 		}
 
