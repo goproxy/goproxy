@@ -396,9 +396,10 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hijackedGoproxyRootRemoval := false
+	hijackedGoproxyRootPurge := false
 	defer func() {
-		if !hijackedGoproxyRootRemoval {
+		if !hijackedGoproxyRootPurge {
+			modClean(g.GoBinName, g.goBinEnv, goproxyRoot)
 			os.RemoveAll(goproxyRoot)
 		}
 	}()
@@ -583,9 +584,12 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 		// Setting the caches asynchronously to avoid timeouts in
 		// response.
-		hijackedGoproxyRootRemoval = true
+		hijackedGoproxyRootPurge = true
 		go func() {
-			defer os.RemoveAll(goproxyRoot)
+			defer func() {
+				modClean(g.GoBinName, g.goBinEnv, goproxyRoot)
+				os.RemoveAll(goproxyRoot)
+			}()
 
 			namePrefix := strings.TrimSuffix(name, nameExt)
 

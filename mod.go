@@ -463,3 +463,27 @@ func mod(
 
 	return &mr, nil
 }
+
+// modClean cleans the goproxyRoot.
+func modClean(
+	goBinName string,
+	goBinEnv map[string]string,
+	goproxyRoot string,
+) error {
+	cmd := exec.Command(goBinName, "clean", "-modcache")
+	cmd.Env = make([]string, 0, len(goBinEnv)+3)
+	for k, v := range goBinEnv {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+	}
+
+	cmd.Env = append(
+		cmd.Env,
+		fmt.Sprint("GOCACHE=", goproxyRoot),
+		fmt.Sprint("GOPATH=", goproxyRoot),
+		fmt.Sprint("GOTMPDIR=", goproxyRoot),
+	)
+
+	cmd.Dir = goproxyRoot
+
+	return cmd.Run()
+}
