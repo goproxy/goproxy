@@ -5,7 +5,7 @@ go 1.13
 require (
 	github.com/minio/minio-go/v6 v6.0.34
 	github.com/stretchr/testify v1.4.0
-	golang.org/x/crypto v0.0.0-20190829043050-9756ffdc2472 // indirect
+	golang.org/x/crypto v0.0.0-20190907121410-71b5226ff739 // indirect
 	golang.org/x/mod v0.1.0
 	golang.org/x/net v0.0.0-20190827160401-ba9fcec4b297
 	golang.org/x/text v0.3.2 // indirect

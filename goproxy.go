@@ -84,7 +84,7 @@ type Goproxy struct {
 	// value in the slice for each duplicate key is used.
 	//
 	// Default value: `os.Environ()`
-	GoBinEnv []string
+	GoBinEnv []string `mapstructure:"go_bin_env"`
 
 	// MaxGoBinWorkers is the maximum number of the Go binary commands that
 	// are allowed to execute at the same time.
