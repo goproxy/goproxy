@@ -339,6 +339,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			setResponseCacheControlHeader(rw, 60)
 		}
 
+		rw.WriteHeader(sumdbRes.StatusCode)
 		io.Copy(rw, sumdbRes.Body)
 
 		return
