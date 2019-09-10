@@ -245,6 +245,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		switch {
 		case sumdbPath == "/supported":
 			setResponseCacheControlHeader(rw, 60)
+			rw.WriteHeader(http.StatusOK)
 			rw.Write(nil) // 200 OK
 			return
 		case sumdbPath == "/latest":
