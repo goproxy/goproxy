@@ -9,5 +9,4 @@ require (
 	golang.org/x/mod v0.1.0
 	golang.org/x/net v0.0.0-20190912160710-24e19bdeb0f2
 	golang.org/x/text v0.3.2 // indirect
-	golang.org/x/xerrors v0.0.0-20190717185122-a985d3407aa7
 )

@@ -25,7 +25,6 @@ import (
 	"golang.org/x/mod/sumdb"
 	"golang.org/x/mod/sumdb/dirhash"
 	"golang.org/x/net/idna"
-	"golang.org/x/xerrors"
 )
 
 // regModuleVersionNotFound is a regular expression that used to report whether
@@ -274,10 +273,6 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			sumdbReq.WithContext(r.Context()),
 		)
 		if err != nil {
-			if xerrors.Is(err, context.Canceled) {
-				return
-			}
-
 			if ue, ok := err.(*url.Error); ok && ue.Timeout() {
 				responseBadGateway(rw)
 			} else {
@@ -672,13 +667,8 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else if err != nil {
-		if xerrors.Is(err, context.Canceled) {
-			return
-		}
-
 		g.logError(err)
 		responseInternalServerError(rw)
-
 		return
 	}
 	defer cache.Close()
