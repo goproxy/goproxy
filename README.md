@@ -79,7 +79,7 @@ instructions below. In addition, we also recommend that you set `GO111MODULE` to
 Open your terminal and execute
 
 ```bash
-$ go env -w GOPROXY=https://goproxy.cn,direct
+$ go env -w GOPROXY=http://localhost:8080,direct
 ```
 
 done.
