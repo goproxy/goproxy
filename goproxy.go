@@ -597,7 +597,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			// `r.Context` to avoid early timeouts.
 			ctx, cancel := context.WithTimeout(
 				context.Background(),
-				2*time.Minute,
+				10*time.Minute,
 			)
 			defer cancel()
 
