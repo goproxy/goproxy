@@ -110,6 +110,14 @@ type Goproxy struct {
 	// Default value: nil
 	Cacher Cacher `mapstructure:"cacher"`
 
+	// MaxZIPCacheBytes is the maximum number of bytes of the ZIP cache that
+	// will be stored in the `Cacher`.
+	//
+	// If the `MaxZIPCacheBytes` is zero, then there will be no limitations.
+	//
+	// Default value: 0
+	MaxZIPCacheBytes int `mapstructure:"max_zip_cache_bytes"`
+
 	// SupportedSUMDBHosts is the supported checksum database hosts.
 	//
 	// Default value: ["sum.golang.org"]
@@ -644,9 +652,13 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			}
 			defer zipCache.Close()
 
-			if err := cacher.SetCache(ctx, zipCache); err != nil {
-				g.logError(err)
-				return
+			if g.MaxZIPCacheBytes == 0 ||
+				zipCache.Size() <= int64(g.MaxZIPCacheBytes) {
+				err := cacher.SetCache(ctx, zipCache)
+				if err != nil {
+					g.logError(err)
+					return
+				}
 			}
 		}()
 
