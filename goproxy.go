@@ -523,9 +523,13 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		envGONOSUMDB := g.goBinEnv["GONOSUMDB"]
+		if envGONOSUMDB == "" {
+			envGONOSUMDB = g.goBinEnv["GOPRIVATE"]
+		}
+
 		var envGOSUMDB string
-		if globsMatchPath(g.goBinEnv["GONOSUMDB"], modulePath) ||
-			globsMatchPath(g.goBinEnv["GOPRIVATE"], modulePath) {
+		if globsMatchPath(envGONOSUMDB, modulePath) {
 			envGOSUMDB = "off"
 		} else {
 			envGOSUMDB = g.goBinEnv["GOSUMDB"]

@@ -41,9 +41,13 @@ func mod(
 		return nil, errors.New("invalid mod operation")
 	}
 
+	envGONOPROXY := goBinEnv["GONOPROXY"]
+	if envGONOPROXY == "" {
+		envGONOPROXY = goBinEnv["GOPRIVATE"]
+	}
+
 	var envGOPROXY string
-	if globsMatchPath(goBinEnv["GONOPROXY"], modulePath) ||
-		globsMatchPath(goBinEnv["GOPRIVATE"], modulePath) {
+	if globsMatchPath(envGONOPROXY, modulePath) {
 		envGOPROXY = "direct"
 	} else {
 		envGOPROXY = goBinEnv["GOPROXY"]
