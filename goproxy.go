@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -118,10 +119,10 @@ type Goproxy struct {
 	// Default value: 0
 	MaxZIPCacheBytes int `mapstructure:"max_zip_cache_bytes"`
 
-	// SupportedSUMDBHosts is the supported checksum database hosts.
+	// SupportedSUMDBNames is the supported checksum database names.
 	//
 	// Default value: ["sum.golang.org"]
-	SupportedSUMDBHosts []string `mapstructure:"supported_sumdb_hosts"`
+	SupportedSUMDBNames []string `mapstructure:"supported_sumdb_names"`
 
 	// ErrorLogger is the `log.Logger` that logs errors that occur while
 	// proxing.
@@ -141,7 +142,7 @@ type Goproxy struct {
 	goBinEnv            map[string]string
 	goBinWorkerChan     chan struct{}
 	sumdbClient         *sumdb.Client
-	supportedSUMDBHosts map[string]bool
+	supportedSUMDBNames map[string]bool
 }
 
 // New returns a new instance of the `Goproxy` with default field values.
@@ -152,10 +153,10 @@ func New() *Goproxy {
 	return &Goproxy{
 		GoBinName:           "go",
 		GoBinEnv:            os.Environ(),
-		SupportedSUMDBHosts: []string{"sum.golang.org"},
+		SupportedSUMDBNames: []string{"sum.golang.org"},
 		loadOnce:            &sync.Once{},
 		goBinEnv:            map[string]string{},
-		supportedSUMDBHosts: map[string]bool{},
+		supportedSUMDBNames: map[string]bool{},
 	}
 }
 
@@ -174,22 +175,88 @@ func (g *Goproxy) load() {
 		g.goBinWorkerChan = make(chan struct{}, g.MaxGoBinWorkers)
 	}
 
-	envGOSUMDB := g.goBinEnv["GOSUMDB"]
-	switch envGOSUMDB {
+	var proxies []string
+	for _, proxy := range strings.Split(g.goBinEnv["GOPROXY"], ",") {
+		proxy = strings.TrimSpace(proxy)
+		if proxy == "" {
+			continue
+		}
+
+		if proxy == "direct" || proxy == "off" {
+			proxies = append(proxies, proxy)
+			break
+		}
+
+		if strings.ContainsAny(proxy, ".:/") &&
+			!strings.Contains(proxy, ":/") &&
+			!filepath.IsAbs(proxy) &&
+			!path.IsAbs(proxy) {
+			proxy = "https://" + proxy
+		}
+
+		proxies = append(proxies, proxy)
+	}
+
+	if len(proxies) > 0 {
+		g.goBinEnv["GOPROXY"] = strings.Join(proxies, ",")
+	} else if g.goBinEnv["GOPROXY"] == "" {
+		g.goBinEnv["GOPROXY"] = "https://proxy.golang.org,direct"
+	} else {
+		g.goBinEnv["GOPROXY"] = "off"
+	}
+
+	g.goBinEnv["GOSUMDB"] = strings.TrimSpace(g.goBinEnv["GOSUMDB"])
+	switch g.goBinEnv["GOSUMDB"] {
 	case "", "sum.golang.org":
-		envGOSUMDB = "sum.golang.org" +
+		g.goBinEnv["GOSUMDB"] = "sum.golang.org" +
 			"+033de0ae+Ac4zctda0e5eza+HJyk9SxEdh+s3Ux18htTTAD8OuAn8"
+	}
+
+	if g.goBinEnv["GONOPROXY"] == "" {
+		g.goBinEnv["GONOPROXY"] = g.goBinEnv["GOPRIVATE"]
+	}
+
+	var noproxies []string
+	for _, noproxy := range strings.Split(g.goBinEnv["GONOPROXY"], ",") {
+		noproxy = strings.TrimSpace(noproxy)
+		if noproxy == "" {
+			continue
+		}
+
+		noproxies = append(noproxies, noproxy)
+	}
+
+	if len(noproxies) > 0 {
+		g.goBinEnv["GONOPROXY"] = strings.Join(noproxies, ",")
+	}
+
+	if g.goBinEnv["GONOSUMDB"] == "" {
+		g.goBinEnv["GONOSUMDB"] = g.goBinEnv["GOPRIVATE"]
+	}
+
+	var nosumdbs []string
+	for _, nosumdb := range strings.Split(g.goBinEnv["GONOSUMDB"], ",") {
+		nosumdb = strings.TrimSpace(nosumdb)
+		if nosumdb == "" {
+			continue
+		}
+
+		nosumdbs = append(nosumdbs, nosumdb)
+	}
+
+	if len(nosumdbs) > 0 {
+		g.goBinEnv["GONOSUMDB"] = strings.Join(nosumdbs, ",")
 	}
 
 	g.sumdbClient = sumdb.NewClient(&sumdbClientOps{
 		envGOPROXY:  g.goBinEnv["GOPROXY"],
-		envGOSUMDB:  envGOSUMDB,
+		envGOSUMDB:  g.goBinEnv["GOSUMDB"],
 		errorLogger: g.ErrorLogger,
 	})
 
-	for _, host := range g.SupportedSUMDBHosts {
-		if h, err := idna.Lookup.ToASCII(host); err == nil {
-			g.supportedSUMDBHosts[h] = true
+	for _, name := range g.SupportedSUMDBNames {
+		if n, err := idna.Lookup.ToASCII(name); err == nil {
+			g.supportedSUMDBNames[n] = true
 		}
 	}
 }
@@ -225,41 +292,40 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	cachingForever := false
 	if strings.HasPrefix(name, "sumdb/") {
-		sumdbURL := strings.TrimPrefix(name, "sumdb/")
-		sumdbPathOffset := strings.Index(sumdbURL, "/")
-		if sumdbPathOffset < 0 {
-			setResponseCacheControlHeader(rw, 3600)
-			responseNotFound(rw)
-			return
-		}
-
-		sumdbHost := sumdbURL[:sumdbPathOffset]
-		sumdbHost, err := idna.Lookup.ToASCII(sumdbHost)
+		sumdbURL, err := url.Parse(strings.TrimPrefix(name, "sumdb/"))
 		if err != nil {
 			setResponseCacheControlHeader(rw, 3600)
 			responseNotFound(rw)
 			return
 		}
 
-		if !g.supportedSUMDBHosts[sumdbHost] {
+		sumdbURL.Scheme = "https"
+
+		sumdbName, err := idna.Lookup.ToASCII(sumdbURL.Host)
+		if err != nil {
+			setResponseCacheControlHeader(rw, 3600)
+			responseNotFound(rw)
+			return
+		}
+
+		if !g.supportedSUMDBNames[sumdbName] {
 			setResponseCacheControlHeader(rw, 60)
 			responseNotFound(rw)
 			return
 		}
 
-		sumdbPath := sumdbURL[sumdbPathOffset:]
 		var contentType string
 		switch {
-		case sumdbPath == "/supported":
+		case sumdbURL.Path == "/supported":
 			setResponseCacheControlHeader(rw, 60)
 			rw.Write(nil) // 200 OK
 			return
-		case sumdbPath == "/latest":
+		case sumdbURL.Path == "/latest":
 			contentType = "text/plain; charset=utf-8"
-		case strings.HasPrefix(sumdbPath, "/lookup/"):
+		case strings.HasPrefix(sumdbURL.Path, "/lookup/"):
 			cachingForever = true
 			contentType = "text/plain; charset=utf-8"
-		case strings.HasPrefix(sumdbPath, "/tile/"):
+		case strings.HasPrefix(sumdbURL.Path, "/tile/"):
 			cachingForever = true
 			contentType = "application/octet-stream"
 		default:
@@ -268,18 +334,20 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		sumdbURL = fmt.Sprint("https://", sumdbHost, sumdbPath)
-
-		sumdbReq, err := http.NewRequest(http.MethodGet, sumdbURL, nil)
+		sumdbReq, err := http.NewRequest(
+			http.MethodGet,
+			sumdbURL.String(),
+			nil,
+		)
 		if err != nil {
 			g.logError(err)
 			responseInternalServerError(rw)
 			return
 		}
 
-		sumdbRes, err := http.DefaultClient.Do(
-			sumdbReq.WithContext(r.Context()),
-		)
+		sumdbReq = sumdbReq.WithContext(r.Context())
+
+		sumdbRes, err := http.DefaultClient.Do(sumdbReq)
 		if err != nil {
 			if ue, ok := err.(*url.Error); ok && ue.Timeout() {
 				responseBadGateway(rw)
@@ -321,7 +389,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 			g.logError(fmt.Errorf(
 				"GET %s: %s: %s",
-				sumdbURL,
+				redactedURL(sumdbURL),
 				sumdbRes.Status,
 				b,
 			))
@@ -523,36 +591,8 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		envGONOSUMDB := g.goBinEnv["GONOSUMDB"]
-		if envGONOSUMDB == "" {
-			envGONOSUMDB = g.goBinEnv["GOPRIVATE"]
-		}
-
-		var envGOSUMDB string
-		if globsMatchPath(envGONOSUMDB, modulePath) {
-			envGOSUMDB = "off"
-		} else {
-			envGOSUMDB = g.goBinEnv["GOSUMDB"]
-		}
-
-		if envGOSUMDB != "off" {
-			zipHash, err := dirhash.HashZip(
-				mr.Zip,
-				dirhash.DefaultHash,
-			)
-			if err != nil {
-				g.logError(err)
-				responseInternalServerError(rw)
-				return
-			}
-
-			zipHashLine := fmt.Sprintf(
-				"%s %s %s",
-				modulePath,
-				moduleVersion,
-				zipHash,
-			)
-
+		if g.goBinEnv["GOSUMDB"] != "off" &&
+			!globsMatchPath(g.goBinEnv["GONOSUMDB"], modulePath) {
 			lines, err := g.sumdbClient.Lookup(
 				modulePath,
 				moduleVersion,
@@ -584,7 +624,25 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			if !stringSliceContains(lines, zipHashLine) {
+			zipHash, err := dirhash.HashZip(
+				mr.Zip,
+				dirhash.DefaultHash,
+			)
+			if err != nil {
+				g.logError(err)
+				responseInternalServerError(rw)
+				return
+			}
+
+			if !stringSliceContains(
+				lines,
+				fmt.Sprintf(
+					"%s %s %s",
+					modulePath,
+					moduleVersion,
+					zipHash,
+				),
+			) {
 				setResponseCacheControlHeader(rw, 3600)
 				responseNotFound(rw, fmt.Sprintf(
 					"untrusted revision %s",
@@ -720,6 +778,59 @@ func (g *Goproxy) logErrorf(format string, v ...interface{}) {
 // logError logs the err.
 func (g *Goproxy) logError(err error) {
 	g.logErrorf("%v", err)
+}
+
+// parseProxyURL parses the proxyURL.
+func parseProxyURL(proxyURL string) (*url.URL, error) {
+	u, err := url.Parse(proxyURL)
+	if err != nil {
+		return nil, err
+	}
+
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https":
+	default:
+		return nil, fmt.Errorf(
+			"invalid proxy URL scheme (must be http or https): %s",
+			redactedURL(u),
+		)
+	}
+
+	return u, nil
+}
+
+// appendURL appends the extraPaths to the u safely and reutrns a new instance
+// of the `url.URL`.
+func appendURL(u *url.URL, extraPaths ...string) *url.URL {
+	nu := *u
+	u = &nu
+	for _, ep := range extraPaths {
+		u.Path = path.Join(u.Path, ep)
+		u.RawPath = path.Join(
+			u.RawPath,
+			strings.Replace(url.PathEscape(ep), "%2F", "/", -1),
+		)
+	}
+
+	return u
+}
+
+// redactedURL returns a redacted string form of the u, suitable for printing in
+// error messages. The string form replaces any non-empty password in the u with
+// "[redacted]".
+func redactedURL(u *url.URL) string {
+	if u.User != nil {
+		if _, ok := u.User.Password(); ok {
+			nu := *u
+			u = &nu
+			u.User = url.UserPassword(
+				u.User.Username(),
+				"[redacted]",
+			)
+		}
+	}
+
+	return u.String()
 }
 
 // stringSliceContains reports whether the ss contains the s.

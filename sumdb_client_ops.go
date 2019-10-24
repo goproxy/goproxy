@@ -12,7 +12,7 @@ import (
 
 // sumdbClientOps implements the `sumdb.ClientOps`.
 type sumdbClientOps struct {
-	endpoint    string
+	endpointURL *url.URL
 	envGOPROXY  string
 	envGOSUMDB  string
 	errorLogger *log.Logger
@@ -23,26 +23,28 @@ type sumdbClientOps struct {
 
 // load loads the stuff of the sco up.
 func (sco *sumdbClientOps) load() {
-	host := sco.envGOSUMDB
-	if i := strings.Index(host, "+"); i >= 0 {
-		host = host[:i]
+	sumdbName := sco.envGOSUMDB
+	if i := strings.Index(sumdbName, "+"); i >= 0 {
+		sumdbName = sumdbName[:i]
 	}
 
-	for _, goproxy := range strings.Split(sco.envGOPROXY, ",") {
-		goproxy = strings.TrimSpace(goproxy)
-		if goproxy == "" {
-			continue
-		}
-
-		if goproxy == "direct" || goproxy == "off" {
+	for _, proxy := range strings.Split(sco.envGOPROXY, ",") {
+		if proxy == "direct" || proxy == "off" {
 			break
 		}
 
-		endpoint := fmt.Sprintf("%s/sumdb/%s", goproxy, host)
-		url := fmt.Sprint(endpoint, "/supported")
+		var proxyURL *url.URL
+		proxyURL, sco.loadError = parseProxyURL(proxy)
+		if sco.loadError != nil {
+			return
+		}
+
+		endpointURL := appendURL(proxyURL, "sumdb", sumdbName)
+		operationURL := appendURL(endpointURL, "/supported")
 
 		var res *http.Response
-		if res, sco.loadError = http.Get(url); sco.loadError != nil {
+		res, sco.loadError = http.Get(operationURL.String())
+		if sco.loadError != nil {
 			return
 		}
 		defer res.Body.Close()
@@ -63,28 +65,36 @@ func (sco *sumdbClientOps) load() {
 		default:
 			sco.loadError = fmt.Errorf(
 				"GET %s: %s: %s",
-				url,
+				redactedURL(operationURL),
 				res.Status,
 				b,
 			)
 			return
 		}
 
-		sco.endpoint = endpoint
+		sco.endpointURL = endpointURL
 
 		return
 	}
 
-	var hostURL *url.URL
-	if hostURL, sco.loadError = url.Parse(host); sco.loadError != nil {
+	sumdbURL := sco.envGOSUMDB
+	if i := strings.Index(sumdbURL, " "); i > 0 {
+		sumdbURL = sumdbURL[i+1:]
+	} else {
+		sumdbURL = sumdbName
+	}
+
+	var endpointURL *url.URL
+	endpointURL, sco.loadError = url.Parse(sumdbURL)
+	if sco.loadError != nil {
 		return
 	}
 
-	if hostURL.Scheme == "" {
-		hostURL.Scheme = "https"
+	if endpointURL.Scheme == "" {
+		endpointURL.Scheme = "https"
 	}
 
-	sco.endpoint = hostURL.String()
+	sco.endpointURL = endpointURL
 }
 
 // ReadRemote implements the `sumdb.ClientOps`.
@@ -93,9 +103,9 @@ func (sco *sumdbClientOps) ReadRemote(path string) ([]byte, error) {
 		return nil, sco.loadError
 	}
 
-	url := fmt.Sprint(sco.endpoint, path)
+	operationURL := appendURL(sco.endpointURL, path)
 
-	res, err := http.Get(url)
+	res, err := http.Get(operationURL.String())
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +121,12 @@ func (sco *sumdbClientOps) ReadRemote(path string) ([]byte, error) {
 	case http.StatusBadRequest, http.StatusNotFound, http.StatusGone:
 		return nil, fmt.Errorf("%s", b)
 	default:
-		return nil, fmt.Errorf("GET %s: %s: %s", url, res.Status, b)
+		return nil, fmt.Errorf(
+			"GET %s: %s: %s",
+			redactedURL(operationURL),
+			res.Status,
+			b,
+		)
 	}
 
 	return b, nil
