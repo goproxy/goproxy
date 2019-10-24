@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os/exec"
 	"sort"
 	"strings"
@@ -82,21 +83,24 @@ func mod(
 
 		switch operation {
 		case "lookup", "latest":
-			var operationPath string
+			var operationURL *url.URL
 			if operation == "lookup" {
-				operationPath = fmt.Sprintf(
-					"/%s/@v/%s.info",
+				operationURL = appendURL(
+					proxyURL,
 					escapedModulePath,
-					escapedModuleVersion,
+					"@v",
+					fmt.Sprint(
+						escapedModuleVersion,
+						".info",
+					),
 				)
 			} else {
-				operationPath = fmt.Sprintf(
-					"/%s/@latest",
+				operationURL = appendURL(
+					proxyURL,
 					escapedModulePath,
+					"@latest",
 				)
 			}
-
-			operationURL := appendURL(proxyURL, operationPath)
 
 			res, err := http.Get(operationURL.String())
 			if err != nil {
@@ -134,7 +138,9 @@ func mod(
 		case "list":
 			operationURL := appendURL(
 				proxyURL,
-				fmt.Sprintf("/%s/@v/list", escapedModulePath),
+				escapedModulePath,
+				"@v",
+				"list",
 			)
 
 			res, err := http.Get(operationURL.String())
@@ -186,11 +192,9 @@ func mod(
 		case "download":
 			infoFileURL := appendURL(
 				proxyURL,
-				fmt.Sprintf(
-					"/%s/@v/%s.info",
-					escapedModulePath,
-					escapedModuleVersion,
-				),
+				escapedModulePath,
+				"@v",
+				fmt.Sprint(escapedModuleVersion, ".info"),
 			)
 
 			infoFileRes, err := http.Get(infoFileURL.String())
@@ -239,11 +243,9 @@ func mod(
 
 			modFileURL := appendURL(
 				proxyURL,
-				fmt.Sprintf(
-					"/%s/@v/%s.mod",
-					escapedModulePath,
-					escapedModuleVersion,
-				),
+				escapedModulePath,
+				"@v",
+				fmt.Sprint(escapedModuleVersion, ".mod"),
 			)
 
 			modFileRes, err := http.Get(modFileURL.String())
@@ -292,11 +294,9 @@ func mod(
 
 			zipFileURL := appendURL(
 				proxyURL,
-				fmt.Sprintf(
-					"/%s/@v/%s.zip",
-					escapedModulePath,
-					escapedModuleVersion,
-				),
+				escapedModulePath,
+				"@v",
+				fmt.Sprint(escapedModuleVersion, ".zip"),
 			)
 
 			zipFileRes, err := http.Get(zipFileURL.String())
