@@ -50,7 +50,8 @@ var regModuleVersionNotFound = regexp.MustCompile(
 		`(repository .* not found)|` +
 		`(unable to connect to)|` +
 		`(unknown revision)|` +
-		`(unrecognized import path)`,
+		`(unrecognized import path)` +
+		`(untrusted revision)|`,
 )
 
 // Goproxy is the top-level struct of this project.
@@ -584,7 +585,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 		if g.goBinEnv["GOSUMDB"] != "off" &&
 			!globsMatchPath(g.goBinEnv["GONOSUMDB"], modulePath) {
-			lines, err := g.sumdbClient.Lookup(
+			zipLines, err := g.sumdbClient.Lookup(
 				modulePath,
 				moduleVersion,
 			)
@@ -626,12 +627,72 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			}
 
 			if !stringSliceContains(
-				lines,
+				zipLines,
 				fmt.Sprintf(
 					"%s %s %s",
 					modulePath,
 					moduleVersion,
 					zipHash,
+				),
+			) {
+				setResponseCacheControlHeader(rw, 3600)
+				responseNotFound(rw, fmt.Sprintf(
+					"untrusted revision %s",
+					moduleVersion,
+				))
+				return
+			}
+
+			goModLines, err := g.sumdbClient.Lookup(
+				modulePath,
+				fmt.Sprint(moduleVersion, "/go.mod"),
+			)
+			if err != nil {
+				err := errors.New(strings.TrimPrefix(
+					err.Error(),
+					fmt.Sprintf(
+						"%s@%s: ",
+						modulePath,
+						moduleVersion,
+					),
+				))
+
+				if regModuleVersionNotFound.MatchString(
+					err.Error(),
+				) {
+					if !g.DisableNotFoundLog {
+						g.logError(err)
+					}
+
+					setResponseCacheControlHeader(rw, 60)
+					responseNotFound(rw, err)
+				} else {
+					g.logError(err)
+					responseInternalServerError(rw)
+				}
+
+				return
+			}
+
+			goModHash, err := dirhash.Hash1(
+				[]string{"go.mod"},
+				func(string) (io.ReadCloser, error) {
+					return os.Open(mr.GoMod)
+				},
+			)
+			if err != nil {
+				g.logError(err)
+				responseInternalServerError(rw)
+				return
+			}
+
+			if !stringSliceContains(
+				goModLines,
+				fmt.Sprintf(
+					"%s %s/go.mod %s",
+					modulePath,
+					moduleVersion,
+					goModHash,
 				),
 			) {
 				setResponseCacheControlHeader(rw, 3600)
