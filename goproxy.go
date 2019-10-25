@@ -35,6 +35,8 @@ var regModuleVersionNotFound = regexp.MustCompile(
 		`(403 Forbidden)|` +
 		`(404 Not Found)|` +
 		`(410 Gone)|` +
+		`(^bad request: .*)|` +
+		`(^gone: .*)|` +
 		`(^not found: .*)|` +
 		`(could not read Username)|` +
 		`(does not contain package)|` +
@@ -775,7 +777,7 @@ func parseRawURL(rawURL string) (*url.URL, error) {
 		!strings.Contains(rawURL, ":/") &&
 		!filepath.IsAbs(rawURL) &&
 		!path.IsAbs(rawURL) {
-		rawURL = "https://" + rawURL
+		rawURL = fmt.Sprint("https://", rawURL)
 	}
 
 	u, err := url.Parse(rawURL)

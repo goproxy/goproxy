@@ -31,7 +31,9 @@ func responseString(rw http.ResponseWriter, statusCode int, s string) {
 func responseNotFound(rw http.ResponseWriter, msgs ...interface{}) {
 	var msg string
 	if len(msgs) > 0 {
-		msg = strings.TrimPrefix(fmt.Sprint(msgs...), "not found: ")
+		msg = strings.TrimPrefix(fmt.Sprint(msgs...), "bad request: ")
+		msg = strings.TrimPrefix(msg, "not found: ")
+		msg = strings.TrimPrefix(msg, "gone: ")
 		if msg != "" && !strings.HasPrefix(msg, "Not Found: ") {
 			msg = fmt.Sprint("Not Found: ", msg)
 		}
