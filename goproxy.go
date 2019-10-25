@@ -182,19 +182,10 @@ func (g *Goproxy) load() {
 			continue
 		}
 
+		proxies = append(proxies, proxy)
 		if proxy == "direct" || proxy == "off" {
-			proxies = append(proxies, proxy)
 			break
 		}
-
-		if strings.ContainsAny(proxy, ".:/") &&
-			!strings.Contains(proxy, ":/") &&
-			!filepath.IsAbs(proxy) &&
-			!path.IsAbs(proxy) {
-			proxy = "https://" + proxy
-		}
-
-		proxies = append(proxies, proxy)
 	}
 
 	if len(proxies) > 0 {
@@ -292,14 +283,12 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	cachingForever := false
 	if strings.HasPrefix(name, "sumdb/") {
-		sumdbURL, err := url.Parse(strings.TrimPrefix(name, "sumdb/"))
+		sumdbURL, err := parseRawURL(strings.TrimPrefix(name, "sumdb/"))
 		if err != nil {
 			setResponseCacheControlHeader(rw, 3600)
 			responseNotFound(rw)
 			return
 		}
-
-		sumdbURL.Scheme = "https"
 
 		sumdbName, err := idna.Lookup.ToASCII(sumdbURL.Host)
 		if err != nil {
@@ -780,9 +769,16 @@ func (g *Goproxy) logError(err error) {
 	g.logErrorf("%v", err)
 }
 
-// parseProxyURL parses the proxyURL.
-func parseProxyURL(proxyURL string) (*url.URL, error) {
-	u, err := url.Parse(proxyURL)
+// parseRawURL parses the rawURL.
+func parseRawURL(rawURL string) (*url.URL, error) {
+	if strings.ContainsAny(rawURL, ".:/") &&
+		!strings.Contains(rawURL, ":/") &&
+		!filepath.IsAbs(rawURL) &&
+		!path.IsAbs(rawURL) {
+		rawURL = "https://" + rawURL
+	}
+
+	u, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, err
 	}
@@ -791,7 +787,7 @@ func parseProxyURL(proxyURL string) (*url.URL, error) {
 	case "http", "https":
 	default:
 		return nil, fmt.Errorf(
-			"invalid proxy URL scheme (must be http or https): %s",
+			"invalid URL scheme (must be http or https): %s",
 			redactedURL(u),
 		)
 	}

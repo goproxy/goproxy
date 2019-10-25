@@ -34,7 +34,7 @@ func (sco *sumdbClientOps) load() {
 		}
 
 		var proxyURL *url.URL
-		proxyURL, sco.loadError = parseProxyURL(proxy)
+		proxyURL, sco.loadError = parseRawURL(proxy)
 		if sco.loadError != nil {
 			return
 		}
@@ -85,13 +85,9 @@ func (sco *sumdbClientOps) load() {
 	}
 
 	var endpointURL *url.URL
-	endpointURL, sco.loadError = url.Parse(sumdbURL)
+	endpointURL, sco.loadError = parseRawURL(sumdbURL)
 	if sco.loadError != nil {
 		return
-	}
-
-	if endpointURL.Scheme == "" {
-		endpointURL.Scheme = "https"
 	}
 
 	sco.endpointURL = endpointURL

@@ -76,7 +76,7 @@ func mod(
 			return nil, errors.New("disabled by GOPROXY=off")
 		}
 
-		proxyURL, err := parseProxyURL(proxy)
+		proxyURL, err := parseRawURL(proxy)
 		if err != nil {
 			return nil, err
 		}
