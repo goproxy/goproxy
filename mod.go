@@ -1,6 +1,7 @@
 package goproxy
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -9,10 +10,13 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
+	"time"
 
+	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
 )
@@ -241,6 +245,10 @@ func mod(
 				return nil, err
 			}
 
+			if err := checkInfoFile(infoFile.Name()); err != nil {
+				return nil, err
+			}
+
 			modFileURL := appendURL(
 				proxyURL,
 				escapedModulePath,
@@ -292,6 +300,10 @@ func mod(
 				return nil, err
 			}
 
+			if err := checkModFile(modFile.Name()); err != nil {
+				return nil, err
+			}
+
 			zipFileURL := appendURL(
 				proxyURL,
 				escapedModulePath,
@@ -340,6 +352,10 @@ func mod(
 			}
 
 			if err := zipFile.Close(); err != nil {
+				return nil, err
+			}
+
+			if err := checkZIPFile(zipFile.Name()); err != nil {
 				return nil, err
 			}
 
@@ -469,4 +485,50 @@ func modClean(
 	cmd.Dir = goproxyRoot
 
 	return cmd.Run()
+}
+
+// checkInfoFile checks the info file targeted by the name.
+func checkInfoFile(name string) error {
+	f, err := os.Open(name)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	var info struct {
+		Version string
+		Time    time.Time
+	}
+
+	if err := json.NewDecoder(f).Decode(&info); err != nil {
+		return err
+	}
+
+	if !semver.IsValid(info.Version) || info.Time.IsZero() {
+		return errors.New("invalid info file")
+	}
+
+	return nil
+}
+
+// checkModFile checks the mod file targeted by the name.
+func checkModFile(name string) error {
+	b, err := ioutil.ReadFile(name)
+	if err != nil {
+		return err
+	}
+
+	_, err = modfile.Parse("go.mod", b, nil)
+
+	return err
+}
+
+// checkZIPFile checks the ZIP file targeted by the name.
+func checkZIPFile(name string) error {
+	rc, err := zip.OpenReader(name)
+	if err != nil {
+		return err
+	}
+
+	return rc.Close()
 }

@@ -643,7 +643,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			goModLines, err := g.sumdbClient.Lookup(
+			modLines, err := g.sumdbClient.Lookup(
 				modulePath,
 				fmt.Sprint(moduleVersion, "/go.mod"),
 			)
@@ -674,7 +674,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			goModHash, err := dirhash.Hash1(
+			modHash, err := dirhash.Hash1(
 				[]string{"go.mod"},
 				func(string) (io.ReadCloser, error) {
 					return os.Open(mr.GoMod)
@@ -687,12 +687,12 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			}
 
 			if !stringSliceContains(
-				goModLines,
+				modLines,
 				fmt.Sprintf(
 					"%s %s/go.mod %s",
 					modulePath,
 					moduleVersion,
-					goModHash,
+					modHash,
 				),
 			) {
 				setResponseCacheControlHeader(rw, 3600)
