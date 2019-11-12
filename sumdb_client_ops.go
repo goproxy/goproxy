@@ -15,6 +15,7 @@ type sumdbClientOps struct {
 	endpointURL *url.URL
 	envGOPROXY  string
 	envGOSUMDB  string
+	httpClient  *http.Client
 	errorLogger *log.Logger
 
 	loadOnce  sync.Once
@@ -43,7 +44,7 @@ func (sco *sumdbClientOps) load() {
 		operationURL := appendURL(endpointURL, "/supported")
 
 		var res *http.Response
-		res, sco.loadError = http.Get(operationURL.String())
+		res, sco.loadError = sco.httpClient.Get(operationURL.String())
 		if sco.loadError != nil {
 			return
 		}
@@ -101,7 +102,7 @@ func (sco *sumdbClientOps) ReadRemote(path string) ([]byte, error) {
 
 	operationURL := appendURL(sco.endpointURL, path)
 
-	res, err := http.Get(operationURL.String())
+	res, err := sco.httpClient.Get(operationURL.String())
 	if err != nil {
 		return nil, err
 	}

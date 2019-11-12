@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -142,6 +143,7 @@ type Goproxy struct {
 	DisableNotFoundLog bool `mapstructure:"disable_not_found_log"`
 
 	loadOnce            *sync.Once
+	httpClient          *http.Client
 	goBinEnv            map[string]string
 	goBinWorkerChan     chan struct{}
 	sumdbClient         *sumdb.Client
@@ -158,6 +160,21 @@ func New() *Goproxy {
 		GoBinEnv:            os.Environ(),
 		SupportedSUMDBNames: []string{"sum.golang.org"},
 		loadOnce:            &sync.Once{},
+		httpClient: &http.Client{
+			Transport: &http.Transport{
+				Proxy: http.ProxyFromEnvironment,
+				DialContext: (&net.Dialer{
+					Timeout:   30 * time.Second,
+					KeepAlive: 30 * time.Second,
+					DualStack: true,
+				}).DialContext,
+				MaxIdleConns:          1024,
+				MaxIdleConnsPerHost:   1024,
+				IdleConnTimeout:       90 * time.Second,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
+			},
+		},
 		goBinEnv:            map[string]string{},
 		supportedSUMDBNames: map[string]bool{},
 	}
@@ -245,6 +262,7 @@ func (g *Goproxy) load() {
 	g.sumdbClient = sumdb.NewClient(&sumdbClientOps{
 		envGOPROXY:  g.goBinEnv["GOPROXY"],
 		envGOSUMDB:  g.goBinEnv["GOSUMDB"],
+		httpClient:  g.httpClient,
 		errorLogger: g.ErrorLogger,
 	})
 
@@ -339,7 +357,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 		sumdbReq = sumdbReq.WithContext(r.Context())
 
-		sumdbRes, err := http.DefaultClient.Do(sumdbReq)
+		sumdbRes, err := g.httpClient.Do(sumdbReq)
 		if err != nil {
 			if ue, ok := err.(*url.Error); ok && ue.Timeout() {
 				responseBadGateway(rw)
@@ -475,6 +493,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	if isList {
 		mr, err := mod(
 			"list",
+			g.httpClient,
 			g.GoBinName,
 			g.goBinEnv,
 			g.goBinWorkerChan,
@@ -514,6 +533,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 		mr, err := mod(
 			operation,
+			g.httpClient,
 			g.GoBinName,
 			g.goBinEnv,
 			g.goBinWorkerChan,
@@ -560,6 +580,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	if err == ErrCacheNotFound {
 		mr, err := mod(
 			"download",
+			g.httpClient,
 			g.GoBinName,
 			g.goBinEnv,
 			g.goBinWorkerChan,

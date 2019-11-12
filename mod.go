@@ -33,6 +33,7 @@ type modResult struct {
 // mod executes the Go modules related commands based on the operation.
 func mod(
 	operation string,
+	httpClient *http.Client,
 	goBinName string,
 	goBinEnv map[string]string,
 	goBinWorkerChan chan struct{},
@@ -106,7 +107,7 @@ func mod(
 				)
 			}
 
-			res, err := http.Get(operationURL.String())
+			res, err := httpClient.Get(operationURL.String())
 			if err != nil {
 				return nil, err
 			}
@@ -147,7 +148,7 @@ func mod(
 				"list",
 			)
 
-			res, err := http.Get(operationURL.String())
+			res, err := httpClient.Get(operationURL.String())
 			if err != nil {
 				return nil, err
 			}
@@ -201,7 +202,7 @@ func mod(
 				fmt.Sprint(escapedModuleVersion, ".info"),
 			)
 
-			infoFileRes, err := http.Get(infoFileURL.String())
+			infoFileRes, err := httpClient.Get(infoFileURL.String())
 			if err != nil {
 				return nil, err
 			}
@@ -256,7 +257,7 @@ func mod(
 				fmt.Sprint(escapedModuleVersion, ".mod"),
 			)
 
-			modFileRes, err := http.Get(modFileURL.String())
+			modFileRes, err := httpClient.Get(modFileURL.String())
 			if err != nil {
 				return nil, err
 			}
@@ -311,7 +312,7 @@ func mod(
 				fmt.Sprint(escapedModuleVersion, ".zip"),
 			)
 
-			zipFileRes, err := http.Get(zipFileURL.String())
+			zipFileRes, err := httpClient.Get(zipFileURL.String())
 			if err != nil {
 				return nil, err
 			}
