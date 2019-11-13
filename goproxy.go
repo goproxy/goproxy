@@ -52,6 +52,7 @@ var regModuleVersionNotFound = regexp.MustCompile(
 		`(unable to connect to)|` +
 		`(unknown revision)|` +
 		`(unrecognized import path)` +
+		`(unrecognized version)` +
 		`(untrusted revision)|`,
 )
 
@@ -523,12 +524,16 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		responseString(rw, http.StatusOK, versions)
 
 		return
-	} else if isLatest || !semver.IsValid(moduleVersion) {
+	} else if !semver.IsValid(moduleVersion) {
 		var operation string
 		if isLatest {
 			operation = "latest"
-		} else {
+		} else if nameExt == ".info" {
 			operation = "lookup"
+		} else {
+			setResponseCacheControlHeader(rw, 3600)
+			responseNotFound(rw, "unrecognized version")
+			return
 		}
 
 		mr, err := mod(
