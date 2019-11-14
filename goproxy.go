@@ -169,7 +169,6 @@ func New() *Goproxy {
 					KeepAlive: 30 * time.Second,
 					DualStack: true,
 				}).DialContext,
-				MaxIdleConns:          1024,
 				MaxIdleConnsPerHost:   1024,
 				IdleConnTimeout:       90 * time.Second,
 				TLSHandshakeTimeout:   10 * time.Second,
