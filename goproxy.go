@@ -302,7 +302,6 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cachingForever := false
 	if strings.HasPrefix(name, "sumdb/") {
 		sumdbURL, err := parseRawURL(strings.TrimPrefix(name, "sumdb/"))
 		if err != nil {
@@ -333,10 +332,8 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		case sumdbURL.Path == "/latest":
 			contentType = "text/plain; charset=utf-8"
 		case strings.HasPrefix(sumdbURL.Path, "/lookup/"):
-			cachingForever = true
 			contentType = "text/plain; charset=utf-8"
 		case strings.HasPrefix(sumdbURL.Path, "/tile/"):
-			cachingForever = true
 			contentType = "application/octet-stream"
 		default:
 			setResponseCacheControlHeader(rw, 3600)
@@ -414,11 +411,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			sumdbRes.Header.Get("Content-Length"),
 		)
 
-		if cachingForever {
-			setResponseCacheControlHeader(rw, 365*24*3600)
-		} else {
-			setResponseCacheControlHeader(rw, 60)
-		}
+		setResponseCacheControlHeader(rw, 60)
 
 		io.Copy(rw, sumdbRes.Body)
 
@@ -484,6 +477,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	defer os.RemoveAll(goproxyRoot)
 	defer modClean(g.GoBinName, g.goBinEnv, goproxyRoot)
 
+	cachingForever := false
 	if isList {
 		mr, err := mod(
 			"list",
