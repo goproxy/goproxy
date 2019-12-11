@@ -477,7 +477,6 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	defer os.RemoveAll(goproxyRoot)
 	defer modClean(g.GoBinName, g.goBinEnv, goproxyRoot)
 
-	cachingForever := false
 	if isList {
 		mr, err := mod(
 			"list",
@@ -511,7 +510,10 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		responseString(rw, http.StatusOK, versions)
 
 		return
-	} else if !semver.IsValid(moduleVersion) {
+	}
+
+	isOriginalModuleVersionValid := semver.IsValid(moduleVersion)
+	if !isOriginalModuleVersionValid {
 		var operation string
 		if isLatest {
 			operation = "latest"
@@ -559,8 +561,6 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 		nameBase = fmt.Sprint(escapedModuleVersion, nameExt)
 		name = path.Join(path.Dir(name), nameBase)
-	} else {
-		cachingForever = true
 	}
 
 	cacher := g.Cacher
@@ -810,8 +810,8 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		),
 	)
 
-	if cachingForever {
-		setResponseCacheControlHeader(rw, 365*24*3600)
+	if isOriginalModuleVersionValid {
+		setResponseCacheControlHeader(rw, 3600)
 	} else {
 		setResponseCacheControlHeader(rw, 60)
 	}
