@@ -447,13 +447,19 @@ func mod(
 			output = ee.Stderr
 		}
 
-		return nil, fmt.Errorf(
-			"mod %s %s@%s: %s",
-			operation,
-			modulePath,
-			moduleVersion,
-			output,
-		)
+		var errorMessage string
+		for _, line := range strings.Split(string(output), "\n") {
+			if strings.HasPrefix(line, "go: finding") {
+				continue
+			}
+
+			errorMessage = fmt.Sprint(errorMessage, line, "\n")
+		}
+
+		errorMessage = strings.TrimPrefix(errorMessage, "go list -m: ")
+		errorMessage = strings.TrimRight(errorMessage, "\n")
+
+		return nil, errors.New(errorMessage)
 	}
 
 	mr := modResult{}
