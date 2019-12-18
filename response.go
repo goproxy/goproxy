@@ -27,40 +27,39 @@ func responseString(rw http.ResponseWriter, statusCode int, s string) {
 	rw.Write([]byte(s))
 }
 
-// responseNotFound responses "Not Found" to the client with the optional msgs.
+// responseNotFound responses "not found" to the client with the optional msgs.
 func responseNotFound(rw http.ResponseWriter, msgs ...interface{}) {
 	var msg string
 	if len(msgs) > 0 {
 		msg = strings.TrimPrefix(fmt.Sprint(msgs...), "bad request: ")
-		msg = strings.TrimPrefix(msg, "not found: ")
 		msg = strings.TrimPrefix(msg, "gone: ")
-		if msg != "" && !strings.HasPrefix(msg, "Not Found: ") {
-			msg = fmt.Sprint("Not Found: ", msg)
+		if msg != "" && !strings.HasPrefix(msg, "not found: ") {
+			msg = fmt.Sprint("not found: ", msg)
 		}
 	}
 
 	if msg == "" {
-		msg = "Not Found"
+		msg = "not found"
 	}
 
 	responseString(rw, http.StatusNotFound, msg)
 }
 
-// responseMethodNotAllowed responses "Method Not Allowed" to the client.
+// responseMethodNotAllowed responses "method not allowed" to the client.
 func responseMethodNotAllowed(rw http.ResponseWriter) {
-	responseString(rw, http.StatusMethodNotAllowed, "Method Not Allowed")
+	responseString(rw, http.StatusMethodNotAllowed, "method not allowed")
 }
 
-// responseInternalServerError responses "Internal Server Error" to the client.
+// responseInternalServerError responses "internal server error" to the client.
 func responseInternalServerError(rw http.ResponseWriter) {
 	responseString(
 		rw,
 		http.StatusInternalServerError,
-		"Internal Server Error",
+		"internal server error",
 	)
 }
 
-// responseBadGateway responses "Status Bad Gateway" to the client.
+// responseBadGateway responses "bad gateway" to the client.
 func responseBadGateway(rw http.ResponseWriter) {
-	responseString(rw, http.StatusBadGateway, "Bad Gateway")
+	responseString(rw, http.StatusBadGateway, "bad gateway")
 }

@@ -138,7 +138,7 @@ type Goproxy struct {
 	// Default value: nil
 	ErrorLogger *log.Logger `mapstructure:"-"`
 
-	// DisableNotFoundLog is a switch that disables "Not Found" log.
+	// DisableNotFoundLog is a switch that disables "not found" log.
 	//
 	// Default value: false
 	DisableNotFoundLog bool `mapstructure:"disable_not_found_log"`
