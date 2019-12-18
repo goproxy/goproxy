@@ -51,9 +51,9 @@ var regModuleVersionNotFound = regexp.MustCompile(
 		`(repository .* not found)|` +
 		`(unable to connect to)|` +
 		`(unknown revision)|` +
-		`(unrecognized import path)` +
-		`(unrecognized version)` +
-		`(untrusted revision)|`,
+		`(unrecognized import path)|` +
+		`(unrecognized version)|` +
+		`(untrusted revision)`,
 )
 
 // Goproxy is the top-level struct of this project.
