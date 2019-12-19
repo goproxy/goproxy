@@ -525,16 +525,18 @@ func checkModFile(name string) error {
 		return err
 	}
 
-	_, err = modfile.Parse("go.mod", b, nil)
+	if _, err := modfile.Parse("go.mod", b, nil); err != nil {
+		return fmt.Errorf("invalid mod file: %v", err)
+	}
 
-	return err
+	return nil
 }
 
 // checkZIPFile checks the ZIP file targeted by the name.
 func checkZIPFile(name string) error {
 	rc, err := zip.OpenReader(name)
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid zip file: %v", err)
 	}
 
 	return rc.Close()
