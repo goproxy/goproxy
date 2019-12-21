@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -419,15 +420,15 @@ func mod(
 
 	cmd.Env = append(
 		cmd.Env,
-		fmt.Sprint("GOCACHE=", goproxyRoot),
-		fmt.Sprint("GOPATH=", goproxyRoot),
+		fmt.Sprint("GOCACHE=", filepath.Join(goproxyRoot, "gocache")),
+		fmt.Sprint("GOPATH=", filepath.Join(goproxyRoot, "gopath")),
 		"GO111MODULE=on",
 		"GOPROXY=direct",
 		"GONOPROXY=",
 		"GOSUMDB=off",
 		"GONOSUMDB=",
 		"GOPRIVATE=",
-		fmt.Sprint("GOTMPDIR=", goproxyRoot),
+		fmt.Sprint("GOTMPDIR=", filepath.Join(goproxyRoot, "gotmpdir")),
 	)
 
 	cmd.Dir = goproxyRoot
@@ -484,9 +485,9 @@ func modClean(
 
 	cmd.Env = append(
 		cmd.Env,
-		fmt.Sprint("GOCACHE=", goproxyRoot),
-		fmt.Sprint("GOPATH=", goproxyRoot),
-		fmt.Sprint("GOTMPDIR=", goproxyRoot),
+		fmt.Sprint("GOCACHE=", filepath.Join(goproxyRoot, "gocache")),
+		fmt.Sprint("GOPATH=", filepath.Join(goproxyRoot, "gopath")),
+		fmt.Sprint("GOTMPDIR=", filepath.Join(goproxyRoot, "gotmpdir")),
 	)
 
 	cmd.Dir = goproxyRoot
