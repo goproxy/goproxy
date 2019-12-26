@@ -419,15 +419,15 @@ func mod(
 
 	cmd.Env = append(
 		cmd.Env,
-		fmt.Sprint("GOCACHE=", goproxyRoot),
 		fmt.Sprint("GOPATH=", goproxyRoot),
+		fmt.Sprint("GOCACHE=", goproxyRoot),
+		fmt.Sprint("GOTMPDIR=", goproxyRoot),
 		"GO111MODULE=on",
 		"GOPROXY=direct",
 		"GONOPROXY=",
 		"GOSUMDB=off",
 		"GONOSUMDB=",
 		"GOPRIVATE=",
-		fmt.Sprint("GOTMPDIR=", goproxyRoot),
 	)
 
 	cmd.Dir = goproxyRoot
@@ -484,8 +484,8 @@ func modClean(
 
 	cmd.Env = append(
 		cmd.Env,
-		fmt.Sprint("GOCACHE=", goproxyRoot),
 		fmt.Sprint("GOPATH=", goproxyRoot),
+		fmt.Sprint("GOCACHE=", goproxyRoot),
 		fmt.Sprint("GOTMPDIR=", goproxyRoot),
 	)
 
