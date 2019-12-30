@@ -58,9 +58,6 @@ func (sco *sumdbClientOps) load() {
 
 		switch res.StatusCode {
 		case http.StatusOK:
-		case http.StatusBadRequest:
-			sco.loadError = fmt.Errorf("%s", b)
-			return
 		case http.StatusNotFound, http.StatusGone:
 			continue
 		default:
@@ -115,8 +112,8 @@ func (sco *sumdbClientOps) ReadRemote(path string) ([]byte, error) {
 
 	switch res.StatusCode {
 	case http.StatusOK:
-	case http.StatusBadRequest, http.StatusNotFound, http.StatusGone:
-		return nil, fmt.Errorf("%s", b)
+	case http.StatusNotFound, http.StatusGone:
+		return nil, notFoundError(fmt.Errorf("%s", b))
 	default:
 		return nil, fmt.Errorf(
 			"GET %s: %s: %s",

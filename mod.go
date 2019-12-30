@@ -120,8 +120,6 @@ func mod(
 
 			switch res.StatusCode {
 			case http.StatusOK:
-			case http.StatusBadRequest:
-				return nil, fmt.Errorf("%s", b)
 			case http.StatusNotFound, http.StatusGone:
 				lastNotFound = string(b)
 				continue
@@ -161,8 +159,6 @@ func mod(
 
 			switch res.StatusCode {
 			case http.StatusOK:
-			case http.StatusBadRequest:
-				return nil, fmt.Errorf("%s", b)
 			case http.StatusNotFound, http.StatusGone:
 				lastNotFound = string(b)
 				continue
@@ -215,8 +211,6 @@ func mod(
 				}
 
 				switch infoFileRes.StatusCode {
-				case http.StatusBadRequest:
-					return nil, fmt.Errorf("%s", b)
 				case http.StatusNotFound, http.StatusGone:
 					lastNotFound = string(b)
 					continue
@@ -270,8 +264,6 @@ func mod(
 				}
 
 				switch modFileRes.StatusCode {
-				case http.StatusBadRequest:
-					return nil, fmt.Errorf("%s", b)
 				case http.StatusNotFound, http.StatusGone:
 					lastNotFound = string(b)
 					continue
@@ -325,8 +317,6 @@ func mod(
 				}
 
 				switch zipFileRes.StatusCode {
-				case http.StatusBadRequest:
-					return nil, fmt.Errorf("%s", b)
 				case http.StatusNotFound, http.StatusGone:
 					lastNotFound = string(b)
 					continue
@@ -369,11 +359,14 @@ func mod(
 	}
 
 	if !tryDirect {
-		if lastNotFound != "" {
-			return nil, errors.New(lastNotFound)
+		if lastNotFound == "" {
+			lastNotFound = fmt.Sprintf(
+				"unknown revision %s",
+				moduleVersion,
+			)
 		}
 
-		return nil, fmt.Errorf("unknown revision %s", moduleVersion)
+		return nil, notFoundError(errors.New(lastNotFound))
 	}
 
 	// Try direct.
@@ -445,11 +438,14 @@ func mod(
 			}
 		} else if ee, ok := err.(*exec.ExitError); ok {
 			output = ee.Stderr
+		} else {
+			return nil, err
 		}
 
 		var errorMessage string
 		for _, line := range strings.Split(string(output), "\n") {
-			if strings.HasPrefix(line, "go: finding") {
+			if strings.HasPrefix(line, "go: finding") ||
+				strings.HasPrefix(line, "\tserver response:") {
 				continue
 			}
 
@@ -459,7 +455,7 @@ func mod(
 		errorMessage = strings.TrimPrefix(errorMessage, "go list -m: ")
 		errorMessage = strings.TrimRight(errorMessage, "\n")
 
-		return nil, errors.New(errorMessage)
+		return nil, notFoundError(errors.New(errorMessage))
 	}
 
 	mr := modResult{}
@@ -512,7 +508,7 @@ func checkInfoFile(name string) error {
 	}
 
 	if !semver.IsValid(info.Version) || info.Time.IsZero() {
-		return errors.New("invalid info file")
+		return notFoundError(errors.New("invalid info file"))
 	}
 
 	return nil
@@ -526,7 +522,7 @@ func checkModFile(name string) error {
 	}
 
 	if _, err := modfile.Parse("go.mod", b, nil); err != nil {
-		return fmt.Errorf("invalid mod file: %v", err)
+		return notFoundError(fmt.Errorf("invalid mod file: %v", err))
 	}
 
 	return nil
@@ -536,7 +532,7 @@ func checkModFile(name string) error {
 func checkZIPFile(name string) error {
 	rc, err := zip.OpenReader(name)
 	if err != nil {
-		return fmt.Errorf("invalid zip file: %v", err)
+		return notFoundError(fmt.Errorf("invalid zip file: %v", err))
 	}
 
 	return rc.Close()

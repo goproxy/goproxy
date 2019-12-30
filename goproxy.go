@@ -17,7 +17,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -27,36 +26,6 @@ import (
 	"golang.org/x/mod/sumdb"
 	"golang.org/x/mod/sumdb/dirhash"
 	"golang.org/x/net/idna"
-)
-
-// regModuleVersionNotFound is a regular expression that used to report whether
-// a message means a module version is not found.
-var regModuleVersionNotFound = regexp.MustCompile(
-	`(400 Bad Request)|` +
-		`(403 Forbidden)|` +
-		`(404 Not Found)|` +
-		`(410 Gone)|` +
-		`(^bad request: .*)|` +
-		`(^gone: .*)|` +
-		`(^not found: .*)|` +
-		`(could not read Username)|` +
-		`(does not contain package)|` +
-		`(go.mod has non-.* module path)|` +
-		`(go.mod has post-.* module path)|` +
-		`(invalid .* import path)|` +
-		`(invalid info file)|` +
-		`(invalid mod file)|` +
-		`(invalid pseudo-version)|` +
-		`(invalid version)|` +
-		`(invalid zip file)|` +
-		`(missing .*/go.mod and .*/go.mod at revision)|` +
-		`(no matching versions)|` +
-		`(repository .* not found)|` +
-		`(unable to connect to)|` +
-		`(unknown revision)|` +
-		`(unrecognized import path)|` +
-		`(unrecognized version)|` +
-		`(untrusted revision)`,
 )
 
 // Goproxy is the top-level struct of this project.
@@ -492,7 +461,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			moduleVersion,
 		)
 		if err != nil {
-			if regModuleVersionNotFound.MatchString(err.Error()) {
+			if isNotFoundError(err) {
 				if !g.DisableNotFoundLog {
 					g.logError(err)
 				}
@@ -539,7 +508,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			moduleVersion,
 		)
 		if err != nil {
-			if regModuleVersionNotFound.MatchString(err.Error()) {
+			if isNotFoundError(err) {
 				if !g.DisableNotFoundLog {
 					g.logError(err)
 				}
@@ -584,7 +553,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			moduleVersion,
 		)
 		if err != nil {
-			if regModuleVersionNotFound.MatchString(err.Error()) {
+			if isNotFoundError(err) {
 				if !g.DisableNotFoundLog {
 					g.logError(err)
 				}
@@ -615,9 +584,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 					),
 				))
 
-				if regModuleVersionNotFound.MatchString(
-					err.Error(),
-				) {
+				if isNotFoundError(err) {
 					if !g.DisableNotFoundLog {
 						g.logError(err)
 					}
@@ -673,9 +640,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 					),
 				))
 
-				if regModuleVersionNotFound.MatchString(
-					err.Error(),
-				) {
+				if isNotFoundError(err) {
 					if !g.DisableNotFoundLog {
 						g.logError(err)
 					}
@@ -835,6 +800,15 @@ func (g *Goproxy) logErrorf(format string, v ...interface{}) {
 // logError logs the err.
 func (g *Goproxy) logError(err error) {
 	g.logErrorf("%v", err)
+}
+
+// notFoundError is an error indicating that something was not found.
+type notFoundError error
+
+// isNotFoundError reports whether the err is an `notFoundError`.
+func isNotFoundError(err error) bool {
+	_, ok := err.(notFoundError)
+	return ok
 }
 
 // parseRawURL parses the rawURL.
