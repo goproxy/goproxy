@@ -96,13 +96,13 @@ type Goproxy struct {
 	// Default value: 0
 	MaxZIPCacheBytes int `mapstructure:"max_zip_cache_bytes"`
 
-	// SupportedSUMDBNames is the supported checksum database names.
+	// ProxiedSUMDBNames is the proxied checksum database names.
 	//
 	// Default value: ["sum.golang.org"]
-	SupportedSUMDBNames []string `mapstructure:"supported_sumdb_names"`
+	ProxiedSUMDBNames []string `mapstructure:"proxied_sumdb_names"`
 
 	// ErrorLogger is the `log.Logger` that logs errors that occur while
-	// proxing.
+	// proxying.
 	//
 	// If the `ErrorLogger` is nil, logging is done via the "log" package's
 	// standard logger.
@@ -115,12 +115,12 @@ type Goproxy struct {
 	// Default value: false
 	DisableNotFoundLog bool `mapstructure:"disable_not_found_log"`
 
-	loadOnce            *sync.Once
-	httpClient          *http.Client
-	goBinEnv            map[string]string
-	goBinWorkerChan     chan struct{}
-	sumdbClient         *sumdb.Client
-	supportedSUMDBNames map[string]bool
+	loadOnce          *sync.Once
+	httpClient        *http.Client
+	goBinEnv          map[string]string
+	goBinWorkerChan   chan struct{}
+	sumdbClient       *sumdb.Client
+	proxiedSUMDBNames map[string]bool
 }
 
 // New returns a new instance of the `Goproxy` with default field values.
@@ -129,10 +129,10 @@ type Goproxy struct {
 // and keeps everything working.
 func New() *Goproxy {
 	return &Goproxy{
-		GoBinName:           "go",
-		GoBinEnv:            os.Environ(),
-		SupportedSUMDBNames: []string{"sum.golang.org"},
-		loadOnce:            &sync.Once{},
+		GoBinName:         "go",
+		GoBinEnv:          os.Environ(),
+		ProxiedSUMDBNames: []string{"sum.golang.org"},
+		loadOnce:          &sync.Once{},
 		httpClient: &http.Client{
 			Transport: &http.Transport{
 				Proxy: http.ProxyFromEnvironment,
@@ -147,8 +147,8 @@ func New() *Goproxy {
 				ExpectContinueTimeout: 1 * time.Second,
 			},
 		},
-		goBinEnv:            map[string]string{},
-		supportedSUMDBNames: map[string]bool{},
+		goBinEnv:          map[string]string{},
+		proxiedSUMDBNames: map[string]bool{},
 	}
 }
 
@@ -238,9 +238,9 @@ func (g *Goproxy) load() {
 		errorLogger: g.ErrorLogger,
 	})
 
-	for _, name := range g.SupportedSUMDBNames {
-		if n, err := idna.Lookup.ToASCII(name); err == nil {
-			g.supportedSUMDBNames[n] = true
+	for _, sumdbName := range g.ProxiedSUMDBNames {
+		if n, err := idna.Lookup.ToASCII(sumdbName); err == nil {
+			g.proxiedSUMDBNames[n] = true
 		}
 	}
 }
@@ -289,7 +289,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if !g.supportedSUMDBNames[sumdbName] {
+		if !g.proxiedSUMDBNames[sumdbName] {
 			setResponseCacheControlHeader(rw, 60)
 			responseNotFound(rw)
 			return

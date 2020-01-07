@@ -26,6 +26,7 @@ implements the [`http.Handler`](https://godoc.org/net/http#Handler).
 	* Defaulted to `sum.golang.org` (just like what Go is doing right now)
 * Built-in [`GONOSUMDB`](https://golang.org/cmd/go/#hdr-Environment_variables) support
 * Built-in [`GOPRIVATE`](https://golang.org/cmd/go/#hdr-Environment_variables) support
+* Supports [proxy checksum databases](http://golang.org/design/25530-sumdb#proxying-a-checksum-database)
 * Supports multiple mainstream implementations of the [`goproxy.Cacher`](https://godoc.org/github.com/goproxy/goproxy#Cacher)
 	* Disk: [`cacher.Disk`](https://godoc.org/github.com/goproxy/goproxy/cacher#Disk)
 	* MinIO: [`cacher.MinIO`](https://godoc.org/github.com/goproxy/goproxy/cacher#MinIO)
