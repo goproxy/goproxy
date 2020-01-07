@@ -19,14 +19,15 @@ implements the [`http.Handler`](https://godoc.org/net/http#Handler).
 * Extremely easy to use
 	* One struct: [`goproxy.Goproxy`](https://godoc.org/github.com/goproxy/goproxy#Goproxy)
 	* Two interfaces: [`goproxy.Cacher`](https://godoc.org/github.com/goproxy/goproxy#Cacher) and [`goproxy.Cache`](https://godoc.org/github.com/goproxy/goproxy#Cache)
-* Can be served under other Go module proxies by setting [`GOPROXY`](https://golang.org/cmd/go/#hdr-Environment_variables)
+* Built-in [`GOPROXY`](https://golang.org/cmd/go/#hdr-Environment_variables) support
 	* Defaulted to `https://proxy.golang.org,direct` (just like what Go is doing right now)
 * Built-in [`GONOPROXY`](https://golang.org/cmd/go/#hdr-Environment_variables) support
 * Built-in [`GOSUMDB`](https://golang.org/cmd/go/#hdr-Environment_variables) support
 	* Defaulted to `sum.golang.org` (just like what Go is doing right now)
 * Built-in [`GONOSUMDB`](https://golang.org/cmd/go/#hdr-Environment_variables) support
 * Built-in [`GOPRIVATE`](https://golang.org/cmd/go/#hdr-Environment_variables) support
-* Supports [proxy checksum databases](http://golang.org/design/25530-sumdb#proxying-a-checksum-database)
+* Supports serving under other Go module proxies by setting [`GOPROXY`](https://golang.org/cmd/go/#hdr-Environment_variables)
+* Supports [proxying checksum databases](http://golang.org/design/25530-sumdb#proxying-a-checksum-database)
 * Supports multiple mainstream implementations of the [`goproxy.Cacher`](https://godoc.org/github.com/goproxy/goproxy#Cacher)
 	* Disk: [`cacher.Disk`](https://godoc.org/github.com/goproxy/goproxy/cacher#Disk)
 	* MinIO: [`cacher.MinIO`](https://godoc.org/github.com/goproxy/goproxy/cacher#MinIO)

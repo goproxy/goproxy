@@ -98,7 +98,7 @@ type Goproxy struct {
 
 	// ProxiedSUMDBNames is the proxied checksum database names.
 	//
-	// Default value: ["sum.golang.org"]
+	// Default value: nil
 	ProxiedSUMDBNames []string `mapstructure:"proxied_sumdb_names"`
 
 	// ErrorLogger is the `log.Logger` that logs errors that occur while
@@ -129,10 +129,9 @@ type Goproxy struct {
 // and keeps everything working.
 func New() *Goproxy {
 	return &Goproxy{
-		GoBinName:         "go",
-		GoBinEnv:          os.Environ(),
-		ProxiedSUMDBNames: []string{"sum.golang.org"},
-		loadOnce:          &sync.Once{},
+		GoBinName: "go",
+		GoBinEnv:  os.Environ(),
+		loadOnce:  &sync.Once{},
 		httpClient: &http.Client{
 			Transport: &http.Transport{
 				Proxy: http.ProxyFromEnvironment,
