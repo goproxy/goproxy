@@ -110,7 +110,12 @@ func (m *MinIO) Cache(ctx context.Context, name string) (goproxy.Cache, error) {
 		return nil, err
 	}
 
-	checksum, err := hex.DecodeString(objectInfo.ETag)
+	dashIndex := strings.Index(objectInfo.ETag, "-")
+	if dashIndex < 0 {
+		dashIndex = len(objectInfo.ETag)
+	}
+
+	checksum, err := hex.DecodeString(objectInfo.ETag[:dashIndex])
 	if err != nil {
 		return nil, err
 	}
