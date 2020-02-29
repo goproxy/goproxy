@@ -3,13 +3,13 @@ package goproxy
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"sort"
@@ -32,6 +32,7 @@ type modResult struct {
 
 // mod executes the Go modules related commands based on the operation.
 func mod(
+	ctx context.Context,
 	operation string,
 	httpClient *http.Client,
 	goBinName string,
@@ -88,26 +89,40 @@ func mod(
 
 		switch operation {
 		case "lookup", "latest":
-			var operationURL *url.URL
+			var req *http.Request
 			if operation == "lookup" {
-				operationURL = appendURL(
-					proxyURL,
-					escapedModulePath,
-					"@v",
-					fmt.Sprint(
-						escapedModuleVersion,
-						".info",
-					),
+				req, err = http.NewRequest(
+					http.MethodGet,
+					appendURL(
+						proxyURL,
+						escapedModulePath,
+						"@v",
+						fmt.Sprint(
+							escapedModuleVersion,
+							".info",
+						),
+					).String(),
+					nil,
 				)
 			} else {
-				operationURL = appendURL(
-					proxyURL,
-					escapedModulePath,
-					"@latest",
+				req, err = http.NewRequest(
+					http.MethodGet,
+					appendURL(
+						proxyURL,
+						escapedModulePath,
+						"@latest",
+					).String(),
+					nil,
 				)
 			}
 
-			res, err := httpClient.Get(operationURL.String())
+			if err != nil {
+				return nil, err
+			}
+
+			req = req.WithContext(ctx)
+
+			res, err := httpClient.Do(req)
 			if err != nil {
 				return nil, err
 			}
@@ -126,7 +141,7 @@ func mod(
 			default:
 				return nil, fmt.Errorf(
 					"GET %s: %s: %s",
-					redactedURL(operationURL),
+					redactedURL(req.URL),
 					res.Status,
 					b,
 				)
@@ -139,14 +154,23 @@ func mod(
 
 			return &mr, nil
 		case "list":
-			operationURL := appendURL(
-				proxyURL,
-				escapedModulePath,
-				"@v",
-				"list",
+			req, err := http.NewRequest(
+				http.MethodGet,
+				appendURL(
+					proxyURL,
+					escapedModulePath,
+					"@v",
+					"list",
+				).String(),
+				nil,
 			)
+			if err != nil {
+				return nil, err
+			}
 
-			res, err := httpClient.Get(operationURL.String())
+			req = req.WithContext(ctx)
+
+			res, err := httpClient.Do(req)
 			if err != nil {
 				return nil, err
 			}
@@ -165,7 +189,7 @@ func mod(
 			default:
 				return nil, fmt.Errorf(
 					"GET %s: %s: %s",
-					redactedURL(operationURL),
+					redactedURL(req.URL),
 					res.Status,
 					b,
 				)
@@ -191,14 +215,26 @@ func mod(
 				Versions: versions,
 			}, nil
 		case "download":
-			infoFileURL := appendURL(
-				proxyURL,
-				escapedModulePath,
-				"@v",
-				fmt.Sprint(escapedModuleVersion, ".info"),
+			infoFileReq, err := http.NewRequest(
+				http.MethodGet,
+				appendURL(
+					proxyURL,
+					escapedModulePath,
+					"@v",
+					fmt.Sprint(
+						escapedModuleVersion,
+						".info",
+					),
+				).String(),
+				nil,
 			)
+			if err != nil {
+				return nil, err
+			}
 
-			infoFileRes, err := httpClient.Get(infoFileURL.String())
+			infoFileReq = infoFileReq.WithContext(ctx)
+
+			infoFileRes, err := httpClient.Do(infoFileReq)
 			if err != nil {
 				return nil, err
 			}
@@ -218,7 +254,7 @@ func mod(
 
 				return nil, fmt.Errorf(
 					"GET %s: %s: %s",
-					redactedURL(infoFileURL),
+					redactedURL(infoFileReq.URL),
 					infoFileRes.Status,
 					b,
 				)
@@ -244,14 +280,26 @@ func mod(
 				return nil, err
 			}
 
-			modFileURL := appendURL(
-				proxyURL,
-				escapedModulePath,
-				"@v",
-				fmt.Sprint(escapedModuleVersion, ".mod"),
+			modFileReq, err := http.NewRequest(
+				http.MethodGet,
+				appendURL(
+					proxyURL,
+					escapedModulePath,
+					"@v",
+					fmt.Sprint(
+						escapedModuleVersion,
+						".mod",
+					),
+				).String(),
+				nil,
 			)
+			if err != nil {
+				return nil, err
+			}
 
-			modFileRes, err := httpClient.Get(modFileURL.String())
+			modFileReq = modFileReq.WithContext(ctx)
+
+			modFileRes, err := httpClient.Do(modFileReq)
 			if err != nil {
 				return nil, err
 			}
@@ -271,7 +319,7 @@ func mod(
 
 				return nil, fmt.Errorf(
 					"GET %s: %s: %s",
-					redactedURL(modFileURL),
+					redactedURL(modFileReq.URL),
 					modFileRes.Status,
 					b,
 				)
@@ -297,14 +345,26 @@ func mod(
 				return nil, err
 			}
 
-			zipFileURL := appendURL(
-				proxyURL,
-				escapedModulePath,
-				"@v",
-				fmt.Sprint(escapedModuleVersion, ".zip"),
+			zipFileReq, err := http.NewRequest(
+				http.MethodGet,
+				appendURL(
+					proxyURL,
+					escapedModulePath,
+					"@v",
+					fmt.Sprint(
+						escapedModuleVersion,
+						".zip",
+					),
+				).String(),
+				nil,
 			)
+			if err != nil {
+				return nil, err
+			}
 
-			zipFileRes, err := httpClient.Get(zipFileURL.String())
+			zipFileReq = zipFileReq.WithContext(ctx)
+
+			zipFileRes, err := httpClient.Do(zipFileReq)
 			if err != nil {
 				return nil, err
 			}
@@ -324,7 +384,7 @@ func mod(
 
 				return nil, fmt.Errorf(
 					"GET %s: %s: %s",
-					redactedURL(zipFileURL),
+					redactedURL(zipFileReq.URL),
 					zipFileRes.Status,
 					b,
 				)
@@ -404,7 +464,7 @@ func mod(
 		}
 	}
 
-	cmd := exec.Command(goBinName, args...)
+	cmd := exec.CommandContext(ctx, goBinName, args...)
 	cmd.Env = make([]string, 0, len(goBinEnv)+9)
 	for k, v := range goBinEnv {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))

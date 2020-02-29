@@ -145,6 +145,7 @@ func New() *Goproxy {
 				TLSHandshakeTimeout:   10 * time.Second,
 				ExpectContinueTimeout: 1 * time.Second,
 			},
+			Timeout: time.Minute,
 		},
 		goBinEnv:          map[string]string{},
 		proxiedSUMDBNames: map[string]bool{},
@@ -327,8 +328,13 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 		sumdbRes, err := g.httpClient.Do(sumdbReq)
 		if err != nil {
-			if ue, ok := err.(*url.Error); ok && ue.Timeout() {
-				responseBadGateway(rw)
+			if isTimeoutError(err) {
+				if !g.DisableNotFoundLog {
+					g.logError(err)
+				}
+
+				setResponseCacheControlHeader(rw, 60)
+				responseNotFound(rw, "fetch timed out")
 			} else {
 				g.logError(err)
 				responseInternalServerError(rw)
@@ -371,6 +377,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				sumdbRes.Status,
 				b,
 			))
+
 			responseBadGateway(rw)
 
 			return
@@ -450,6 +457,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	if isList {
 		mr, err := mod(
+			r.Context(),
 			"list",
 			g.httpClient,
 			g.GoBinName,
@@ -466,7 +474,11 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				}
 
 				setResponseCacheControlHeader(rw, 60)
-				responseNotFound(rw, err)
+				if isTimeoutError(err) {
+					responseNotFound(rw, "fetch timed out")
+				} else {
+					responseNotFound(rw, err)
+				}
 			} else {
 				g.logError(err)
 				responseInternalServerError(rw)
@@ -497,6 +509,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 
 		mr, err := mod(
+			r.Context(),
 			operation,
 			g.httpClient,
 			g.GoBinName,
@@ -513,7 +526,11 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				}
 
 				setResponseCacheControlHeader(rw, 60)
-				responseNotFound(rw, err)
+				if isTimeoutError(err) {
+					responseNotFound(rw, "fetch timed out")
+				} else {
+					responseNotFound(rw, err)
+				}
 			} else {
 				g.logError(err)
 				responseInternalServerError(rw)
@@ -542,6 +559,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	cache, err := cacher.Cache(r.Context(), name)
 	if err == ErrCacheNotFound {
 		mr, err := mod(
+			r.Context(),
 			"download",
 			g.httpClient,
 			g.GoBinName,
@@ -558,7 +576,11 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				}
 
 				setResponseCacheControlHeader(rw, 60)
-				responseNotFound(rw, err)
+				if isTimeoutError(err) {
+					responseNotFound(rw, "fetch timed out")
+				} else {
+					responseNotFound(rw, err)
+				}
 			} else {
 				g.logError(err)
 				responseInternalServerError(rw)
@@ -589,7 +611,14 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 					}
 
 					setResponseCacheControlHeader(rw, 60)
-					responseNotFound(rw, err)
+					if isTimeoutError(err) {
+						responseNotFound(
+							rw,
+							"fetch timed out",
+						)
+					} else {
+						responseNotFound(rw, err)
+					}
 				} else {
 					g.logError(err)
 					responseInternalServerError(rw)
@@ -645,7 +674,14 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 					}
 
 					setResponseCacheControlHeader(rw, 60)
-					responseNotFound(rw, err)
+					if isTimeoutError(err) {
+						responseNotFound(
+							rw,
+							"fetch timed out",
+						)
+					} else {
+						responseNotFound(rw, err)
+					}
 				} else {
 					g.logError(err)
 					responseInternalServerError(rw)
@@ -762,8 +798,18 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else if err != nil {
-		g.logError(err)
-		responseInternalServerError(rw)
+		if isTimeoutError(err) {
+			if !g.DisableNotFoundLog {
+				g.logError(err)
+			}
+
+			setResponseCacheControlHeader(rw, 60)
+			responseNotFound(rw, "fetch timed out")
+		} else {
+			g.logError(err)
+			responseInternalServerError(rw)
+		}
+
 		return
 	}
 	defer cache.Close()
@@ -804,10 +850,19 @@ func (g *Goproxy) logError(err error) {
 // notFoundError is an error indicating that something was not found.
 type notFoundError error
 
-// isNotFoundError reports whether the err is an `notFoundError`.
+// isNotFoundError reports whether the err means something was not found.
 func isNotFoundError(err error) bool {
 	_, ok := err.(notFoundError)
-	return ok
+	return ok || isTimeoutError(err)
+}
+
+// isTimeoutError reports whether the err means an operation has timed out.
+func isTimeoutError(err error) bool {
+	if ue, ok := err.(*url.Error); ok && ue.Timeout() {
+		return true
+	}
+
+	return err == context.Canceled
 }
 
 // parseRawURL parses the rawURL.
