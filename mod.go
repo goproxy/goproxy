@@ -486,6 +486,10 @@ func mod(
 	cmd.Dir = goproxyRoot
 	stdout, err := cmd.Output()
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, context.DeadlineExceeded
+		}
+
 		output := stdout
 		if len(output) > 0 {
 			m := map[string]interface{}{}

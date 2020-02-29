@@ -862,7 +862,7 @@ func isTimeoutError(err error) bool {
 		return true
 	}
 
-	return err == context.Canceled
+	return err == context.DeadlineExceeded
 }
 
 // parseRawURL parses the rawURL.
