@@ -1,6 +1,6 @@
 module github.com/goproxy/goproxy
 
-go 1.11
+go 1.12
 
 require (
 	github.com/minio/minio-go/v6 v6.0.49

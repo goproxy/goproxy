@@ -48,7 +48,7 @@ $ go get github.com/goproxy/goproxy
 
 done.
 
-> The only requirement is the [Go](https://golang.org), at least v1.11.
+> The only requirement is the [Go](https://golang.org), at least v1.12.
 
 ## Quick Start
 
