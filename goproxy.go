@@ -338,7 +338,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				g.logError(err)
 			}
 
-			setResponseCacheControlHeader(rw, 0)
+			setResponseCacheControlHeader(rw, -1)
 			responseNotFound(rw, "fetch timed out")
 
 			return
@@ -474,7 +474,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				g.logError(err)
 			}
 
-			setResponseCacheControlHeader(rw, 0)
+			setResponseCacheControlHeader(rw, -1)
 			if isTimeoutError(err) {
 				responseNotFound(rw, "fetch timed out")
 			} else {
@@ -527,7 +527,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				g.logError(err)
 			}
 
-			setResponseCacheControlHeader(rw, 0)
+			setResponseCacheControlHeader(rw, -1)
 			if isTimeoutError(err) {
 				responseNotFound(rw, "fetch timed out")
 			} else {
@@ -578,7 +578,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				g.logError(err)
 			}
 
-			setResponseCacheControlHeader(rw, 0)
+			setResponseCacheControlHeader(rw, -1)
 			if isTimeoutError(err) {
 				responseNotFound(rw, "fetch timed out")
 			} else {
@@ -614,7 +614,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 					g.logError(trimmedError)
 				}
 
-				setResponseCacheControlHeader(rw, 0)
+				setResponseCacheControlHeader(rw, -1)
 				if isTimeoutError(err) {
 					responseNotFound(rw, "fetch timed out")
 				} else {
@@ -675,7 +675,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 					g.logError(trimmedError)
 				}
 
-				setResponseCacheControlHeader(rw, 0)
+				setResponseCacheControlHeader(rw, -1)
 				if isTimeoutError(err) {
 					responseNotFound(rw, "fetch timed out")
 				} else {
@@ -803,7 +803,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			g.logError(err)
 		}
 
-		setResponseCacheControlHeader(rw, 0)
+		setResponseCacheControlHeader(rw, -1)
 		responseNotFound(rw, "fetch timed out")
 
 		return
