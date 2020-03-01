@@ -338,7 +338,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				g.logError(err)
 			}
 
-			setResponseCacheControlHeader(rw, 60)
+			setResponseCacheControlHeader(rw, 0)
 			responseNotFound(rw, "fetch timed out")
 
 			return
@@ -474,7 +474,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				g.logError(err)
 			}
 
-			setResponseCacheControlHeader(rw, 60)
+			setResponseCacheControlHeader(rw, 0)
 			if isTimeoutError(err) {
 				responseNotFound(rw, "fetch timed out")
 			} else {
@@ -527,7 +527,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				g.logError(err)
 			}
 
-			setResponseCacheControlHeader(rw, 60)
+			setResponseCacheControlHeader(rw, 0)
 			if isTimeoutError(err) {
 				responseNotFound(rw, "fetch timed out")
 			} else {
@@ -578,7 +578,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				g.logError(err)
 			}
 
-			setResponseCacheControlHeader(rw, 60)
+			setResponseCacheControlHeader(rw, 0)
 			if isTimeoutError(err) {
 				responseNotFound(rw, "fetch timed out")
 			} else {
@@ -614,7 +614,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 					g.logError(trimmedError)
 				}
 
-				setResponseCacheControlHeader(rw, 60)
+				setResponseCacheControlHeader(rw, 0)
 				if isTimeoutError(err) {
 					responseNotFound(rw, "fetch timed out")
 				} else {
@@ -675,7 +675,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 					g.logError(trimmedError)
 				}
 
-				setResponseCacheControlHeader(rw, 60)
+				setResponseCacheControlHeader(rw, 0)
 				if isTimeoutError(err) {
 					responseNotFound(rw, "fetch timed out")
 				} else {
@@ -803,7 +803,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			g.logError(err)
 		}
 
-		setResponseCacheControlHeader(rw, 60)
+		setResponseCacheControlHeader(rw, 0)
 		responseNotFound(rw, "fetch timed out")
 
 		return
@@ -811,16 +811,13 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	defer cache.Close()
 
 	rw.Header().Set("Content-Type", cache.MIMEType())
-	rw.Header().Set(
-		"ETag",
-		fmt.Sprintf(
-			"%q",
-			base64.StdEncoding.EncodeToString(cache.Checksum()),
-		),
-	)
+	rw.Header().Set("ETag", fmt.Sprintf(
+		"%q",
+		base64.StdEncoding.EncodeToString(cache.Checksum()),
+	))
 
 	if isOriginalModuleVersionValid {
-		setResponseCacheControlHeader(rw, 24*3600)
+		setResponseCacheControlHeader(rw, 3600)
 	} else {
 		setResponseCacheControlHeader(rw, 60)
 	}
