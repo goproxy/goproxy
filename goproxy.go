@@ -6,6 +6,7 @@ package goproxy
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -474,10 +475,11 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				g.logError(err)
 			}
 
-			setResponseCacheControlHeader(rw, -1)
 			if isTimeoutError(err) {
+				setResponseCacheControlHeader(rw, -1)
 				responseNotFound(rw, "fetch timed out")
 			} else {
+				setResponseCacheControlHeader(rw, 60)
 				responseNotFound(rw, err)
 			}
 
@@ -490,10 +492,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		responseString(rw, http.StatusOK, versions)
 
 		return
-	}
-
-	isOriginalModuleVersionValid := semver.IsValid(moduleVersion)
-	if !isOriginalModuleVersionValid {
+	} else if !semver.IsValid(moduleVersion) {
 		var operation string
 		if isLatest {
 			operation = "latest"
@@ -527,26 +526,33 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				g.logError(err)
 			}
 
-			setResponseCacheControlHeader(rw, -1)
 			if isTimeoutError(err) {
+				setResponseCacheControlHeader(rw, -1)
 				responseNotFound(rw, "fetch timed out")
 			} else {
+				setResponseCacheControlHeader(rw, 60)
 				responseNotFound(rw, err)
 			}
 
 			return
 		}
 
-		moduleVersion = mr.Version
-		escapedModuleVersion, err = module.EscapeVersion(moduleVersion)
+		mr.Versions = nil
+		mr.Info = ""
+		mr.GoMod = ""
+		mr.Zip = ""
+
+		b, err := json.Marshal(mr)
 		if err != nil {
 			g.logError(err)
 			responseInternalServerError(rw)
 			return
 		}
 
-		nameBase = fmt.Sprint(escapedModuleVersion, nameExt)
-		name = path.Join(path.Dir(name), nameBase)
+		setResponseCacheControlHeader(rw, 60)
+		responseJSON(rw, http.StatusOK, b)
+
+		return
 	}
 
 	cacher := g.Cacher
@@ -578,10 +584,11 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				g.logError(err)
 			}
 
-			setResponseCacheControlHeader(rw, -1)
 			if isTimeoutError(err) {
+				setResponseCacheControlHeader(rw, -1)
 				responseNotFound(rw, "fetch timed out")
 			} else {
+				setResponseCacheControlHeader(rw, 60)
 				responseNotFound(rw, err)
 			}
 
@@ -614,10 +621,11 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 					g.logError(trimmedError)
 				}
 
-				setResponseCacheControlHeader(rw, -1)
 				if isTimeoutError(err) {
+					setResponseCacheControlHeader(rw, -1)
 					responseNotFound(rw, "fetch timed out")
 				} else {
+					setResponseCacheControlHeader(rw, 60)
 					responseNotFound(rw, trimmedError)
 				}
 
@@ -675,10 +683,11 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 					g.logError(trimmedError)
 				}
 
-				setResponseCacheControlHeader(rw, -1)
 				if isTimeoutError(err) {
+					setResponseCacheControlHeader(rw, -1)
 					responseNotFound(rw, "fetch timed out")
 				} else {
+					setResponseCacheControlHeader(rw, 60)
 					responseNotFound(rw, trimmedError)
 				}
 
@@ -816,12 +825,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		base64.StdEncoding.EncodeToString(cache.Checksum()),
 	))
 
-	if isOriginalModuleVersionValid {
-		setResponseCacheControlHeader(rw, 3600)
-	} else {
-		setResponseCacheControlHeader(rw, 60)
-	}
-
+	setResponseCacheControlHeader(rw, 3600)
 	http.ServeContent(rw, r, "", cache.ModTime(), cache)
 }
 

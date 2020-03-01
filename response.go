@@ -27,6 +27,14 @@ func responseString(rw http.ResponseWriter, statusCode int, s string) {
 	rw.Write([]byte(s))
 }
 
+// responseJSON responses the b as a "application/json" content to the client
+// with the statusCode.
+func responseJSON(rw http.ResponseWriter, statusCode int, b []byte) {
+	rw.Header().Set("Content-Type", "application/json; charset=utf-8")
+	rw.WriteHeader(statusCode)
+	rw.Write(b)
+}
+
 // responseNotFound responses "not found" to the client with the optional msgs.
 func responseNotFound(rw http.ResponseWriter, msgs ...interface{}) {
 	var msg string

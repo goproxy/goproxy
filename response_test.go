@@ -37,6 +37,19 @@ func TestResponseString(t *testing.T) {
 	assert.Equal(t, "Foobar", rec.Body.String())
 }
 
+func TestResponseJSON(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	responseJSON(rec, http.StatusOK, []byte(`{"Foo":"Bar"}`))
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(
+		t,
+		"application/json; charset=utf-8",
+		rec.HeaderMap.Get("Content-Type"),
+	)
+	assert.Equal(t, `{"Foo":"Bar"}`, rec.Body.String())
+}
+
 func TestResponseNotFound(t *testing.T) {
 	rec := httptest.NewRecorder()
 

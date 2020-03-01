@@ -23,11 +23,12 @@ import (
 
 // modResult is an unified result of the `mod`.
 type modResult struct {
-	Version  string
-	Versions []string
-	Info     string
-	GoMod    string
-	Zip      string
+	Version  string    `json:",omitempty"`
+	Time     time.Time `json:",omitempty"`
+	Versions []string  `json:",omitempty"`
+	Info     string    `json:",omitempty"`
+	GoMod    string    `json:",omitempty"`
+	Zip      string    `json:",omitempty"`
 }
 
 // mod executes the Go modules related commands based on the operation.
