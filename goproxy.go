@@ -290,7 +290,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 
 		if !g.proxiedSUMDBNames[sumdbName] {
-			setResponseCacheControlHeader(rw, 60)
+			setResponseCacheControlHeader(rw, 3600)
 			responseNotFound(rw)
 			return
 		}
@@ -298,7 +298,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		var contentType string
 		switch {
 		case sumdbURL.Path == "/supported":
-			setResponseCacheControlHeader(rw, 60)
+			setResponseCacheControlHeader(rw, 3600)
 			rw.Write(nil) // 200 OK
 			return
 		case sumdbURL.Path == "/latest":
@@ -328,17 +328,18 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 		sumdbRes, err := g.httpClient.Do(sumdbReq)
 		if err != nil {
-			if isTimeoutError(err) {
-				if !g.DisableNotFoundLog {
-					g.logError(err)
-				}
-
-				setResponseCacheControlHeader(rw, 60)
-				responseNotFound(rw, "fetch timed out")
-			} else {
+			if !isTimeoutError(err) {
 				g.logError(err)
 				responseInternalServerError(rw)
+				return
 			}
+
+			if !g.DisableNotFoundLog {
+				g.logError(err)
+			}
+
+			setResponseCacheControlHeader(rw, 60)
+			responseNotFound(rw, "fetch timed out")
 
 			return
 		}
@@ -360,12 +361,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 					g.logErrorf("%s", b)
 				}
 
-				if sumdbRes.StatusCode == http.StatusNotFound {
-					setResponseCacheControlHeader(rw, 60)
-				} else {
-					setResponseCacheControlHeader(rw, 3600)
-				}
-
+				setResponseCacheControlHeader(rw, 60)
 				responseNotFound(rw, string(b))
 
 				return
@@ -389,7 +385,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			sumdbRes.Header.Get("Content-Length"),
 		)
 
-		setResponseCacheControlHeader(rw, 60)
+		setResponseCacheControlHeader(rw, 3600)
 
 		io.Copy(rw, sumdbRes.Body)
 
@@ -468,20 +464,21 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			moduleVersion,
 		)
 		if err != nil {
-			if isNotFoundError(err) {
-				if !g.DisableNotFoundLog {
-					g.logError(err)
-				}
-
-				setResponseCacheControlHeader(rw, 60)
-				if isTimeoutError(err) {
-					responseNotFound(rw, "fetch timed out")
-				} else {
-					responseNotFound(rw, err)
-				}
-			} else {
+			if !isNotFoundError(err) {
 				g.logError(err)
 				responseInternalServerError(rw)
+				return
+			}
+
+			if !g.DisableNotFoundLog {
+				g.logError(err)
+			}
+
+			setResponseCacheControlHeader(rw, 60)
+			if isTimeoutError(err) {
+				responseNotFound(rw, "fetch timed out")
+			} else {
+				responseNotFound(rw, err)
 			}
 
 			return
@@ -520,20 +517,21 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			moduleVersion,
 		)
 		if err != nil {
-			if isNotFoundError(err) {
-				if !g.DisableNotFoundLog {
-					g.logError(err)
-				}
-
-				setResponseCacheControlHeader(rw, 60)
-				if isTimeoutError(err) {
-					responseNotFound(rw, "fetch timed out")
-				} else {
-					responseNotFound(rw, err)
-				}
-			} else {
+			if !isNotFoundError(err) {
 				g.logError(err)
 				responseInternalServerError(rw)
+				return
+			}
+
+			if !g.DisableNotFoundLog {
+				g.logError(err)
+			}
+
+			setResponseCacheControlHeader(rw, 60)
+			if isTimeoutError(err) {
+				responseNotFound(rw, "fetch timed out")
+			} else {
+				responseNotFound(rw, err)
 			}
 
 			return
@@ -570,20 +568,21 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			moduleVersion,
 		)
 		if err != nil {
-			if isNotFoundError(err) {
-				if !g.DisableNotFoundLog {
-					g.logError(err)
-				}
-
-				setResponseCacheControlHeader(rw, 60)
-				if isTimeoutError(err) {
-					responseNotFound(rw, "fetch timed out")
-				} else {
-					responseNotFound(rw, err)
-				}
-			} else {
+			if !isNotFoundError(err) {
 				g.logError(err)
 				responseInternalServerError(rw)
+				return
+			}
+
+			if !g.DisableNotFoundLog {
+				g.logError(err)
+			}
+
+			setResponseCacheControlHeader(rw, 60)
+			if isTimeoutError(err) {
+				responseNotFound(rw, "fetch timed out")
+			} else {
+				responseNotFound(rw, err)
 			}
 
 			return
@@ -596,7 +595,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				moduleVersion,
 			)
 			if err != nil {
-				err := errors.New(strings.TrimPrefix(
+				trimmedError := errors.New(strings.TrimPrefix(
 					err.Error(),
 					fmt.Sprintf(
 						"%s@%s: ",
@@ -605,23 +604,21 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 					),
 				))
 
-				if isNotFoundError(err) {
-					if !g.DisableNotFoundLog {
-						g.logError(err)
-					}
-
-					setResponseCacheControlHeader(rw, 60)
-					if isTimeoutError(err) {
-						responseNotFound(
-							rw,
-							"fetch timed out",
-						)
-					} else {
-						responseNotFound(rw, err)
-					}
-				} else {
-					g.logError(err)
+				if !isNotFoundError(err) {
+					g.logError(trimmedError)
 					responseInternalServerError(rw)
+					return
+				}
+
+				if !g.DisableNotFoundLog {
+					g.logError(trimmedError)
+				}
+
+				setResponseCacheControlHeader(rw, 60)
+				if isTimeoutError(err) {
+					responseNotFound(rw, "fetch timed out")
+				} else {
+					responseNotFound(rw, trimmedError)
 				}
 
 				return
@@ -659,7 +656,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				fmt.Sprint(moduleVersion, "/go.mod"),
 			)
 			if err != nil {
-				err := errors.New(strings.TrimPrefix(
+				trimmedError := errors.New(strings.TrimPrefix(
 					err.Error(),
 					fmt.Sprintf(
 						"%s@%s: ",
@@ -668,23 +665,21 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 					),
 				))
 
-				if isNotFoundError(err) {
-					if !g.DisableNotFoundLog {
-						g.logError(err)
-					}
-
-					setResponseCacheControlHeader(rw, 60)
-					if isTimeoutError(err) {
-						responseNotFound(
-							rw,
-							"fetch timed out",
-						)
-					} else {
-						responseNotFound(rw, err)
-					}
-				} else {
-					g.logError(err)
+				if !isNotFoundError(err) {
+					g.logError(trimmedError)
 					responseInternalServerError(rw)
+					return
+				}
+
+				if !g.DisableNotFoundLog {
+					g.logError(trimmedError)
+				}
+
+				setResponseCacheControlHeader(rw, 60)
+				if isTimeoutError(err) {
+					responseNotFound(rw, "fetch timed out")
+				} else {
+					responseNotFound(rw, trimmedError)
 				}
 
 				return
@@ -798,17 +793,18 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else if err != nil {
-		if isTimeoutError(err) {
-			if !g.DisableNotFoundLog {
-				g.logError(err)
-			}
-
-			setResponseCacheControlHeader(rw, 60)
-			responseNotFound(rw, "fetch timed out")
-		} else {
+		if !isTimeoutError(err) {
 			g.logError(err)
 			responseInternalServerError(rw)
+			return
 		}
+
+		if !g.DisableNotFoundLog {
+			g.logError(err)
+		}
+
+		setResponseCacheControlHeader(rw, 60)
+		responseNotFound(rw, "fetch timed out")
 
 		return
 	}
@@ -824,7 +820,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	)
 
 	if isOriginalModuleVersionValid {
-		setResponseCacheControlHeader(rw, 3600)
+		setResponseCacheControlHeader(rw, 24*3600)
 	} else {
 		setResponseCacheControlHeader(rw, 60)
 	}
