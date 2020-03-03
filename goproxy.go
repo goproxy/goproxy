@@ -450,7 +450,6 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer os.RemoveAll(goproxyRoot)
-	defer modClean(g.GoBinName, g.goBinEnv, goproxyRoot)
 
 	if isList {
 		mr, err := mod(
