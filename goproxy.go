@@ -824,7 +824,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		base64.StdEncoding.EncodeToString(cache.Checksum()),
 	))
 
-	setResponseCacheControlHeader(rw, 3600)
+	setResponseCacheControlHeader(rw, 86400)
 	http.ServeContent(rw, r, "", cache.ModTime(), cache)
 }
 
