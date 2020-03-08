@@ -253,13 +253,13 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
 	default:
-		setResponseCacheControlHeader(rw, 3600)
+		setResponseCacheControlHeader(rw, 86400)
 		responseMethodNotAllowed(rw)
 		return
 	}
 
 	if !strings.HasPrefix(r.URL.Path, "/") {
-		setResponseCacheControlHeader(rw, 3600)
+		setResponseCacheControlHeader(rw, 604800)
 		responseNotFound(rw)
 		return
 	}
@@ -270,7 +270,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	name, err := url.PathUnescape(trimmedPath)
 	if err != nil {
-		setResponseCacheControlHeader(rw, 3600)
+		setResponseCacheControlHeader(rw, 604800)
 		responseNotFound(rw)
 		return
 	}
@@ -278,38 +278,45 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(name, "sumdb/") {
 		sumdbURL, err := parseRawURL(strings.TrimPrefix(name, "sumdb/"))
 		if err != nil {
-			setResponseCacheControlHeader(rw, 3600)
+			setResponseCacheControlHeader(rw, 604800)
 			responseNotFound(rw)
 			return
 		}
 
 		sumdbName, err := idna.Lookup.ToASCII(sumdbURL.Host)
 		if err != nil {
-			setResponseCacheControlHeader(rw, 3600)
+			setResponseCacheControlHeader(rw, 604800)
 			responseNotFound(rw)
 			return
 		}
 
 		if !g.proxiedSUMDBNames[sumdbName] {
-			setResponseCacheControlHeader(rw, 3600)
+			setResponseCacheControlHeader(rw, 86400)
 			responseNotFound(rw)
 			return
 		}
 
-		var contentType string
+		var (
+			contentType string
+			maxAge      int
+		)
+
 		switch {
 		case sumdbURL.Path == "/supported":
-			setResponseCacheControlHeader(rw, 3600)
+			setResponseCacheControlHeader(rw, 86400)
 			rw.Write(nil) // 200 OK
 			return
 		case sumdbURL.Path == "/latest":
 			contentType = "text/plain; charset=utf-8"
+			maxAge = 3600
 		case strings.HasPrefix(sumdbURL.Path, "/lookup/"):
 			contentType = "text/plain; charset=utf-8"
+			maxAge = 86400
 		case strings.HasPrefix(sumdbURL.Path, "/tile/"):
 			contentType = "application/octet-stream"
+			maxAge = 86400
 		default:
-			setResponseCacheControlHeader(rw, 3600)
+			setResponseCacheControlHeader(rw, 604800)
 			responseNotFound(rw)
 			return
 		}
@@ -362,7 +369,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 					g.logErrorf("%s", b)
 				}
 
-				setResponseCacheControlHeader(rw, 60)
+				setResponseCacheControlHeader(rw, 3600)
 				responseNotFound(rw, string(b))
 
 				return
@@ -386,7 +393,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			sumdbRes.Header.Get("Content-Length"),
 		)
 
-		setResponseCacheControlHeader(rw, 3600)
+		setResponseCacheControlHeader(rw, maxAge)
 
 		io.Copy(rw, sumdbRes.Body)
 
@@ -412,7 +419,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	nameParts := strings.Split(name, "/@v/")
 	if len(nameParts) != 2 {
-		setResponseCacheControlHeader(rw, 3600)
+		setResponseCacheControlHeader(rw, 86400)
 		responseNotFound(rw)
 		return
 	}
@@ -420,7 +427,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	escapedModulePath := nameParts[0]
 	modulePath, err := module.UnescapePath(escapedModulePath)
 	if err != nil {
-		setResponseCacheControlHeader(rw, 3600)
+		setResponseCacheControlHeader(rw, 604800)
 		responseNotFound(rw)
 		return
 	}
@@ -430,7 +437,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	switch nameExt {
 	case ".info", ".mod", ".zip":
 	default:
-		setResponseCacheControlHeader(rw, 3600)
+		setResponseCacheControlHeader(rw, 604800)
 		responseNotFound(rw)
 		return
 	}
@@ -438,7 +445,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	escapedModuleVersion := strings.TrimSuffix(nameBase, nameExt)
 	moduleVersion, err := module.UnescapeVersion(escapedModuleVersion)
 	if err != nil {
-		setResponseCacheControlHeader(rw, 3600)
+		setResponseCacheControlHeader(rw, 604800)
 		responseNotFound(rw)
 		return
 	}
@@ -478,7 +485,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				setResponseCacheControlHeader(rw, -1)
 				responseNotFound(rw, "fetch timed out")
 			} else {
-				setResponseCacheControlHeader(rw, 60)
+				setResponseCacheControlHeader(rw, 3600)
 				responseNotFound(rw, err)
 			}
 
@@ -487,7 +494,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 		versions := strings.Join(mr.Versions, "\n")
 
-		setResponseCacheControlHeader(rw, 60)
+		setResponseCacheControlHeader(rw, 1800)
 		responseString(rw, http.StatusOK, versions)
 
 		return
@@ -498,7 +505,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		} else if nameExt == ".info" {
 			operation = "lookup"
 		} else {
-			setResponseCacheControlHeader(rw, 3600)
+			setResponseCacheControlHeader(rw, 604800)
 			responseNotFound(rw, "unrecognized version")
 			return
 		}
@@ -529,7 +536,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				setResponseCacheControlHeader(rw, -1)
 				responseNotFound(rw, "fetch timed out")
 			} else {
-				setResponseCacheControlHeader(rw, 60)
+				setResponseCacheControlHeader(rw, 3600)
 				responseNotFound(rw, err)
 			}
 
@@ -548,7 +555,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		setResponseCacheControlHeader(rw, 60)
+		setResponseCacheControlHeader(rw, 1800)
 		responseJSON(rw, http.StatusOK, b)
 
 		return
@@ -587,7 +594,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				setResponseCacheControlHeader(rw, -1)
 				responseNotFound(rw, "fetch timed out")
 			} else {
-				setResponseCacheControlHeader(rw, 60)
+				setResponseCacheControlHeader(rw, 3600)
 				responseNotFound(rw, err)
 			}
 
@@ -624,7 +631,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 					setResponseCacheControlHeader(rw, -1)
 					responseNotFound(rw, "fetch timed out")
 				} else {
-					setResponseCacheControlHeader(rw, 60)
+					setResponseCacheControlHeader(rw, 3600)
 					responseNotFound(rw, trimmedError)
 				}
 
@@ -650,7 +657,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 					zipHash,
 				),
 			) {
-				setResponseCacheControlHeader(rw, 3600)
+				setResponseCacheControlHeader(rw, 604800)
 				responseNotFound(rw, fmt.Sprintf(
 					"untrusted revision %s",
 					moduleVersion,
@@ -686,7 +693,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 					setResponseCacheControlHeader(rw, -1)
 					responseNotFound(rw, "fetch timed out")
 				} else {
-					setResponseCacheControlHeader(rw, 60)
+					setResponseCacheControlHeader(rw, 3600)
 					responseNotFound(rw, trimmedError)
 				}
 
@@ -714,7 +721,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 					modHash,
 				),
 			) {
-				setResponseCacheControlHeader(rw, 3600)
+				setResponseCacheControlHeader(rw, 604800)
 				responseNotFound(rw, fmt.Sprintf(
 					"untrusted revision %s",
 					moduleVersion,
@@ -824,7 +831,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		base64.StdEncoding.EncodeToString(cache.Checksum()),
 	))
 
-	setResponseCacheControlHeader(rw, 86400)
+	setResponseCacheControlHeader(rw, 604800)
 	http.ServeContent(rw, r, "", cache.ModTime(), cache)
 }
 
