@@ -494,7 +494,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 		versions := strings.Join(mr.Versions, "\n")
 
-		setResponseCacheControlHeader(rw, 1800)
+		setResponseCacheControlHeader(rw, 600)
 		responseString(rw, http.StatusOK, versions)
 
 		return
@@ -555,7 +555,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		setResponseCacheControlHeader(rw, 1800)
+		setResponseCacheControlHeader(rw, 600)
 		responseJSON(rw, http.StatusOK, b)
 
 		return
