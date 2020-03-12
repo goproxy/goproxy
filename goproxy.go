@@ -107,7 +107,7 @@ type Goproxy struct {
 	//
 	// If the `InsecureMode` is true, TLS accepts any certificate presented
 	// by the server and any host name in that certificate.
-	InsecureMode bool
+	InsecureMode bool `mapstructure:"insecure_mode"`
 
 	// ErrorLogger is the `log.Logger` that logs errors that occur while
 	// proxying.
