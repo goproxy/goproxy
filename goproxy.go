@@ -65,13 +65,13 @@ type Goproxy struct {
 	// Default value: `os.Environ()`
 	GoBinEnv []string `mapstructure:"go_bin_env"`
 
-	// MaxGoBinWorkers is the maximum number of the Go binary commands that
+	// GoBinMaxWorkers is the maximum number of the Go binary commands that
 	// are allowed to execute at the same time.
 	//
-	// If the `MaxGoBinWorkers` is zero, then there will be no limitations.
+	// If the `GoBinMaxWorkers` is zero, then there will be no limitations.
 	//
 	// Default value: 0
-	MaxGoBinWorkers int `mapstructure:"max_go_bin_workers"`
+	GoBinMaxWorkers int `mapstructure:"go_bin_max_workers"`
 
 	// PathPrefix is the prefix of all request paths. It will be used to
 	// trim the request paths via `strings.TrimPrefix`.
@@ -175,8 +175,8 @@ func (g *Goproxy) load() {
 		g.goBinEnv[parts[0]] = parts[1]
 	}
 
-	if g.MaxGoBinWorkers != 0 {
-		g.goBinWorkerChan = make(chan struct{}, g.MaxGoBinWorkers)
+	if g.GoBinMaxWorkers != 0 {
+		g.goBinWorkerChan = make(chan struct{}, g.GoBinMaxWorkers)
 	}
 
 	var proxies []string
