@@ -5,6 +5,7 @@ package goproxy
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -102,6 +103,12 @@ type Goproxy struct {
 	// Default value: nil
 	ProxiedSUMDBNames []string `mapstructure:"proxied_sumdb_names"`
 
+	// InsecureMode indicates whether the insecure mode is enabled.
+	//
+	// If the `InsecureMode` is true, TLS accepts any certificate presented
+	// by the server and any host name in that certificate.
+	InsecureMode bool
+
 	// ErrorLogger is the `log.Logger` that logs errors that occur while
 	// proxying.
 	//
@@ -141,6 +148,7 @@ func New() *Goproxy {
 					KeepAlive: 30 * time.Second,
 					DualStack: true,
 				}).DialContext,
+				TLSClientConfig:       &tls.Config{},
 				MaxIdleConnsPerHost:   1024,
 				IdleConnTimeout:       90 * time.Second,
 				TLSHandshakeTimeout:   10 * time.Second,
@@ -155,6 +163,9 @@ func New() *Goproxy {
 
 // load loads the stuff of the g up.
 func (g *Goproxy) load() {
+	g.httpClient.Transport.(*http.Transport).
+		TLSClientConfig.InsecureSkipVerify = g.InsecureMode
+
 	for _, env := range g.GoBinEnv {
 		parts := strings.SplitN(env, "=", 2)
 		if len(parts) != 2 {
