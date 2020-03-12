@@ -43,8 +43,18 @@ func (sco *sumdbClientOps) load() {
 		endpointURL := appendURL(proxyURL, "sumdb", sumdbName)
 		operationURL := appendURL(endpointURL, "/supported")
 
+		var req *http.Request
+		req, sco.loadError = http.NewRequest(
+			http.MethodGet,
+			operationURL.String(),
+			nil,
+		)
+		if sco.loadError != nil {
+			return
+		}
+
 		var res *http.Response
-		res, sco.loadError = sco.httpClient.Get(operationURL.String())
+		res, sco.loadError = httpDo(sco.httpClient, req)
 		if sco.loadError != nil {
 			return
 		}
@@ -99,7 +109,12 @@ func (sco *sumdbClientOps) ReadRemote(path string) ([]byte, error) {
 
 	operationURL := appendURL(sco.endpointURL, path)
 
-	res, err := sco.httpClient.Get(operationURL.String())
+	req, err := http.NewRequest(http.MethodGet, operationURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := httpDo(sco.httpClient, req)
 	if err != nil {
 		return nil, err
 	}

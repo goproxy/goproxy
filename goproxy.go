@@ -334,7 +334,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 		sumdbReq = sumdbReq.WithContext(r.Context())
 
-		sumdbRes, err := g.httpClient.Do(sumdbReq)
+		sumdbRes, err := httpDo(g.httpClient, sumdbReq)
 		if err != nil {
 			if !isTimeoutError(err) {
 				g.logError(err)
@@ -369,7 +369,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 					g.logErrorf("%s", b)
 				}
 
-				setResponseCacheControlHeader(rw, 3600)
+				setResponseCacheControlHeader(rw, 600)
 				responseNotFound(rw, string(b))
 
 				return
@@ -485,7 +485,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				setResponseCacheControlHeader(rw, -1)
 				responseNotFound(rw, "fetch timed out")
 			} else {
-				setResponseCacheControlHeader(rw, 3600)
+				setResponseCacheControlHeader(rw, 600)
 				responseNotFound(rw, err)
 			}
 
@@ -494,7 +494,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 		versions := strings.Join(mr.Versions, "\n")
 
-		setResponseCacheControlHeader(rw, 600)
+		setResponseCacheControlHeader(rw, 300)
 		responseString(rw, http.StatusOK, versions)
 
 		return
@@ -536,7 +536,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				setResponseCacheControlHeader(rw, -1)
 				responseNotFound(rw, "fetch timed out")
 			} else {
-				setResponseCacheControlHeader(rw, 3600)
+				setResponseCacheControlHeader(rw, 600)
 				responseNotFound(rw, err)
 			}
 
@@ -555,7 +555,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		setResponseCacheControlHeader(rw, 600)
+		setResponseCacheControlHeader(rw, 300)
 		responseJSON(rw, http.StatusOK, b)
 
 		return
@@ -594,7 +594,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				setResponseCacheControlHeader(rw, -1)
 				responseNotFound(rw, "fetch timed out")
 			} else {
-				setResponseCacheControlHeader(rw, 3600)
+				setResponseCacheControlHeader(rw, 600)
 				responseNotFound(rw, err)
 			}
 
@@ -631,7 +631,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 					setResponseCacheControlHeader(rw, -1)
 					responseNotFound(rw, "fetch timed out")
 				} else {
-					setResponseCacheControlHeader(rw, 3600)
+					setResponseCacheControlHeader(rw, 600)
 					responseNotFound(rw, trimmedError)
 				}
 
@@ -693,7 +693,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 					setResponseCacheControlHeader(rw, -1)
 					responseNotFound(rw, "fetch timed out")
 				} else {
-					setResponseCacheControlHeader(rw, 3600)
+					setResponseCacheControlHeader(rw, 600)
 					responseNotFound(rw, trimmedError)
 				}
 

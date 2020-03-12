@@ -123,7 +123,7 @@ func mod(
 
 			req = req.WithContext(ctx)
 
-			res, err := httpClient.Do(req)
+			res, err := httpDo(httpClient, req)
 			if err != nil {
 				return nil, err
 			}
@@ -171,7 +171,7 @@ func mod(
 
 			req = req.WithContext(ctx)
 
-			res, err := httpClient.Do(req)
+			res, err := httpDo(httpClient, req)
 			if err != nil {
 				return nil, err
 			}
@@ -235,7 +235,7 @@ func mod(
 
 			infoFileReq = infoFileReq.WithContext(ctx)
 
-			infoFileRes, err := httpClient.Do(infoFileReq)
+			infoFileRes, err := httpDo(httpClient, infoFileReq)
 			if err != nil {
 				return nil, err
 			}
@@ -300,7 +300,7 @@ func mod(
 
 			modFileReq = modFileReq.WithContext(ctx)
 
-			modFileRes, err := httpClient.Do(modFileReq)
+			modFileRes, err := httpDo(httpClient, modFileReq)
 			if err != nil {
 				return nil, err
 			}
@@ -365,7 +365,7 @@ func mod(
 
 			zipFileReq = zipFileReq.WithContext(ctx)
 
-			zipFileRes, err := httpClient.Do(zipFileReq)
+			zipFileRes, err := httpDo(httpClient, zipFileReq)
 			if err != nil {
 				return nil, err
 			}
