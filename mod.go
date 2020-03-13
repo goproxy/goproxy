@@ -32,13 +32,9 @@ type modResult struct {
 }
 
 // mod executes the Go modules related commands based on the operation.
-func mod(
+func (g *Goproxy) mod(
 	ctx context.Context,
 	operation string,
-	httpClient *http.Client,
-	goBinName string,
-	goBinEnv map[string]string,
-	goBinWorkerChan chan struct{},
 	goproxyRoot string,
 	modulePath string,
 	moduleVersion string,
@@ -67,10 +63,10 @@ func mod(
 		lastNotFound string
 	)
 
-	if globsMatchPath(goBinEnv["GONOPROXY"], modulePath) {
+	if globsMatchPath(g.goBinEnv["GONOPROXY"], modulePath) {
 		tryDirect = true
 	} else {
-		proxies = strings.Split(goBinEnv["GOPROXY"], ",")
+		proxies = strings.Split(g.goBinEnv["GOPROXY"], ",")
 	}
 
 	for _, proxy := range proxies {
@@ -123,7 +119,7 @@ func mod(
 
 			req = req.WithContext(ctx)
 
-			res, err := httpDo(httpClient, req)
+			res, err := httpDo(g.httpClient, req)
 			if err != nil {
 				return nil, err
 			}
@@ -171,7 +167,7 @@ func mod(
 
 			req = req.WithContext(ctx)
 
-			res, err := httpDo(httpClient, req)
+			res, err := httpDo(g.httpClient, req)
 			if err != nil {
 				return nil, err
 			}
@@ -235,7 +231,7 @@ func mod(
 
 			infoFileReq = infoFileReq.WithContext(ctx)
 
-			infoFileRes, err := httpDo(httpClient, infoFileReq)
+			infoFileRes, err := httpDo(g.httpClient, infoFileReq)
 			if err != nil {
 				return nil, err
 			}
@@ -300,7 +296,7 @@ func mod(
 
 			modFileReq = modFileReq.WithContext(ctx)
 
-			modFileRes, err := httpDo(httpClient, modFileReq)
+			modFileRes, err := httpDo(g.httpClient, modFileReq)
 			if err != nil {
 				return nil, err
 			}
@@ -365,7 +361,7 @@ func mod(
 
 			zipFileReq = zipFileReq.WithContext(ctx)
 
-			zipFileRes, err := httpDo(httpClient, zipFileReq)
+			zipFileRes, err := httpDo(g.httpClient, zipFileReq)
 			if err != nil {
 				return nil, err
 			}
@@ -432,10 +428,10 @@ func mod(
 
 	// Try direct.
 
-	if goBinWorkerChan != nil {
-		goBinWorkerChan <- struct{}{}
+	if g.goBinWorkerChan != nil {
+		g.goBinWorkerChan <- struct{}{}
 		defer func() {
-			<-goBinWorkerChan
+			<-g.goBinWorkerChan
 		}()
 	}
 
@@ -465,9 +461,9 @@ func mod(
 		}
 	}
 
-	cmd := exec.CommandContext(ctx, goBinName, args...)
-	cmd.Env = make([]string, 0, len(goBinEnv)+6)
-	for k, v := range goBinEnv {
+	cmd := exec.CommandContext(ctx, g.GoBinName, args...)
+	cmd.Env = make([]string, 0, len(g.goBinEnv)+6)
+	for k, v := range g.goBinEnv {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
 

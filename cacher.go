@@ -2,7 +2,6 @@ package goproxy
 
 import (
 	"context"
-	"crypto/md5"
 	"errors"
 	"hash"
 	"io"
@@ -61,25 +60,7 @@ type Cache interface {
 	Checksum() []byte
 }
 
-// tempCacher implements the `Cacher` without doing anything.
-type tempCacher struct{}
-
-// NewHash implements the `Cacher`.
-func (tc *tempCacher) NewHash() hash.Hash {
-	return md5.New()
-}
-
-// Cache implements the `Cacher`.
-func (tc *tempCacher) Cache(ctx context.Context, name string) (Cache, error) {
-	return nil, ErrCacheNotFound
-}
-
-// SetCache implements the `Cacher`.
-func (tc *tempCacher) SetCache(ctx context.Context, c Cache) error {
-	return nil
-}
-
-// tempCache implements the `Cache`. It is the cache unit of the `tempCacher`.
+// tempCache implements the `Cache`.
 type tempCache struct {
 	file     *os.File
 	name     string

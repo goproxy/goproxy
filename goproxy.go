@@ -5,11 +5,13 @@ package goproxy
 
 import (
 	"context"
+	"crypto/md5"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"io/ioutil"
 	"log"
@@ -90,13 +92,14 @@ type Goproxy struct {
 	// Default value: nil
 	Cacher Cacher `mapstructure:"cacher"`
 
-	// MaxZIPCacheBytes is the maximum number of bytes of the ZIP cache that
+	// CacherMaxCacheBytes is the maximum number of bytes of the cache that
 	// will be stored in the `Cacher`.
 	//
-	// If the `MaxZIPCacheBytes` is zero, then there will be no limitations.
+	// If the `CacherMaxCacheBytes` is zero, then there will be no
+	// limitations.
 	//
 	// Default value: 0
-	MaxZIPCacheBytes int `mapstructure:"max_zip_cache_bytes"`
+	CacherMaxCacheBytes int `mapstructure:"cacher_max_cache_bytes"`
 
 	// ProxiedSUMDBNames is the proxied checksum database names.
 	//
@@ -470,13 +473,9 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	defer os.RemoveAll(goproxyRoot)
 
 	if isList {
-		mr, err := mod(
+		mr, err := g.mod(
 			r.Context(),
 			"list",
-			g.httpClient,
-			g.GoBinName,
-			g.goBinEnv,
-			g.goBinWorkerChan,
 			goproxyRoot,
 			modulePath,
 			moduleVersion,
@@ -521,13 +520,9 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		mr, err := mod(
+		mr, err := g.mod(
 			r.Context(),
 			operation,
-			g.httpClient,
-			g.GoBinName,
-			g.goBinEnv,
-			g.goBinWorkerChan,
 			goproxyRoot,
 			modulePath,
 			moduleVersion,
@@ -572,20 +567,11 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cacher := g.Cacher
-	if cacher == nil {
-		cacher = &tempCacher{}
-	}
-
-	cache, err := cacher.Cache(r.Context(), name)
+	cache, err := g.cache(r.Context(), name)
 	if err == ErrCacheNotFound {
-		mr, err := mod(
+		mr, err := g.mod(
 			r.Context(),
 			"download",
-			g.httpClient,
-			g.GoBinName,
-			g.goBinEnv,
-			g.goBinWorkerChan,
 			goproxyRoot,
 			modulePath,
 			moduleVersion,
@@ -751,10 +737,17 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		)
 		defer cancel()
 
+		var newHash func() hash.Hash
+		if g.Cacher != nil {
+			newHash = g.Cacher.NewHash
+		} else {
+			newHash = md5.New
+		}
+
 		infoCache, err := newTempCache(
 			mr.Info,
 			fmt.Sprint(namePrefix, ".info"),
-			cacher.NewHash(),
+			newHash(),
 		)
 		if err != nil {
 			g.logError(err)
@@ -762,7 +755,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 		defer infoCache.Close()
 
-		if err := cacher.SetCache(ctx, infoCache); err != nil {
+		if err := g.setCache(ctx, infoCache); err != nil {
 			g.logError(err)
 			return
 		}
@@ -770,7 +763,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		modCache, err := newTempCache(
 			mr.GoMod,
 			fmt.Sprint(namePrefix, ".mod"),
-			cacher.NewHash(),
+			newHash(),
 		)
 		if err != nil {
 			g.logError(err)
@@ -778,7 +771,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 		defer modCache.Close()
 
-		if err := cacher.SetCache(ctx, modCache); err != nil {
+		if err := g.setCache(ctx, modCache); err != nil {
 			g.logError(err)
 			return
 		}
@@ -786,7 +779,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		zipCache, err := newTempCache(
 			mr.Zip,
 			fmt.Sprint(namePrefix, ".zip"),
-			cacher.NewHash(),
+			newHash(),
 		)
 		if err != nil {
 			g.logError(err)
@@ -794,12 +787,9 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 		defer zipCache.Close()
 
-		if g.MaxZIPCacheBytes == 0 ||
-			zipCache.Size() <= int64(g.MaxZIPCacheBytes) {
-			if err := cacher.SetCache(ctx, zipCache); err != nil {
-				g.logError(err)
-				return
-			}
+		if err := g.setCache(ctx, zipCache); err != nil {
+			g.logError(err)
+			return
 		}
 
 		var filename string
@@ -812,7 +802,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			filename = mr.Zip
 		}
 
-		cache, err = newTempCache(filename, name, cacher.NewHash())
+		cache, err = newTempCache(filename, name, newHash())
 		if err != nil {
 			g.logError(err)
 			responseInternalServerError(rw)
@@ -844,6 +834,29 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	setResponseCacheControlHeader(rw, 604800)
 	http.ServeContent(rw, r, "", cache.ModTime(), cache)
+}
+
+// cache returns the matched `Cache` for the name from the `Cacher` of the g.
+func (g *Goproxy) cache(ctx context.Context, name string) (Cache, error) {
+	if g.Cacher == nil {
+		return nil, ErrCacheNotFound
+	}
+
+	return g.Cacher.Cache(ctx, name)
+}
+
+// setCache sets the c to the `Cacher` of the g.
+func (g *Goproxy) setCache(ctx context.Context, c Cache) error {
+	if g.Cacher == nil {
+		return nil
+	}
+
+	if g.CacherMaxCacheBytes != 0 &&
+		c.Size() > int64(g.CacherMaxCacheBytes) {
+		return nil
+	}
+
+	return g.Cacher.SetCache(ctx, c)
 }
 
 // logErrorf logs the v as an error in the format.
