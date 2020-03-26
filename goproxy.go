@@ -173,10 +173,6 @@ func (g *Goproxy) load() {
 		g.goBinEnv[parts[0]] = parts[1]
 	}
 
-	if g.GoBinMaxWorkers != 0 {
-		g.goBinWorkerChan = make(chan struct{}, g.GoBinMaxWorkers)
-	}
-
 	var proxies []string
 	for _, proxy := range strings.Split(g.goBinEnv["GOPROXY"], ",") {
 		proxy = strings.TrimSpace(proxy)
@@ -241,6 +237,10 @@ func (g *Goproxy) load() {
 		g.goBinEnv["GONOSUMDB"] = strings.Join(nosumdbs, ",")
 	}
 
+	if g.GoBinMaxWorkers != 0 {
+		g.goBinWorkerChan = make(chan struct{}, g.GoBinMaxWorkers)
+	}
+
 	g.sumdbClient = sumdb.NewClient(&sumdbClientOps{
 		envGOPROXY:  g.goBinEnv["GOPROXY"],
 		envGOSUMDB:  g.goBinEnv["GOSUMDB"],
@@ -274,8 +274,11 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	trimmedPath := path.Clean(r.URL.Path)
-	trimmedPath = strings.TrimPrefix(trimmedPath, g.PathPrefix)
-	trimmedPath = strings.TrimLeft(trimmedPath, "/")
+	if g.PathPrefix != "" {
+		trimmedPath = strings.TrimPrefix(trimmedPath, g.PathPrefix)
+	} else {
+		trimmedPath = strings.TrimPrefix(trimmedPath, "/")
+	}
 
 	name, err := url.PathUnescape(trimmedPath)
 	if err != nil {
