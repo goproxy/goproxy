@@ -101,20 +101,15 @@ type Goproxy struct {
 	// Default value: 0
 	CacherMaxCacheBytes int `mapstructure:"cacher_max_cache_bytes"`
 
-	// ProxiedSUMDBNames is the proxied checksum database names. By default,
-	// the corresponding checksum database URL of a checksum database name
-	// will be itself as a host with an "https" scheme, unless the
-	// `ProxiedSUMDBURLs` specifies one for it.
+	// ProxiedSUMDBs is the proxied checksum databases. Each value should be
+	// given the format of "<sumdb-name>" or "<sumdb-name> <sumdb-URL>". The
+	// first format can be seen as a shorthand for the second format. In the
+	// case of the first format, the corresponding checksum database URL
+	// will the checksum database name itself as a host with an "https"
+	// scheme.
 	//
 	// Default value: nil
-	ProxiedSUMDBNames []string `mapstructure:"proxied_sumdb_names"`
-
-	// ProxiedSUMDBURLs is the proxied checksum database URLs. In each
-	// key-value pair, the key represents a checksum database name and the
-	// value represents its corresponding checksum database URL.
-	//
-	// Default value: nil
-	ProxiedSUMDBURLs map[string]string `mapstructure:"proxied_sumdb_urls"`
+	ProxiedSUMDBs []string `mapstructure:"proxied_sumdbs"`
 
 	// InsecureMode indicates whether the insecure mode is enabled.
 	//
@@ -258,20 +253,18 @@ func (g *Goproxy) load() {
 		errorLogger: g.ErrorLogger,
 	})
 
-	for _, sumdbName := range g.ProxiedSUMDBNames {
-		if n, err := idna.Lookup.ToASCII(sumdbName); err == nil {
-			g.proxiedSUMDBs[n] = n
+	for _, sumdb := range g.ProxiedSUMDBs {
+		sumdbParts := strings.Fields(sumdb)
+
+		sumdbName, err := idna.Lookup.ToASCII(sumdbParts[0])
+		if err != nil {
+			continue
 		}
-	}
 
-	if g.ProxiedSUMDBURLs != nil {
-		for sumdbName := range g.proxiedSUMDBs {
-			sumdbURL := g.ProxiedSUMDBURLs[sumdbName]
-			if sumdbURL == "" {
-				continue
-			}
-
-			g.proxiedSUMDBs[sumdbName] = sumdbURL
+		if len(sumdbParts) > 1 {
+			g.proxiedSUMDBs[sumdbName] = sumdbParts[1]
+		} else {
+			g.proxiedSUMDBs[sumdbName] = sumdbName
 		}
 	}
 }
