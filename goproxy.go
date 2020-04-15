@@ -21,6 +21,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -386,14 +387,14 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 		defer sumdbRes.Body.Close()
 
-		if sumdbRes.StatusCode != http.StatusOK {
-			b, err := ioutil.ReadAll(sumdbRes.Body)
-			if err != nil {
-				g.logError(err)
-				responseInternalServerError(rw)
-				return
-			}
+		b, err := ioutil.ReadAll(sumdbRes.Body)
+		if err != nil {
+			g.logError(err)
+			responseInternalServerError(rw)
+			return
+		}
 
+		if sumdbRes.StatusCode != http.StatusOK {
 			switch sumdbRes.StatusCode {
 			case http.StatusBadRequest,
 				http.StatusNotFound,
@@ -417,14 +418,11 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 
 		rw.Header().Set("Content-Type", contentType)
-		rw.Header().Set(
-			"Content-Length",
-			sumdbRes.Header.Get("Content-Length"),
-		)
+		rw.Header().Set("Content-Length", strconv.Itoa(len(b)))
 
 		setResponseCacheControlHeader(rw, maxAge)
 
-		io.Copy(rw, sumdbRes.Body)
+		rw.Write(b)
 
 		return
 	}
