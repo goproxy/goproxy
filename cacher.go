@@ -70,8 +70,8 @@ type tempCache struct {
 	checksum []byte
 }
 
-// newTempCache returns a new instance of the `tempCache` with the filename, the
-// name, and the fileHash.
+// newTempCache returns a new instance of the `tempCache` with the filename,
+// name, and fileHash.
 func newTempCache(filename, name string, fileHash hash.Hash) (Cache, error) {
 	file, err := os.Open(filename)
 	if err != nil {
