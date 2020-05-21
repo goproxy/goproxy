@@ -323,16 +323,6 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		sumdbURL, err = parseRawURL(fmt.Sprint(
-			g.proxiedSUMDBs[sumdbName],
-			sumdbURL.Path,
-		))
-		if err != nil {
-			g.logError(err)
-			responseInternalServerError(rw)
-			return
-		}
-
 		var (
 			contentType string
 			maxAge      int
@@ -355,6 +345,16 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		default:
 			setResponseCacheControlHeader(rw, 86400)
 			responseNotFound(rw)
+			return
+		}
+
+		sumdbURL, err = parseRawURL(fmt.Sprint(
+			g.proxiedSUMDBs[sumdbName],
+			sumdbURL.Path,
+		))
+		if err != nil {
+			g.logError(err)
+			responseInternalServerError(rw)
 			return
 		}
 
