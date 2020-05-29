@@ -45,8 +45,8 @@ func (o *OSS) load() {
 		AccessKeyID:     o.AccessKeyID,
 		SecretAccessKey: o.AccessKeySecret,
 		BucketName:      o.BucketName,
+		VirtualHosted:   true,
 		Root:            o.Root,
-		virtualHosted:   true,
 	}
 }
 

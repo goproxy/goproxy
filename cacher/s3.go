@@ -44,8 +44,8 @@ func (s *S3) load() {
 		AccessKeyID:     s.AccessKeyID,
 		SecretAccessKey: s.SecretAccessKey,
 		BucketName:      s.BucketName,
+		VirtualHosted:   true,
 		Root:            s.Root,
-		virtualHosted:   true,
 	}
 }
 

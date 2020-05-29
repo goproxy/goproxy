@@ -44,8 +44,8 @@ func (g *GCS) load() {
 		AccessKeyID:     g.AccessKey,
 		SecretAccessKey: g.SecretKey,
 		BucketName:      g.BucketName,
+		VirtualHosted:   true,
 		Root:            g.Root,
-		virtualHosted:   true,
 	}
 }
 

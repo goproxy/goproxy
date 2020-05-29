@@ -32,13 +32,19 @@ type MinIO struct {
 	// BucketName is the name of the bucket.
 	BucketName string `mapstructure:"bucket_name"`
 
+	// BucketLocation is the location of the bucket. It is used to avoid
+	// bucket location lookup operations.
+	BucketLocation string `mapstructure:"bucket_location"`
+
+	// VirtualHosted indicates whether the MinIO is virtual hosted.
+	VirtualHosted bool `mapstructure:"virtual_hosted"`
+
 	// Root is the root of the caches.
 	Root string `mapstructure:"root"`
 
-	loadOnce      sync.Once
-	loadError     error
-	client        *minio.Client
-	virtualHosted bool
+	loadOnce  sync.Once
+	loadError error
+	client    *minio.Client
 }
 
 // load loads the stuff of the m up.
@@ -61,9 +67,10 @@ func (m *MinIO) load() {
 			signerType,
 		),
 		Secure:       strings.ToLower(u.Scheme) == "https",
+		Region:       m.BucketLocation,
 		BucketLookup: minio.BucketLookupPath,
 	}
-	if m.virtualHosted {
+	if m.VirtualHosted {
 		options.BucketLookup = minio.BucketLookupDNS
 	}
 
