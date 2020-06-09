@@ -12,14 +12,13 @@ import (
 
 // sumdbClientOps implements the `sumdb.ClientOps`.
 type sumdbClientOps struct {
+	loadOnce    sync.Once
+	loadError   error
 	endpointURL *url.URL
 	envGOPROXY  string
 	envGOSUMDB  string
 	httpClient  *http.Client
 	errorLogger *log.Logger
-
-	loadOnce  sync.Once
-	loadError error
 }
 
 // load loads the stuff of the sco up.

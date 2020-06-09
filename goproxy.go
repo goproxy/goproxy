@@ -106,7 +106,7 @@ type Goproxy struct {
 	// given the format of "<sumdb-name>" or "<sumdb-name> <sumdb-URL>". The
 	// first format can be seen as a shorthand for the second format. In the
 	// case of the first format, the corresponding checksum database URL
-	// will the checksum database name itself as a host with an "https"
+	// will be the checksum database name itself as a host with an "https"
 	// scheme.
 	//
 	// Default value: nil
