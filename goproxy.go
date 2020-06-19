@@ -43,10 +43,6 @@ import (
 // course, you can also set GOSUMDB, GONOSUMDB, and GOPRIVATE to indicate how
 // the `Goproxy` should verify the modules.
 //
-// ATTENTION: Since GONOPROXY, GOSUMDB, GONOSUMDB, and GOPRIVATE were first
-// introduced in Go 1.13, so we implemented a built-in support for them. Now,
-// you can set them even before Go 1.13.
-//
 // It is highly recommended not to modify the value of any field of the
 // `Goproxy` after calling the `Goproxy.ServeHTTP`, which will cause
 // unpredictable problems.
@@ -575,7 +571,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	cache, err := g.cache(r.Context(), name)
-	if err == ErrCacheNotFound {
+	if errors.Is(err, ErrCacheNotFound) {
 		mr, err := g.mod(
 			r.Context(),
 			"download",
@@ -884,7 +880,7 @@ func isTimeoutError(err error) bool {
 		return true
 	}
 
-	return err == context.DeadlineExceeded
+	return errors.Is(err, context.DeadlineExceeded)
 }
 
 // parseRawURL parses the rawURL.
