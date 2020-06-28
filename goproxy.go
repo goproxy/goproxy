@@ -354,7 +354,8 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		sumdbReq, err := http.NewRequest(
+		sumdbReq, err := http.NewRequestWithContext(
+			r.Context(),
 			http.MethodGet,
 			sumdbURL.String(),
 			nil,
@@ -364,8 +365,6 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			responseInternalServerError(rw)
 			return
 		}
-
-		sumdbReq = sumdbReq.WithContext(r.Context())
 
 		sumdbRes, err := httpDo(g.httpClient, sumdbReq)
 		if err != nil {
@@ -501,7 +500,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				setResponseCacheControlHeader(rw, -1)
 				responseNotFound(rw, "fetch timed out")
 			} else {
-				setResponseCacheControlHeader(rw, 600)
+				setResponseCacheControlHeader(rw, 60)
 				responseNotFound(rw, err)
 			}
 
@@ -510,7 +509,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 		versions := strings.Join(mr.Versions, "\n")
 
-		setResponseCacheControlHeader(rw, 300)
+		setResponseCacheControlHeader(rw, 60)
 		responseString(rw, http.StatusOK, versions)
 
 		return
@@ -545,7 +544,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				setResponseCacheControlHeader(rw, -1)
 				responseNotFound(rw, "fetch timed out")
 			} else {
-				setResponseCacheControlHeader(rw, 600)
+				setResponseCacheControlHeader(rw, 60)
 				responseNotFound(rw, err)
 			}
 
@@ -564,7 +563,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		setResponseCacheControlHeader(rw, 300)
+		setResponseCacheControlHeader(rw, 60)
 		responseJSON(rw, http.StatusOK, b)
 
 		return

@@ -88,7 +88,8 @@ func (g *Goproxy) mod(
 		case "lookup", "latest":
 			var req *http.Request
 			if operation == "lookup" {
-				req, err = http.NewRequest(
+				req, err = http.NewRequestWithContext(
+					ctx,
 					http.MethodGet,
 					appendURL(
 						proxyURL,
@@ -102,7 +103,8 @@ func (g *Goproxy) mod(
 					nil,
 				)
 			} else {
-				req, err = http.NewRequest(
+				req, err = http.NewRequestWithContext(
+					ctx,
 					http.MethodGet,
 					appendURL(
 						proxyURL,
@@ -116,8 +118,6 @@ func (g *Goproxy) mod(
 			if err != nil {
 				return nil, err
 			}
-
-			req = req.WithContext(ctx)
 
 			res, err := httpDo(g.httpClient, req)
 			if err != nil {
@@ -151,7 +151,8 @@ func (g *Goproxy) mod(
 
 			return &mr, nil
 		case "list":
-			req, err := http.NewRequest(
+			req, err := http.NewRequestWithContext(
+				ctx,
 				http.MethodGet,
 				appendURL(
 					proxyURL,
@@ -164,8 +165,6 @@ func (g *Goproxy) mod(
 			if err != nil {
 				return nil, err
 			}
-
-			req = req.WithContext(ctx)
 
 			res, err := httpDo(g.httpClient, req)
 			if err != nil {
@@ -212,7 +211,8 @@ func (g *Goproxy) mod(
 				Versions: versions,
 			}, nil
 		case "download":
-			infoFileReq, err := http.NewRequest(
+			infoFileReq, err := http.NewRequestWithContext(
+				ctx,
 				http.MethodGet,
 				appendURL(
 					proxyURL,
@@ -228,8 +228,6 @@ func (g *Goproxy) mod(
 			if err != nil {
 				return nil, err
 			}
-
-			infoFileReq = infoFileReq.WithContext(ctx)
 
 			infoFileRes, err := httpDo(g.httpClient, infoFileReq)
 			if err != nil {
@@ -277,7 +275,8 @@ func (g *Goproxy) mod(
 				return nil, err
 			}
 
-			modFileReq, err := http.NewRequest(
+			modFileReq, err := http.NewRequestWithContext(
+				ctx,
 				http.MethodGet,
 				appendURL(
 					proxyURL,
@@ -293,8 +292,6 @@ func (g *Goproxy) mod(
 			if err != nil {
 				return nil, err
 			}
-
-			modFileReq = modFileReq.WithContext(ctx)
 
 			modFileRes, err := httpDo(g.httpClient, modFileReq)
 			if err != nil {
@@ -342,7 +339,8 @@ func (g *Goproxy) mod(
 				return nil, err
 			}
 
-			zipFileReq, err := http.NewRequest(
+			zipFileReq, err := http.NewRequestWithContext(
+				ctx,
 				http.MethodGet,
 				appendURL(
 					proxyURL,
@@ -358,8 +356,6 @@ func (g *Goproxy) mod(
 			if err != nil {
 				return nil, err
 			}
-
-			zipFileReq = zipFileReq.WithContext(ctx)
 
 			zipFileRes, err := httpDo(g.httpClient, zipFileReq)
 			if err != nil {
