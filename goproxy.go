@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"hash"
 	"io"
 	"io/ioutil"
 	"log"
@@ -85,6 +84,12 @@ type Goproxy struct {
 	// Default value: 0
 	GoBinMaxWorkers int `mapstructure:"go_bin_max_workers"`
 
+	// GoBinFetchTimeout is the maximum duration allowed for the Go binary
+	// to fetch a module.
+	//
+	// Default value: `time.Minute`
+	GoBinFetchTimeout time.Duration `mapstructure:"go_bin_fetch_timeout"`
+
 	// PathPrefix is the prefix of all request paths. It will be used to
 	// trim the request paths via the `strings.TrimPrefix`.
 	//
@@ -148,9 +153,10 @@ type Goproxy struct {
 // and keeps everything working.
 func New() *Goproxy {
 	return &Goproxy{
-		GoBinName: "go",
-		GoBinEnv:  os.Environ(),
-		loadOnce:  &sync.Once{},
+		GoBinName:         "go",
+		GoBinEnv:          os.Environ(),
+		GoBinFetchTimeout: time.Minute,
+		loadOnce:          &sync.Once{},
 		httpClient: &http.Client{
 			Transport: &http.Transport{
 				Proxy: http.ProxyFromEnvironment,
@@ -160,12 +166,12 @@ func New() *Goproxy {
 					DualStack: true,
 				}).DialContext,
 				TLSClientConfig:       &tls.Config{},
-				MaxIdleConnsPerHost:   1024,
+				MaxIdleConnsPerHost:   200,
 				IdleConnTimeout:       90 * time.Second,
 				TLSHandshakeTimeout:   10 * time.Second,
 				ExpectContinueTimeout: 1 * time.Second,
+				ForceAttemptHTTP2:     true,
 			},
-			Timeout: time.Minute,
 		},
 		goBinEnv:      map[string]string{},
 		proxiedSUMDBs: map[string]string{},
@@ -176,6 +182,7 @@ func New() *Goproxy {
 func (g *Goproxy) load() {
 	g.httpClient.Transport.(*http.Transport).
 		TLSClientConfig.InsecureSkipVerify = g.InsecureMode
+	g.httpClient.Timeout = g.GoBinFetchTimeout
 
 	for _, env := range g.GoBinEnv {
 		parts := strings.SplitN(env, "=", 2)
@@ -281,6 +288,8 @@ func (g *Goproxy) load() {
 func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	g.loadOnce.Do(g.load)
 
+	ctx := r.Context()
+
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
 	default:
@@ -366,7 +375,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 
 		sumdbReq, err := http.NewRequestWithContext(
-			r.Context(),
+			ctx,
 			http.MethodGet,
 			sumdbURL.String(),
 			nil,
@@ -489,11 +498,16 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		responseInternalServerError(rw)
 		return
 	}
-	defer os.RemoveAll(goproxyRoot)
+	defer func() {
+		go func() {
+			<-ctx.Done()
+			os.RemoveAll(goproxyRoot)
+		}()
+	}()
 
 	if isList {
 		mr, err := g.mod(
-			r.Context(),
+			ctx,
 			"list",
 			goproxyRoot,
 			modulePath,
@@ -537,7 +551,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 
 		mr, err := g.mod(
-			r.Context(),
+			ctx,
 			operation,
 			goproxyRoot,
 			modulePath,
@@ -580,10 +594,10 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cache, err := g.cache(r.Context(), name)
+	cache, err := g.cache(ctx, name)
 	if errors.Is(err, ErrCacheNotFound) {
 		mr, err := g.mod(
-			r.Context(),
+			ctx,
 			"download",
 			goproxyRoot,
 			modulePath,
@@ -733,68 +747,70 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 		namePrefix := strings.TrimSuffix(name, nameExt)
 
-		// Using a new `context.Context` instead of the `r.Context` to
-		// avoid early timeouts.
-		ctx, cancel := context.WithTimeout(
-			context.Background(),
-			10*time.Minute,
-		)
-		defer cancel()
-
-		var newHash func() hash.Hash
+		newHash := md5.New
 		if g.Cacher != nil {
 			newHash = g.Cacher.NewHash
-		} else {
-			newHash = md5.New
 		}
 
-		infoCache, err := newTempCache(
-			mr.Info,
-			fmt.Sprint(namePrefix, ".info"),
-			newHash(),
+		// Using a new `context.Context` instead of the `Context` of the
+		// r to avoid early timeouts.
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(
+			context.Background(),
+			2*time.Minute,
 		)
-		if err != nil {
-			g.logError(err)
-			return
-		}
-		defer infoCache.Close()
 
-		if err := g.setCache(ctx, infoCache); err != nil {
-			g.logError(err)
-			return
-		}
+		go func() {
+			defer cancel()
 
-		modCache, err := newTempCache(
-			mr.GoMod,
-			fmt.Sprint(namePrefix, ".mod"),
-			newHash(),
-		)
-		if err != nil {
-			g.logError(err)
-			return
-		}
-		defer modCache.Close()
+			infoCache, err := newTempCache(
+				mr.Info,
+				fmt.Sprint(namePrefix, ".info"),
+				newHash(),
+			)
+			if err != nil {
+				g.logError(err)
+				return
+			}
+			defer infoCache.Close()
 
-		if err := g.setCache(ctx, modCache); err != nil {
-			g.logError(err)
-			return
-		}
+			if err := g.setCache(ctx, infoCache); err != nil {
+				g.logError(err)
+				return
+			}
 
-		zipCache, err := newTempCache(
-			mr.Zip,
-			fmt.Sprint(namePrefix, ".zip"),
-			newHash(),
-		)
-		if err != nil {
-			g.logError(err)
-			return
-		}
-		defer zipCache.Close()
+			modCache, err := newTempCache(
+				mr.GoMod,
+				fmt.Sprint(namePrefix, ".mod"),
+				newHash(),
+			)
+			if err != nil {
+				g.logError(err)
+				return
+			}
+			defer modCache.Close()
 
-		if err := g.setCache(ctx, zipCache); err != nil {
-			g.logError(err)
-			return
-		}
+			if err := g.setCache(ctx, modCache); err != nil {
+				g.logError(err)
+				return
+			}
+
+			zipCache, err := newTempCache(
+				mr.Zip,
+				fmt.Sprint(namePrefix, ".zip"),
+				newHash(),
+			)
+			if err != nil {
+				g.logError(err)
+				return
+			}
+			defer zipCache.Close()
+
+			if err := g.setCache(ctx, zipCache); err != nil {
+				g.logError(err)
+				return
+			}
+		}()
 
 		var filename string
 		switch nameExt {
