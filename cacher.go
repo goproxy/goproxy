@@ -23,7 +23,7 @@ var ErrCacheNotFound = errors.New("cache not found")
 // visit the "github.com/goproxy/goproxy/cacher" package.
 type Cacher interface {
 	// NewHash returns a new instance of the `hash.Hash` used to compute the
-	// checksums of the caches in the underlying cacher.
+	// checksums of the caches.
 	NewHash() hash.Hash
 
 	// Cache returns the matched `Cache` for the name from the underlying
@@ -44,19 +44,19 @@ type Cache interface {
 	io.Seeker
 	io.Closer
 
-	// Name returns the unique Unix path style name of the underlying cache.
+	// Name returns the unique Unix path style name.
 	Name() string
 
-	// MIMEType returns the MIME type of the underlying cache.
+	// MIMEType returns the MIME type.
 	MIMEType() string
 
-	// Size returns the length in bytes of the underlying cache.
+	// Size returns the length in bytes.
 	Size() int64
 
-	// ModTime returns the modification time of the underlying cache.
+	// ModTime returns the modification time.
 	ModTime() time.Time
 
-	// Checksum returns the checksum of the underlying cache.
+	// Checksum returns the checksum.
 	Checksum() []byte
 }
 

@@ -36,12 +36,17 @@ import (
 // Goproxy is the top-level struct of this project.
 //
 // Note that the `Goproxy` will not mess with your environment variables, it
-// will still follow your GOPROXY, GONOPROXY, GOSUMDB, GONOSUMDB, and GOPRIVATE.
+// will still follow your GOPROXY, GONOPROXY, GOSUMDB, GONOSUMDB and GOPRIVATE.
 // It means that you can set GOPROXY to serve the `Goproxy` itself under other
 // proxies, and by setting GONOPROXY and GOPRIVATE to indicate which modules the
 // `Goproxy` should download directly instead of using those proxies. And of
-// course, you can also set GOSUMDB, GONOSUMDB, and GOPRIVATE to indicate how
+// course, you can also set GOSUMDB, GONOSUMDB and GOPRIVATE to indicate how
 // the `Goproxy` should verify the modules.
+//
+// Since GOPROXY (with comma-separated list support), GONOPROXY, GOSUMDB,
+// GONOSUMDB and GOPRIVATE were first introduced in Go 1.13, so we implemented a
+// built-in support for them. Now, you can set them even the version of the Go
+// binary target by the `Goproxy.GoBinName` is before v1.13.
 //
 // It is highly recommended not to modify the value of any field of the
 // `Goproxy` after calling the `Goproxy.ServeHTTP`, which will cause
@@ -52,11 +57,19 @@ import (
 type Goproxy struct {
 	// GoBinName is the name of the Go binary.
 	//
+	// The version of the Go binary target by the `GoBinName` must be at
+	// least v1.11.
+	//
 	// Default value: "go"
 	GoBinName string `mapstructure:"go_bin_name"`
 
 	// GoBinEnv is the environment of the Go binary. Each entry is of the
 	// form "key=value".
+	//
+	// Note that GOPROXY (with comma-separated list support), GONOPROXY,
+	// GOSUMDB, GONOSUMDB and GOPRIVATE are built-in supported. It means
+	// that they can be set even the version of the Go binary target by the
+	// `GoBinName` is before v1.13.
 	//
 	// If the `GoBinEnv` contains duplicate environment keys, only the last
 	// value in the slice for each duplicate key is used.
@@ -64,10 +77,10 @@ type Goproxy struct {
 	// Default value: `os.Environ()`
 	GoBinEnv []string `mapstructure:"go_bin_env"`
 
-	// GoBinMaxWorkers is the maximum number of the Go binary commands that
-	// are allowed to execute at the same time.
+	// GoBinMaxWorkers is the maximum number of commands allowed for the Go
+	// binary to execute at the same time.
 	//
-	// If the `GoBinMaxWorkers` is zero, then there will be no limitations.
+	// If the `GoBinMaxWorkers` is zero, there is no limitation.
 	//
 	// Default value: 0
 	GoBinMaxWorkers int `mapstructure:"go_bin_max_workers"`
@@ -75,8 +88,7 @@ type Goproxy struct {
 	// PathPrefix is the prefix of all request paths. It will be used to
 	// trim the request paths via the `strings.TrimPrefix`.
 	//
-	// Note that when the `PathPrefix` is not empty, then it should start
-	// with "/".
+	// If the `PathPrefix` is not empty, it should start with "/".
 	//
 	// Default value: ""
 	PathPrefix string `mapstructure:"path_prefix"`
@@ -89,11 +101,10 @@ type Goproxy struct {
 	// Default value: nil
 	Cacher Cacher `mapstructure:"cacher"`
 
-	// CacherMaxCacheBytes is the maximum number of bytes of the cache that
-	// will be stored in the `Cacher`.
+	// CacherMaxCacheBytes is the maximum number of bytes allowed for the
+	// `Cacher` to store a cache.
 	//
-	// If the `CacherMaxCacheBytes` is zero, then there will be no
-	// limitations.
+	// If the `CacherMaxCacheBytes` is zero, there is no limitation.
 	//
 	// Default value: 0
 	CacherMaxCacheBytes int `mapstructure:"cacher_max_cache_bytes"`
