@@ -117,7 +117,7 @@ func (g *Goproxy) mod(
 				return nil, err
 			}
 
-			res, err := httpDo(g.httpClient, req)
+			res, err := g.httpClient.Do(req)
 			if err != nil {
 				return nil, err
 			}
@@ -164,7 +164,7 @@ func (g *Goproxy) mod(
 				return nil, err
 			}
 
-			res, err := httpDo(g.httpClient, req)
+			res, err := g.httpClient.Do(req)
 			if err != nil {
 				return nil, err
 			}
@@ -227,7 +227,7 @@ func (g *Goproxy) mod(
 				return nil, err
 			}
 
-			infoFileRes, err := httpDo(g.httpClient, infoFileReq)
+			infoFileRes, err := g.httpClient.Do(infoFileReq)
 			if err != nil {
 				return nil, err
 			}
@@ -294,7 +294,7 @@ func (g *Goproxy) mod(
 				return nil, err
 			}
 
-			modFileRes, err := httpDo(g.httpClient, modFileReq)
+			modFileRes, err := g.httpClient.Do(modFileReq)
 			if err != nil {
 				return nil, err
 			}
@@ -354,7 +354,7 @@ func (g *Goproxy) mod(
 				return nil, err
 			}
 
-			zipFileRes, err := httpDo(g.httpClient, zipFileReq)
+			zipFileRes, err := g.httpClient.Do(zipFileReq)
 			if err != nil {
 				return nil, err
 			}
@@ -450,9 +450,9 @@ func (g *Goproxy) mod(
 		}
 	}
 
-	if g.httpClient.Timeout > 0 {
+	if g.GoBinFetchTimeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, g.httpClient.Timeout)
+		ctx, cancel = context.WithTimeout(ctx, g.GoBinFetchTimeout)
 		defer cancel()
 	}
 
@@ -532,6 +532,7 @@ func checkInfoFile(name, moduleVersion string) error {
 		Version string
 		Time    time.Time
 	}
+
 	if err := json.NewDecoder(f).Decode(&info); err != nil {
 		return err
 	}

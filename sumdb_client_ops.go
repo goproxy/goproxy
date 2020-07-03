@@ -53,7 +53,7 @@ func (sco *sumdbClientOps) load() {
 		}
 
 		var res *http.Response
-		res, sco.loadError = httpDo(sco.httpClient, req)
+		res, sco.loadError = sco.httpClient.Do(req)
 		if sco.loadError != nil {
 			return
 		}
@@ -113,7 +113,7 @@ func (sco *sumdbClientOps) ReadRemote(path string) ([]byte, error) {
 		return nil, err
 	}
 
-	res, err := httpDo(sco.httpClient, req)
+	res, err := sco.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

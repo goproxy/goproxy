@@ -386,7 +386,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		sumdbRes, err := httpDo(g.httpClient, sumdbReq)
+		sumdbRes, err := g.httpClient.Do(sumdbReq)
 		if err != nil {
 			if !isTimeoutError(err) {
 				g.logError(err)
