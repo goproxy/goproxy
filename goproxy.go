@@ -215,10 +215,8 @@ func (g *Goproxy) load() {
 	}
 
 	g.goBinEnv["GOSUMDB"] = strings.TrimSpace(g.goBinEnv["GOSUMDB"])
-	switch g.goBinEnv["GOSUMDB"] {
-	case "", "sum.golang.org":
-		g.goBinEnv["GOSUMDB"] = "sum.golang.org" +
-			"+033de0ae+Ac4zctda0e5eza+HJyk9SxEdh+s3Ux18htTTAD8OuAn8"
+	if g.goBinEnv["GOSUMDB"] == "" {
+		g.goBinEnv["GOSUMDB"] = "sum.golang.org"
 	}
 
 	if g.goBinEnv["GONOPROXY"] == "" {

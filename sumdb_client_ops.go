@@ -1,6 +1,7 @@
 package goproxy
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -14,6 +15,7 @@ import (
 type sumdbClientOps struct {
 	loadOnce    sync.Once
 	loadError   error
+	key         []byte
 	endpointURL *url.URL
 	envGOPROXY  string
 	envGOSUMDB  string
@@ -23,9 +25,44 @@ type sumdbClientOps struct {
 
 // load loads the stuff of the sco up.
 func (sco *sumdbClientOps) load() {
-	sumdbName := sco.envGOSUMDB
+	sumdbParts := strings.Fields(sco.envGOSUMDB)
+	if l := len(sumdbParts); l == 0 {
+		sco.loadError = errors.New("missing GOSUMDB")
+		return
+	} else if l > 2 {
+		sco.loadError = errors.New("invalid GOSUMDB: too many fields")
+		return
+	}
+
+	if sumdbParts[0] == "sum.golang.google.cn" {
+		sumdbParts[0] = "sum.golang.org"
+		if len(sumdbParts) == 1 {
+			sumdbParts = append(
+				sumdbParts,
+				"https://sum.golang.google.cn",
+			)
+		}
+	}
+
+	if sumdbParts[0] == "sum.golang.org" {
+		sumdbParts[0] = "sum.golang.org" +
+			"+033de0ae+Ac4zctda0e5eza+HJyk9SxEdh+s3Ux18htTTAD8OuAn8"
+	}
+
+	sco.key = []byte(sumdbParts[0])
+
+	sumdbName := sumdbParts[0]
 	if i := strings.Index(sumdbName, "+"); i >= 0 {
 		sumdbName = sumdbName[:i]
+	}
+
+	if len(sumdbParts) == 1 {
+		sumdbParts = append(sumdbParts, sumdbName)
+	}
+
+	sco.endpointURL, sco.loadError = parseRawURL(sumdbParts[1])
+	if sco.loadError != nil {
+		return
 	}
 
 	for _, proxy := range strings.Split(sco.envGOPROXY, ",") {
@@ -81,23 +118,8 @@ func (sco *sumdbClientOps) load() {
 
 		sco.endpointURL = endpointURL
 
-		return
+		break
 	}
-
-	sumdbURL := sco.envGOSUMDB
-	if i := strings.Index(sumdbURL, " "); i > 0 {
-		sumdbURL = sumdbURL[i+1:]
-	} else {
-		sumdbURL = sumdbName
-	}
-
-	var endpointURL *url.URL
-	endpointURL, sco.loadError = parseRawURL(sumdbURL)
-	if sco.loadError != nil {
-		return
-	}
-
-	sco.endpointURL = endpointURL
 }
 
 // ReadRemote implements the `sumdb.ClientOps`.
@@ -146,13 +168,11 @@ func (sco *sumdbClientOps) ReadConfig(file string) ([]byte, error) {
 		return nil, sco.loadError
 	}
 
-	if file == "key" {
-		return []byte(sco.envGOSUMDB), nil
-	}
-
-	if strings.HasSuffix(file, "/latest") {
-		// Empty result means empty tree.
-		return []byte{}, nil
+	switch {
+	case file == "key":
+		return sco.key, nil
+	case strings.HasSuffix(file, "/latest"):
+		return []byte{}, nil // Empty result means empty tree
 	}
 
 	return nil, fmt.Errorf("unknown config %s", file)
