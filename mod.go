@@ -1,7 +1,6 @@
 package goproxy
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -16,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
 )
@@ -271,7 +269,10 @@ func (g *Goproxy) mod(
 				return nil, err
 			}
 
-			if err := checkInfoFile(infoFile.Name()); err != nil {
+			if err := checkInfoFile(
+				infoFile.Name(),
+				moduleVersion,
+			); err != nil {
 				return nil, err
 			}
 
@@ -335,10 +336,6 @@ func (g *Goproxy) mod(
 				return nil, err
 			}
 
-			if err := checkModFile(modFile.Name()); err != nil {
-				return nil, err
-			}
-
 			zipFileReq, err := http.NewRequestWithContext(
 				ctx,
 				http.MethodGet,
@@ -396,10 +393,6 @@ func (g *Goproxy) mod(
 			}
 
 			if err := zipFile.Close(); err != nil {
-				return nil, err
-			}
-
-			if err := checkZIPFile(zipFile.Name()); err != nil {
 				return nil, err
 			}
 
@@ -526,8 +519,9 @@ func (g *Goproxy) mod(
 	return &mr, nil
 }
 
-// checkInfoFile checks the info file targeted by the name.
-func checkInfoFile(name string) error {
+// checkInfoFile checks the info file targeted by the name with the
+// moduleVersion.
+func checkInfoFile(name, moduleVersion string) error {
 	f, err := os.Open(name)
 	if err != nil {
 		return err
@@ -538,38 +532,13 @@ func checkInfoFile(name string) error {
 		Version string
 		Time    time.Time
 	}
-
 	if err := json.NewDecoder(f).Decode(&info); err != nil {
 		return err
 	}
 
-	if !semver.IsValid(info.Version) || info.Time.IsZero() {
+	if info.Version != moduleVersion || info.Time.IsZero() {
 		return notFoundError(errors.New("invalid info file"))
 	}
 
 	return nil
-}
-
-// checkModFile checks the mod file targeted by the name.
-func checkModFile(name string) error {
-	b, err := ioutil.ReadFile(name)
-	if err != nil {
-		return err
-	}
-
-	if _, err := modfile.Parse("go.mod", b, nil); err != nil {
-		return notFoundError(fmt.Errorf("invalid mod file: %v", err))
-	}
-
-	return nil
-}
-
-// checkZIPFile checks the ZIP file targeted by the name.
-func checkZIPFile(name string) error {
-	rc, err := zip.OpenReader(name)
-	if err != nil {
-		return notFoundError(fmt.Errorf("invalid zip file: %v", err))
-	}
-
-	return rc.Close()
 }
