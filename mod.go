@@ -1,6 +1,8 @@
 package goproxy
 
 import (
+	"archive/zip"
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -336,6 +338,13 @@ func (g *Goproxy) mod(
 				return nil, err
 			}
 
+			if err := checkModFile(
+				modFile.Name(),
+				modulePath,
+			); err != nil {
+				return nil, err
+			}
+
 			zipFileReq, err := http.NewRequestWithContext(
 				ctx,
 				http.MethodGet,
@@ -393,6 +402,14 @@ func (g *Goproxy) mod(
 			}
 
 			if err := zipFile.Close(); err != nil {
+				return nil, err
+			}
+
+			if err := checkZipFile(
+				zipFile.Name(),
+				modulePath,
+				moduleVersion,
+			); err != nil {
 				return nil, err
 			}
 
@@ -534,11 +551,52 @@ func checkInfoFile(name, moduleVersion string) error {
 	}
 
 	if err := json.NewDecoder(f).Decode(&info); err != nil {
-		return err
+		return notFoundError(fmt.Errorf("invalid info file: %v", err))
 	}
 
 	if info.Version != moduleVersion || info.Time.IsZero() {
 		return notFoundError(errors.New("invalid info file"))
+	}
+
+	return nil
+}
+
+// checkModFile checks the mod file targeted by the name with the modulePath.
+func checkModFile(name, modulePath string) error {
+	f, err := os.Open(name)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		if strings.Contains(scanner.Text(), modulePath) {
+			return nil
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return notFoundError(fmt.Errorf("invalid mod file: %v", err))
+	}
+
+	return notFoundError(errors.New("invalid mod file"))
+}
+
+// checkZipFile checks the zip file targeted by the name with the modulePath and
+// moduleVersion.
+func checkZipFile(name, modulePath, moduleVersion string) error {
+	zr, err := zip.OpenReader(name)
+	if err != nil {
+		return notFoundError(fmt.Errorf("invalid zip file: %v", err))
+	}
+	defer zr.Close()
+
+	namePrefix := fmt.Sprintf("%s@%s/", modulePath, moduleVersion)
+	for _, f := range zr.File {
+		if !strings.HasPrefix(f.Name, namePrefix) {
+			return notFoundError(errors.New("invalid zip file"))
+		}
 	}
 
 	return nil
