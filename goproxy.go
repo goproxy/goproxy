@@ -904,7 +904,8 @@ func isTimeoutError(err error) bool {
 		return true
 	}
 
-	return errors.Is(err, context.DeadlineExceeded)
+	return errors.Is(err, context.DeadlineExceeded) ||
+		strings.Contains(err.Error(), "fetch timed out")
 }
 
 // parseRawURL parses the rawURL.
