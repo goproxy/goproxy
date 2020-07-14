@@ -338,10 +338,7 @@ func (g *Goproxy) mod(
 				return nil, err
 			}
 
-			if err := checkModFile(
-				modFile.Name(),
-				modulePath,
-			); err != nil {
+			if err := checkModFile(modFile.Name()); err != nil {
 				return nil, err
 			}
 
@@ -561,8 +558,8 @@ func checkInfoFile(name, moduleVersion string) error {
 	return nil
 }
 
-// checkModFile checks the mod file targeted by the name with the modulePath.
-func checkModFile(name, modulePath string) error {
+// checkModFile checks the mod file targeted by the name.
+func checkModFile(name string) error {
 	f, err := os.Open(name)
 	if err != nil {
 		return err
@@ -571,7 +568,7 @@ func checkModFile(name, modulePath string) error {
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		if strings.Contains(scanner.Text(), modulePath) {
+		if strings.Contains(scanner.Text(), "module") {
 			return nil
 		}
 	}
