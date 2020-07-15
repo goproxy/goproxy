@@ -1,7 +1,7 @@
 # Goproxy
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/goproxy/goproxy)](https://goreportcard.com/report/github.com/goproxy/goproxy)
-[![GoDoc](https://godoc.org/github.com/goproxy/goproxy?status.svg)](https://godoc.org/github.com/goproxy/goproxy)
+[![PkgGoDev](https://pkg.go.dev/badge/github.com/goproxy/goproxy)](https://pkg.go.dev/github.com/goproxy/goproxy)
 
 A minimalist Go module proxy handler.
 
@@ -11,14 +11,14 @@ Our goal is to find the most dead simple way to provide a minimalist handler
 that can act as a full-featured Go module proxy for those who want to build
 their own proxies. Yeah, there is no `Makefile`, no configuration files, no
 crazy file organization, no lengthy documentation, no annoying stuff, just a
-[`goproxy.Goproxy`](https://godoc.org/github.com/goproxy/goproxy#Goproxy) that
-implements the [`http.Handler`](https://godoc.org/net/http#Handler).
+[`goproxy.Goproxy`](https://pkg.go.dev/github.com/goproxy/goproxy#Goproxy) that
+implements the [`http.Handler`](https://pkg.go.dev/net/http#Handler).
 
 ## Features
 
 * Extremely easy to use
-	* One struct: [`goproxy.Goproxy`](https://godoc.org/github.com/goproxy/goproxy#Goproxy)
-	* Two interfaces: [`goproxy.Cacher`](https://godoc.org/github.com/goproxy/goproxy#Cacher) and [`goproxy.Cache`](https://godoc.org/github.com/goproxy/goproxy#Cache)
+	* One struct: [`goproxy.Goproxy`](https://pkg.go.dev/github.com/goproxy/goproxy#Goproxy)
+	* Two interfaces: [`goproxy.Cacher`](https://pkg.go.dev/github.com/goproxy/goproxy#Cacher) and [`goproxy.Cache`](https://pkg.go.dev/github.com/goproxy/goproxy#Cache)
 * Built-in [`GOPROXY`](https://golang.org/cmd/go/#hdr-Environment_variables) support
 	* Defaulted to `https://proxy.golang.org,direct` (just like what Go is doing right now)
 * Built-in [`GONOPROXY`](https://golang.org/cmd/go/#hdr-Environment_variables) support
@@ -28,15 +28,15 @@ implements the [`http.Handler`](https://godoc.org/net/http#Handler).
 * Built-in [`GOPRIVATE`](https://golang.org/cmd/go/#hdr-Environment_variables) support
 * Supports serving under other Go module proxies by setting [`GOPROXY`](https://golang.org/cmd/go/#hdr-Environment_variables)
 * Supports [proxying checksum databases](http://golang.org/design/25530-sumdb#proxying-a-checksum-database)
-* Supports multiple mainstream implementations of the [`goproxy.Cacher`](https://godoc.org/github.com/goproxy/goproxy#Cacher)
-	* Disk: [`cacher.Disk`](https://godoc.org/github.com/goproxy/goproxy/cacher#Disk)
-	* MinIO: [`cacher.MinIO`](https://godoc.org/github.com/goproxy/goproxy/cacher#MinIO)
-	* Google Cloud Storage: [`cacher.GCS`](https://godoc.org/github.com/goproxy/goproxy/cacher#GCS)
-	* Amazon Simple Storage Service: [`cacher.S3`](https://godoc.org/github.com/goproxy/goproxy/cacher#S3)
-	* Microsoft Azure Blob Storage: [`cacher.MABS`](https://godoc.org/github.com/goproxy/goproxy/cacher#MABS)
-	* DigitalOcean Spaces: [`cacher.DOS`](https://godoc.org/github.com/goproxy/goproxy/cacher#DOS)
-	* Alibaba Cloud Object Storage Service: [`cacher.OSS`](https://godoc.org/github.com/goproxy/goproxy/cacher#OSS)
-	* Qiniu Cloud Kodo: [`cacher.Kodo`](https://godoc.org/github.com/goproxy/goproxy/cacher#Kodo)
+* Supports multiple mainstream implementations of the [`goproxy.Cacher`](https://pkg.go.dev/github.com/goproxy/goproxy#Cacher)
+	* Disk: [`cacher.Disk`](https://pkg.go.dev/github.com/goproxy/goproxy/cacher#Disk)
+	* MinIO: [`cacher.MinIO`](https://pkg.go.dev/github.com/goproxy/goproxy/cacher#MinIO)
+	* Google Cloud Storage: [`cacher.GCS`](https://pkg.go.dev/github.com/goproxy/goproxy/cacher#GCS)
+	* Amazon Simple Storage Service: [`cacher.S3`](https://pkg.go.dev/github.com/goproxy/goproxy/cacher#S3)
+	* Microsoft Azure Blob Storage: [`cacher.MABS`](https://pkg.go.dev/github.com/goproxy/goproxy/cacher#MABS)
+	* DigitalOcean Spaces: [`cacher.DOS`](https://pkg.go.dev/github.com/goproxy/goproxy/cacher#DOS)
+	* Alibaba Cloud Object Storage Service: [`cacher.OSS`](https://pkg.go.dev/github.com/goproxy/goproxy/cacher#OSS)
+	* Qiniu Cloud Kodo: [`cacher.Kodo`](https://pkg.go.dev/github.com/goproxy/goproxy/cacher#Kodo)
 
 ## Installation
 
