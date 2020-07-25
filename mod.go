@@ -285,7 +285,10 @@ func (g *Goproxy) mod(
 				return nil, err
 			}
 
-			if err := formatInfoFile(infoFile.Name()); err != nil {
+			if _, err := formatInfoFile(
+				infoFile.Name(),
+				"",
+			); err != nil {
 				return nil, err
 			}
 
@@ -554,7 +557,8 @@ func (g *Goproxy) mod(
 			) < 0
 		})
 	case "download":
-		if err := formatInfoFile(mr.Info); err != nil {
+		mr.Info, err = formatInfoFile(mr.Info, goproxyRoot)
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -587,10 +591,13 @@ func checkInfoFile(name string) error {
 }
 
 // formatInfoFile formats the info file targeted by the name.
-func formatInfoFile(name string) error {
+//
+// If the tempDir is not empty, a new temporary info file will be created in it.
+// Otherwise, the info file targeted by the name will be replaced.
+func formatInfoFile(name, tempDir string) (string, error) {
 	b, err := ioutil.ReadFile(name)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	var info struct {
@@ -599,22 +606,44 @@ func formatInfoFile(name string) error {
 	}
 
 	if err := json.Unmarshal(b, &info); err != nil {
-		return err
+		return "", err
 	}
 
 	info.Time = info.Time.UTC()
 
 	fb, err := json.Marshal(info)
 	if err != nil {
-		return err
+		return "", err
+	}
+
+	if tempDir != "" {
+		f, err := ioutil.TempFile(tempDir, "info")
+		if err != nil {
+			return "", err
+		}
+
+		if _, err := f.Write(fb); err != nil {
+			f.Close()
+			return "", err
+		}
+
+		if err := f.Close(); err != nil {
+			return "", err
+		}
+
+		return f.Name(), nil
 	}
 
 	fi, err := os.Stat(name)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	return ioutil.WriteFile(name, fb, fi.Mode())
+	if err := ioutil.WriteFile(name, fb, fi.Mode()); err != nil {
+		return "", err
+	}
+
+	return name, nil
 }
 
 // checkModFile checks the mod file targeted by the name.
