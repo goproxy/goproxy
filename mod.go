@@ -146,7 +146,16 @@ func (g *Goproxy) mod(
 
 			mr := modResult{}
 			if err := json.Unmarshal(b, &mr); err != nil {
-				return nil, err
+				return nil, notFoundError(fmt.Errorf(
+					"invalid info response: %v",
+					err,
+				))
+			}
+
+			if !semver.IsValid(mr.Version) || mr.Time.IsZero() {
+				return nil, notFoundError(errors.New(
+					"invalid info response",
+				))
 			}
 
 			return &mr, nil
@@ -191,25 +200,23 @@ func (g *Goproxy) mod(
 				)
 			}
 
-			versions := []string{}
+			mr := modResult{}
 			for _, b := range bytes.Split(b, []byte{'\n'}) {
-				if len(b) == 0 {
+				if !semver.IsValid(string(b)) {
 					continue
 				}
 
-				versions = append(versions, string(b))
+				mr.Versions = append(mr.Versions, string(b))
 			}
 
-			sort.Slice(versions, func(i, j int) bool {
+			sort.Slice(mr.Versions, func(i, j int) bool {
 				return semver.Compare(
-					versions[i],
-					versions[j],
+					mr.Versions[i],
+					mr.Versions[j],
 				) < 0
 			})
 
-			return &modResult{
-				Versions: versions,
-			}, nil
+			return &mr, nil
 		case "download":
 			infoFileReq, err := http.NewRequestWithContext(
 				ctx,
@@ -271,10 +278,7 @@ func (g *Goproxy) mod(
 				return nil, err
 			}
 
-			if err := checkInfoFile(
-				infoFile.Name(),
-				moduleVersion,
-			); err != nil {
+			if err := checkInfoFile(infoFile.Name()); err != nil {
 				return nil, err
 			}
 
@@ -533,9 +537,8 @@ func (g *Goproxy) mod(
 	return &mr, nil
 }
 
-// checkInfoFile checks the info file targeted by the name with the
-// moduleVersion.
-func checkInfoFile(name, moduleVersion string) error {
+// checkInfoFile checks the info file targeted by the name.
+func checkInfoFile(name string) error {
 	f, err := os.Open(name)
 	if err != nil {
 		return err
@@ -551,7 +554,7 @@ func checkInfoFile(name, moduleVersion string) error {
 		return notFoundError(fmt.Errorf("invalid info file: %v", err))
 	}
 
-	if info.Version != moduleVersion || info.Time.IsZero() {
+	if !semver.IsValid(info.Version) || info.Time.IsZero() {
 		return notFoundError(errors.New("invalid info file"))
 	}
 
