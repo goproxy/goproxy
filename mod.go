@@ -23,12 +23,12 @@ import (
 
 // modResult is an unified result of the `mod`.
 type modResult struct {
-	Version  string    `json:",omitempty"`
-	Time     time.Time `json:",omitempty"`
-	Versions []string  `json:",omitempty"`
-	Info     string    `json:",omitempty"`
-	GoMod    string    `json:",omitempty"`
-	Zip      string    `json:",omitempty"`
+	Version  string
+	Time     time.Time
+	Versions []string
+	Info     string
+	GoMod    string
+	Zip      string
 }
 
 // mod executes the Go modules related commands based on the operation.
@@ -158,6 +158,8 @@ func (g *Goproxy) mod(
 				))
 			}
 
+			mr.Time = mr.Time.UTC()
+
 			return &mr, nil
 		case "list":
 			req, err := http.NewRequestWithContext(
@@ -271,6 +273,7 @@ func (g *Goproxy) mod(
 				infoFile,
 				infoFileRes.Body,
 			); err != nil {
+				infoFile.Close()
 				return nil, err
 			}
 
@@ -279,6 +282,10 @@ func (g *Goproxy) mod(
 			}
 
 			if err := checkInfoFile(infoFile.Name()); err != nil {
+				return nil, err
+			}
+
+			if err := formatInfoFile(infoFile.Name()); err != nil {
 				return nil, err
 			}
 
@@ -335,6 +342,7 @@ func (g *Goproxy) mod(
 				modFile,
 				modFileRes.Body,
 			); err != nil {
+				modFile.Close()
 				return nil, err
 			}
 
@@ -399,6 +407,7 @@ func (g *Goproxy) mod(
 				zipFile,
 				zipFileRes.Body,
 			); err != nil {
+				zipFile.Close()
 				return nil, err
 			}
 
@@ -534,6 +543,22 @@ func (g *Goproxy) mod(
 		return nil, err
 	}
 
+	switch operation {
+	case "lookup", "latest":
+		mr.Time = mr.Time.UTC()
+	case "list":
+		sort.Slice(mr.Versions, func(i, j int) bool {
+			return semver.Compare(
+				mr.Versions[i],
+				mr.Versions[j],
+			) < 0
+		})
+	case "download":
+		if err := formatInfoFile(mr.Info); err != nil {
+			return nil, err
+		}
+	}
+
 	return &mr, nil
 }
 
@@ -559,6 +584,37 @@ func checkInfoFile(name string) error {
 	}
 
 	return nil
+}
+
+// formatInfoFile formats the info file targeted by the name.
+func formatInfoFile(name string) error {
+	b, err := ioutil.ReadFile(name)
+	if err != nil {
+		return err
+	}
+
+	var info struct {
+		Version string
+		Time    time.Time
+	}
+
+	if err := json.Unmarshal(b, &info); err != nil {
+		return err
+	}
+
+	info.Time = info.Time.UTC()
+
+	fb, err := json.Marshal(info)
+	if err != nil {
+		return err
+	}
+
+	fi, err := os.Stat(name)
+	if err != nil {
+		return err
+	}
+
+	return ioutil.WriteFile(name, fb, fi.Mode())
 }
 
 // checkModFile checks the mod file targeted by the name.

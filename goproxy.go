@@ -530,10 +530,12 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		versions := strings.Join(mr.Versions, "\n")
-
 		setResponseCacheControlHeader(rw, 60)
-		responseString(rw, http.StatusOK, versions)
+		responseString(
+			rw,
+			http.StatusOK,
+			strings.Join(mr.Versions, "\n"),
+		)
 
 		return
 	} else if !semver.IsValid(moduleVersion) {
@@ -574,12 +576,13 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		mr.Versions = nil
-		mr.Info = ""
-		mr.GoMod = ""
-		mr.Zip = ""
-
-		b, err := json.Marshal(mr)
+		b, err := json.Marshal(struct {
+			Version string
+			Time    time.Time
+		}{
+			mr.Version,
+			mr.Time,
+		})
 		if err != nil {
 			g.logError(err)
 			responseInternalServerError(rw)
