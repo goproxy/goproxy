@@ -32,7 +32,7 @@ func TestResponseString(t *testing.T) {
 	assert.Equal(
 		t,
 		"text/plain; charset=utf-8",
-		rec.HeaderMap.Get("Content-Type"),
+		rec.Result().Header.Get("Content-Type"),
 	)
 	assert.Equal(t, "Foobar", rec.Body.String())
 }
@@ -45,7 +45,7 @@ func TestResponseJSON(t *testing.T) {
 	assert.Equal(
 		t,
 		"application/json; charset=utf-8",
-		rec.HeaderMap.Get("Content-Type"),
+		rec.Result().Header.Get("Content-Type"),
 	)
 	assert.Equal(t, `{"Foo":"Bar"}`, rec.Body.String())
 }
@@ -58,7 +58,7 @@ func TestResponseNotFound(t *testing.T) {
 	assert.Equal(
 		t,
 		"text/plain; charset=utf-8",
-		rec.HeaderMap.Get("Content-Type"),
+		rec.Result().Header.Get("Content-Type"),
 	)
 	assert.Equal(t, "not found", rec.Body.String())
 
@@ -69,7 +69,7 @@ func TestResponseNotFound(t *testing.T) {
 	assert.Equal(
 		t,
 		"text/plain; charset=utf-8",
-		rec.HeaderMap.Get("Content-Type"),
+		rec.Result().Header.Get("Content-Type"),
 	)
 	assert.Equal(t, "not found: foobar", rec.Body.String())
 
@@ -80,7 +80,7 @@ func TestResponseNotFound(t *testing.T) {
 	assert.Equal(
 		t,
 		"text/plain; charset=utf-8",
-		rec.HeaderMap.Get("Content-Type"),
+		rec.Result().Header.Get("Content-Type"),
 	)
 	assert.Equal(t, "not found: foobar", rec.Body.String())
 
@@ -91,7 +91,7 @@ func TestResponseNotFound(t *testing.T) {
 	assert.Equal(
 		t,
 		"text/plain; charset=utf-8",
-		rec.HeaderMap.Get("Content-Type"),
+		rec.Result().Header.Get("Content-Type"),
 	)
 	assert.Equal(t, "not found: foobar", rec.Body.String())
 
@@ -102,7 +102,7 @@ func TestResponseNotFound(t *testing.T) {
 	assert.Equal(
 		t,
 		"text/plain; charset=utf-8",
-		rec.HeaderMap.Get("Content-Type"),
+		rec.Result().Header.Get("Content-Type"),
 	)
 	assert.Equal(t, "not found: foobar", rec.Body.String())
 }
@@ -115,7 +115,7 @@ func TestResponseMethodNotAllowed(t *testing.T) {
 	assert.Equal(
 		t,
 		"text/plain; charset=utf-8",
-		rec.HeaderMap.Get("Content-Type"),
+		rec.Result().Header.Get("Content-Type"),
 	)
 	assert.Equal(t, "method not allowed", rec.Body.String())
 }
@@ -128,7 +128,7 @@ func TestResponseInternalServerError(t *testing.T) {
 	assert.Equal(
 		t,
 		"text/plain; charset=utf-8",
-		rec.HeaderMap.Get("Content-Type"),
+		rec.Result().Header.Get("Content-Type"),
 	)
 	assert.Equal(t, "internal server error", rec.Body.String())
 }
@@ -141,7 +141,7 @@ func TestResponseBadGateway(t *testing.T) {
 	assert.Equal(
 		t,
 		"text/plain; charset=utf-8",
-		rec.HeaderMap.Get("Content-Type"),
+		rec.Result().Header.Get("Content-Type"),
 	)
 	assert.Equal(t, "bad gateway", rec.Body.String())
 }
