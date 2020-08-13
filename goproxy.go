@@ -193,21 +193,31 @@ func (g *Goproxy) load() {
 		g.goBinEnv[parts[0]] = parts[1]
 	}
 
-	var proxies []string
-	for _, proxy := range strings.Split(g.goBinEnv["GOPROXY"], ",") {
-		proxy = strings.TrimSpace(proxy)
-		if proxy == "" {
-			continue
-		}
+	var proxyGroup [][]string
+	for _, proxies := range strings.Split(g.goBinEnv["GOPROXY"], "|") {
+		var cleanProxies []string
+		for _, proxy := range strings.Split(proxies, ",") {
+			proxy = strings.TrimSpace(proxy)
+			if proxy == "" {
+				continue
+			}
 
-		proxies = append(proxies, proxy)
-		if proxy == "direct" || proxy == "off" {
-			break
+			cleanProxies = append(cleanProxies, proxy)
+			if proxy == "direct" || proxy == "off" {
+				break
+			}
+		}
+		if len(cleanProxies) > 0 {
+			proxyGroup = append(proxyGroup, cleanProxies)
 		}
 	}
 
-	if len(proxies) > 0 {
-		g.goBinEnv["GOPROXY"] = strings.Join(proxies, ",")
+	if len(proxyGroup) > 0 {
+		var cleanProxyGroup []string
+		for _, proxies := range proxyGroup {
+			cleanProxyGroup = append(cleanProxyGroup, strings.Join(proxies, ","))
+		}
+		g.goBinEnv["GOPROXY"] = strings.Join(cleanProxyGroup, "|")
 	} else if g.goBinEnv["GOPROXY"] == "" {
 		g.goBinEnv["GOPROXY"] = "https://proxy.golang.org,direct"
 	} else {
