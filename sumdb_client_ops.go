@@ -1,6 +1,7 @@
 package goproxy
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -65,54 +66,50 @@ func (sco *sumdbClientOps) load() {
 		return
 	}
 
-	for _, proxy := range strings.Split(sco.envGOPROXY, ",") {
+	for goproxy := sco.envGOPROXY; goproxy != ""; {
+		var (
+			proxy           string
+			fallBackOnError bool
+		)
+
+		if i := strings.IndexAny(goproxy, ",|"); i >= 0 {
+			proxy = goproxy[:i]
+			fallBackOnError = goproxy[i] == '|'
+			goproxy = goproxy[i+1:]
+		} else {
+			proxy = goproxy
+			goproxy = ""
+		}
+
 		if proxy == "direct" || proxy == "off" {
 			break
 		}
 
-		var proxyURL *url.URL
-		proxyURL, sco.loadError = parseRawURL(proxy)
+		proxyURL, err := parseRawURL(proxy)
 		if sco.loadError != nil {
+			if fallBackOnError {
+				continue
+			}
+
+			sco.loadError = err
+
 			return
 		}
 
 		endpointURL := appendURL(proxyURL, "sumdb", sumdbName)
-		operationURL := appendURL(endpointURL, "/supported")
 
-		var req *http.Request
-		req, sco.loadError = http.NewRequest(
-			http.MethodGet,
-			operationURL.String(),
+		if err := httpGet(
+			context.Background(),
+			sco.httpClient,
+			appendURL(endpointURL, "/supported").String(),
 			nil,
-		)
-		if sco.loadError != nil {
-			return
-		}
+		); err != nil {
+			if isNotFoundError(err) || fallBackOnError {
+				continue
+			}
 
-		var res *http.Response
-		res, sco.loadError = sco.httpClient.Do(req)
-		if sco.loadError != nil {
-			return
-		}
-		defer res.Body.Close()
+			sco.loadError = err
 
-		var b []byte
-		b, sco.loadError = ioutil.ReadAll(res.Body)
-		if sco.loadError != nil {
-			return
-		}
-
-		switch res.StatusCode {
-		case http.StatusOK:
-		case http.StatusNotFound, http.StatusGone:
-			continue
-		default:
-			sco.loadError = fmt.Errorf(
-				"GET %s: %s: %s",
-				redactedURL(operationURL),
-				res.Status,
-				b,
-			)
 			return
 		}
 
@@ -168,10 +165,9 @@ func (sco *sumdbClientOps) ReadConfig(file string) ([]byte, error) {
 		return nil, sco.loadError
 	}
 
-	switch {
-	case file == "key":
+	if file == "key" {
 		return sco.key, nil
-	case strings.HasSuffix(file, "/latest"):
+	} else if strings.HasSuffix(file, "/latest") {
 		return []byte{}, nil // Empty result means empty tree
 	}
 
