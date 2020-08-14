@@ -146,7 +146,7 @@ func (sco *sumdbClientOps) ReadRemote(path string) ([]byte, error) {
 	switch res.StatusCode {
 	case http.StatusOK:
 	case http.StatusNotFound, http.StatusGone:
-		return nil, notFoundError(fmt.Errorf("%s", b))
+		return nil, &notFoundError{fmt.Errorf("%s", b)}
 	default:
 		return nil, fmt.Errorf(
 			"GET %s: %s: %s",

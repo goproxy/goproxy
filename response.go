@@ -67,7 +67,20 @@ func responseInternalServerError(rw http.ResponseWriter) {
 	)
 }
 
-// responseBadGateway responses "bad gateway" to the client.
-func responseBadGateway(rw http.ResponseWriter) {
-	responseString(rw, http.StatusBadGateway, "bad gateway")
+// responseModError responses the err as an mod operation error to the client.
+func responseModError(rw http.ResponseWriter, err error, cacheSensitive bool) {
+	if isNotFoundError(err) {
+		if cacheSensitive {
+			setResponseCacheControlHeader(rw, 60)
+		} else {
+			setResponseCacheControlHeader(rw, 600)
+		}
+
+		responseNotFound(rw, err)
+	} else if isTimeoutError(err) {
+		setResponseCacheControlHeader(rw, -1)
+		responseNotFound(rw, "fetch timed out")
+	} else {
+		responseInternalServerError(rw)
+	}
 }

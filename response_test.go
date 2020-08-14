@@ -1,6 +1,8 @@
 package goproxy
 
 import (
+	"errors"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -10,17 +12,19 @@ import (
 
 func TestSetResponseCacheControlHeader(t *testing.T) {
 	rec := httptest.NewRecorder()
-
-	assert.Empty(t, rec.Header().Get("Cache-Control"))
-
 	setResponseCacheControlHeader(rec, 60)
-	assert.Equal(t, "public, max-age=60", rec.Header().Get("Cache-Control"))
+	recr := rec.Result()
+	assert.Equal(t, "public, max-age=60", recr.Header.Get("Cache-Control"))
 
+	// ---
+
+	rec = httptest.NewRecorder()
 	setResponseCacheControlHeader(rec, -1)
+	recr = rec.Result()
 	assert.Equal(
 		t,
 		"must-revalidate, no-cache, no-store",
-		rec.Header().Get("Cache-Control"),
+		recr.Header.Get("Cache-Control"),
 	)
 }
 
@@ -28,120 +32,235 @@ func TestResponseString(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	responseString(rec, http.StatusOK, "Foobar")
-	assert.Equal(t, http.StatusOK, rec.Code)
+
+	recr := rec.Result()
+	recrb, _ := ioutil.ReadAll(recr.Body)
+
+	assert.Equal(t, http.StatusOK, recr.StatusCode)
 	assert.Equal(
 		t,
 		"text/plain; charset=utf-8",
-		rec.Result().Header.Get("Content-Type"),
+		recr.Header.Get("Content-Type"),
 	)
-	assert.Equal(t, "Foobar", rec.Body.String())
+	assert.Equal(t, "Foobar", string(recrb))
 }
 
 func TestResponseJSON(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	responseJSON(rec, http.StatusOK, []byte(`{"Foo":"Bar"}`))
-	assert.Equal(t, http.StatusOK, rec.Code)
+
+	recr := rec.Result()
+	recrb, _ := ioutil.ReadAll(recr.Body)
+
+	assert.Equal(t, http.StatusOK, recr.StatusCode)
 	assert.Equal(
 		t,
 		"application/json; charset=utf-8",
-		rec.Result().Header.Get("Content-Type"),
+		recr.Header.Get("Content-Type"),
 	)
-	assert.Equal(t, `{"Foo":"Bar"}`, rec.Body.String())
+	assert.Equal(t, `{"Foo":"Bar"}`, string(recrb))
 }
 
 func TestResponseNotFound(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	responseNotFound(rec)
-	assert.Equal(t, http.StatusNotFound, rec.Code)
+
+	recr := rec.Result()
+	recrb, _ := ioutil.ReadAll(recr.Body)
+
+	assert.Equal(t, http.StatusNotFound, recr.StatusCode)
 	assert.Equal(
 		t,
 		"text/plain; charset=utf-8",
-		rec.Result().Header.Get("Content-Type"),
+		recr.Header.Get("Content-Type"),
 	)
-	assert.Equal(t, "not found", rec.Body.String())
+	assert.Equal(t, "not found", string(recrb))
+
+	// ---
 
 	rec = httptest.NewRecorder()
 
 	responseNotFound(rec, "foobar")
-	assert.Equal(t, http.StatusNotFound, rec.Code)
+
+	recr = rec.Result()
+	recrb, _ = ioutil.ReadAll(recr.Body)
+
+	assert.Equal(t, http.StatusNotFound, recr.StatusCode)
 	assert.Equal(
 		t,
 		"text/plain; charset=utf-8",
-		rec.Result().Header.Get("Content-Type"),
+		recr.Header.Get("Content-Type"),
 	)
-	assert.Equal(t, "not found: foobar", rec.Body.String())
+	assert.Equal(t, "not found: foobar", string(recrb))
+
+	// ---
 
 	rec = httptest.NewRecorder()
 
 	responseNotFound(rec, "bad request: foobar")
-	assert.Equal(t, http.StatusNotFound, rec.Code)
+
+	recr = rec.Result()
+	recrb, _ = ioutil.ReadAll(recr.Body)
+
+	assert.Equal(t, http.StatusNotFound, recr.StatusCode)
 	assert.Equal(
 		t,
 		"text/plain; charset=utf-8",
-		rec.Result().Header.Get("Content-Type"),
+		recr.Header.Get("Content-Type"),
 	)
-	assert.Equal(t, "not found: foobar", rec.Body.String())
+	assert.Equal(t, "not found: foobar", string(recrb))
+
+	// ---
 
 	rec = httptest.NewRecorder()
 
 	responseNotFound(rec, "not found: foobar")
-	assert.Equal(t, http.StatusNotFound, rec.Code)
+
+	recr = rec.Result()
+	recrb, _ = ioutil.ReadAll(recr.Body)
+
+	assert.Equal(t, http.StatusNotFound, recr.StatusCode)
 	assert.Equal(
 		t,
 		"text/plain; charset=utf-8",
-		rec.Result().Header.Get("Content-Type"),
+		recr.Header.Get("Content-Type"),
 	)
-	assert.Equal(t, "not found: foobar", rec.Body.String())
+	assert.Equal(t, "not found: foobar", string(recrb))
+
+	// ---
 
 	rec = httptest.NewRecorder()
 
 	responseNotFound(rec, "gone: foobar")
-	assert.Equal(t, http.StatusNotFound, rec.Code)
+
+	recr = rec.Result()
+	recrb, _ = ioutil.ReadAll(recr.Body)
+
+	assert.Equal(t, http.StatusNotFound, recr.StatusCode)
 	assert.Equal(
 		t,
 		"text/plain; charset=utf-8",
-		rec.Result().Header.Get("Content-Type"),
+		recr.Header.Get("Content-Type"),
 	)
-	assert.Equal(t, "not found: foobar", rec.Body.String())
+	assert.Equal(t, "not found: foobar", string(recrb))
 }
 
 func TestResponseMethodNotAllowed(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	responseMethodNotAllowed(rec)
-	assert.Equal(t, http.StatusMethodNotAllowed, rec.Code)
+
+	recr := rec.Result()
+	recrb, _ := ioutil.ReadAll(recr.Body)
+
+	assert.Equal(t, http.StatusMethodNotAllowed, recr.StatusCode)
 	assert.Equal(
 		t,
 		"text/plain; charset=utf-8",
-		rec.Result().Header.Get("Content-Type"),
+		recr.Header.Get("Content-Type"),
 	)
-	assert.Equal(t, "method not allowed", rec.Body.String())
+	assert.Equal(t, "method not allowed", string(recrb))
 }
 
 func TestResponseInternalServerError(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	responseInternalServerError(rec)
-	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+
+	recr := rec.Result()
+	recrb, _ := ioutil.ReadAll(recr.Body)
+
+	assert.Equal(t, http.StatusInternalServerError, recr.StatusCode)
 	assert.Equal(
 		t,
 		"text/plain; charset=utf-8",
-		rec.Result().Header.Get("Content-Type"),
+		recr.Header.Get("Content-Type"),
 	)
-	assert.Equal(t, "internal server error", rec.Body.String())
+	assert.Equal(t, "internal server error", string(recrb))
 }
 
-func TestResponseBadGateway(t *testing.T) {
+func TestResponseModError(t *testing.T) {
 	rec := httptest.NewRecorder()
 
-	responseBadGateway(rec)
-	assert.Equal(t, http.StatusBadGateway, rec.Code)
+	responseModError(
+		rec,
+		&notFoundError{errors.New("cache insensitive")},
+		false,
+	)
+
+	recr := rec.Result()
+	recrb, _ := ioutil.ReadAll(recr.Body)
+
+	assert.Equal(t, http.StatusNotFound, recr.StatusCode)
 	assert.Equal(
 		t,
 		"text/plain; charset=utf-8",
-		rec.Result().Header.Get("Content-Type"),
+		recr.Header.Get("Content-Type"),
 	)
-	assert.Equal(t, "bad gateway", rec.Body.String())
+	assert.Equal(t, "public, max-age=600", recr.Header.Get("Cache-Control"))
+	assert.Equal(t, "not found: cache insensitive", string(recrb))
+
+	// ---
+
+	rec = httptest.NewRecorder()
+
+	responseModError(
+		rec,
+		&notFoundError{errors.New("cache sensitive")},
+		true,
+	)
+
+	recr = rec.Result()
+	recrb, _ = ioutil.ReadAll(recr.Body)
+
+	assert.Equal(t, http.StatusNotFound, recr.StatusCode)
+	assert.Equal(
+		t,
+		"text/plain; charset=utf-8",
+		recr.Header.Get("Content-Type"),
+	)
+	assert.Equal(t, "public, max-age=60", recr.Header.Get("Cache-Control"))
+	assert.Equal(t, "not found: cache sensitive", string(recrb))
+
+	// ---
+
+	rec = httptest.NewRecorder()
+
+	responseModError(rec, errors.New("fetch timed out"), false)
+
+	recr = rec.Result()
+	recrb, _ = ioutil.ReadAll(recr.Body)
+
+	assert.Equal(t, http.StatusNotFound, recr.StatusCode)
+	assert.Equal(
+		t,
+		"text/plain; charset=utf-8",
+		recr.Header.Get("Content-Type"),
+	)
+	assert.Equal(
+		t,
+		"must-revalidate, no-cache, no-store",
+		recr.Header.Get("Cache-Control"),
+	)
+	assert.Equal(t, "not found: fetch timed out", string(recrb))
+
+	// ---
+
+	rec = httptest.NewRecorder()
+
+	responseModError(rec, errors.New("internal server error"), false)
+
+	recr = rec.Result()
+	recrb, _ = ioutil.ReadAll(recr.Body)
+
+	assert.Equal(t, http.StatusInternalServerError, recr.StatusCode)
+	assert.Equal(
+		t,
+		"text/plain; charset=utf-8",
+		recr.Header.Get("Content-Type"),
+	)
+	assert.Empty(t, recr.Header.Get("Cache-Control"))
+	assert.Equal(t, "internal server error", string(recrb))
 }

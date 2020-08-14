@@ -35,7 +35,7 @@ func httpGet(
 
 		switch res.StatusCode {
 		case http.StatusNotFound, http.StatusGone:
-			return notFoundError(errors.New(string(b)))
+			return &notFoundError{errors.New(string(b))}
 		}
 
 		return fmt.Errorf(

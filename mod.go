@@ -94,7 +94,7 @@ func (g *Goproxy) mod(
 			if lastNotFound == "" {
 				lastNotFound = fmt.Sprintf("unknown revision %s", moduleVersion)
 			}
-			return nil, notFoundError(errors.New(lastNotFound))
+			return nil, &notFoundError{errors.New(lastNotFound)}
 		} else if !tryDirect {
 			return nil, err
 		}
@@ -192,7 +192,7 @@ func (g *Goproxy) mod(
 		errorMessage = strings.TrimPrefix(errorMessage, "go list -m: ")
 		errorMessage = strings.TrimRight(errorMessage, "\n")
 
-		return nil, notFoundError(errors.New(errorMessage))
+		return nil, &notFoundError{errors.New(errorMessage)}
 	}
 
 	mr := modResult{}
@@ -299,16 +299,16 @@ func (g *Goproxy) modTryProxies(ctx context.Context, proxies []string,
 
 			mr := modResult{}
 			if err := json.Unmarshal(b, &mr); err != nil {
-				return nil, notFoundError(fmt.Errorf(
+				return nil, &notFoundError{fmt.Errorf(
 					"invalid info response: %v",
 					err,
-				))
+				)}
 			}
 
 			if !semver.IsValid(mr.Version) || mr.Time.IsZero() {
-				return nil, notFoundError(errors.New(
+				return nil, &notFoundError{errors.New(
 					"invalid info response",
-				))
+				)}
 			}
 
 			mr.Time = mr.Time.UTC()
@@ -602,11 +602,11 @@ func checkInfoFile(name string) error {
 	}
 
 	if err := json.NewDecoder(f).Decode(&info); err != nil {
-		return notFoundError(fmt.Errorf("invalid info file: %v", err))
+		return &notFoundError{fmt.Errorf("invalid info file: %v", err)}
 	}
 
 	if !semver.IsValid(info.Version) || info.Time.IsZero() {
-		return notFoundError(errors.New("invalid info file"))
+		return &notFoundError{errors.New("invalid info file")}
 	}
 
 	return nil
@@ -684,10 +684,10 @@ func checkModFile(name string) error {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return notFoundError(fmt.Errorf("invalid mod file: %v", err))
+		return &notFoundError{fmt.Errorf("invalid mod file: %v", err)}
 	}
 
-	return notFoundError(errors.New("invalid mod file"))
+	return &notFoundError{errors.New("invalid mod file")}
 }
 
 // checkZipFile checks the zip file targeted by the name with the modulePath and
@@ -695,14 +695,14 @@ func checkModFile(name string) error {
 func checkZipFile(name, modulePath, moduleVersion string) error {
 	zr, err := zip.OpenReader(name)
 	if err != nil {
-		return notFoundError(fmt.Errorf("invalid zip file: %v", err))
+		return &notFoundError{fmt.Errorf("invalid zip file: %v", err)}
 	}
 	defer zr.Close()
 
 	namePrefix := fmt.Sprintf("%s@%s/", modulePath, moduleVersion)
 	for _, f := range zr.File {
 		if !strings.HasPrefix(f.Name, namePrefix) {
-			return notFoundError(errors.New("invalid zip file"))
+			return &notFoundError{errors.New("invalid zip file")}
 		}
 	}
 
