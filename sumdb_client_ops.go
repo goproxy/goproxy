@@ -65,60 +65,62 @@ func (sco *sumdbClientOps) load() {
 		return
 	}
 
-	for _, proxy := range strings.Split(sco.envGOPROXY, ",") {
-		if proxy == "direct" || proxy == "off" {
-			break
+	for _, proxies := range strings.Split(sco.envGOPROXY, "|") {
+		if sco.endpointURL == nil {
+			for _, proxy := range strings.Split(proxies, ",") {
+				if proxy == "direct" || proxy == "off" {
+					break
+				}
+
+				var proxyURL *url.URL
+				proxyURL, sco.loadError = parseRawURL(proxy)
+				if sco.loadError != nil {
+					return
+				}
+
+				endpointURL := appendURL(proxyURL, "sumdb", sumdbName)
+				operationURL := appendURL(endpointURL, "/supported")
+
+				var req *http.Request
+				req, sco.loadError = http.NewRequest(
+					http.MethodGet,
+					operationURL.String(),
+					nil,
+				)
+				if sco.loadError != nil {
+					return
+				}
+
+				var res *http.Response
+				res, sco.loadError = sco.httpClient.Do(req)
+				if sco.loadError != nil {
+					return
+				}
+				defer res.Body.Close()
+
+				var b []byte
+				b, sco.loadError = ioutil.ReadAll(res.Body)
+				if sco.loadError != nil {
+					return
+				}
+
+				switch res.StatusCode {
+				case http.StatusOK:
+				case http.StatusNotFound, http.StatusGone:
+					continue
+				default:
+					sco.loadError = fmt.Errorf(
+						"GET %s: %s: %s",
+						redactedURL(operationURL),
+						res.Status,
+						b,
+					)
+					return
+				}
+				sco.endpointURL = endpointURL
+				break
+			}
 		}
-
-		var proxyURL *url.URL
-		proxyURL, sco.loadError = parseRawURL(proxy)
-		if sco.loadError != nil {
-			return
-		}
-
-		endpointURL := appendURL(proxyURL, "sumdb", sumdbName)
-		operationURL := appendURL(endpointURL, "/supported")
-
-		var req *http.Request
-		req, sco.loadError = http.NewRequest(
-			http.MethodGet,
-			operationURL.String(),
-			nil,
-		)
-		if sco.loadError != nil {
-			return
-		}
-
-		var res *http.Response
-		res, sco.loadError = sco.httpClient.Do(req)
-		if sco.loadError != nil {
-			return
-		}
-		defer res.Body.Close()
-
-		var b []byte
-		b, sco.loadError = ioutil.ReadAll(res.Body)
-		if sco.loadError != nil {
-			return
-		}
-
-		switch res.StatusCode {
-		case http.StatusOK:
-		case http.StatusNotFound, http.StatusGone:
-			continue
-		default:
-			sco.loadError = fmt.Errorf(
-				"GET %s: %s: %s",
-				redactedURL(operationURL),
-				res.Status,
-				b,
-			)
-			return
-		}
-
-		sco.endpointURL = endpointURL
-
-		break
 	}
 }
 
