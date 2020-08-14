@@ -402,7 +402,6 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
 
 		setResponseCacheControlHeader(rw, maxAge)
-
 		buf.WriteTo(rw)
 
 		return
@@ -841,17 +840,15 @@ func appendURL(u *url.URL, extraPaths ...string) *url.URL {
 
 // redactedURL returns a redacted string form of the u, suitable for printing in
 // error messages. The string form replaces any non-empty password in the u with
-// "[redacted]".
+// "xxxxx".
+//
+// TODO: Remove the `redactedURL` when the minimum supported Go version is 1.15.
+// See https://golang.org/doc/go1.15#net/url.
 func redactedURL(u *url.URL) string {
-	if u.User != nil {
-		if _, ok := u.User.Password(); ok {
-			nu := *u
-			u = &nu
-			u.User = url.UserPassword(
-				u.User.Username(),
-				"[redacted]",
-			)
-		}
+	if _, ok := u.User.Password(); ok {
+		ru := *u
+		u = &ru
+		u.User = url.UserPassword(u.User.Username(), "xxxxx")
 	}
 
 	return u.String()
