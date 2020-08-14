@@ -67,7 +67,7 @@ func responseInternalServerError(rw http.ResponseWriter) {
 	)
 }
 
-// responseModError responses the err as an mod operation error to the client.
+// responseModError responses the err as a mod operation error to the client.
 func responseModError(rw http.ResponseWriter, err error, cacheSensitive bool) {
 	if isNotFoundError(err) {
 		if cacheSensitive {

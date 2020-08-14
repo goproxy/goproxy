@@ -1,10 +1,10 @@
 package goproxy
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
@@ -125,38 +125,17 @@ func (sco *sumdbClientOps) ReadRemote(path string) ([]byte, error) {
 		return nil, sco.loadError
 	}
 
-	operationURL := appendURL(sco.endpointURL, path)
-
-	req, err := http.NewRequest(http.MethodGet, operationURL.String(), nil)
-	if err != nil {
+	var buf bytes.Buffer
+	if err := httpGet(
+		context.Background(),
+		sco.httpClient,
+		appendURL(sco.endpointURL, path).String(),
+		&buf,
+	); err != nil {
 		return nil, err
 	}
 
-	res, err := sco.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-
-	b, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	switch res.StatusCode {
-	case http.StatusOK:
-	case http.StatusNotFound, http.StatusGone:
-		return nil, &notFoundError{fmt.Errorf("%s", b)}
-	default:
-		return nil, fmt.Errorf(
-			"GET %s: %s: %s",
-			redactedURL(operationURL),
-			res.Status,
-			b,
-		)
-	}
-
-	return b, nil
+	return buf.Bytes(), nil
 }
 
 // ReadConfig implements the `sumdb.ClientOps`.

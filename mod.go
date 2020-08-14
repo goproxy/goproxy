@@ -8,9 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/ioutil"
-	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"sort"
@@ -239,66 +238,42 @@ func (g *Goproxy) modTryProxies(ctx context.Context, proxies []string,
 
 		switch operation {
 		case "lookup", "latest":
-			var req *http.Request
+			var operationURL *url.URL
 			if operation == "lookup" {
-				req, err = http.NewRequestWithContext(
-					ctx,
-					http.MethodGet,
-					appendURL(
-						proxyURL,
-						escapedModulePath,
-						"@v",
-						fmt.Sprint(
-							escapedModuleVersion,
-							".info",
-						),
-					).String(),
-					nil,
+				operationURL = appendURL(
+					proxyURL,
+					escapedModulePath,
+					"@v",
+					fmt.Sprint(
+						escapedModuleVersion,
+						".info",
+					),
 				)
 			} else {
-				req, err = http.NewRequestWithContext(
-					ctx,
-					http.MethodGet,
-					appendURL(
-						proxyURL,
-						escapedModulePath,
-						"@latest",
-					).String(),
-					nil,
+				operationURL = appendURL(
+					proxyURL,
+					escapedModulePath,
+					"@latest",
 				)
 			}
 
-			if err != nil {
-				return nil, err
-			}
+			var buf bytes.Buffer
+			if err := httpGet(
+				ctx,
+				g.httpClient,
+				operationURL.String(),
+				&buf,
+			); err != nil {
+				if isNotFoundError(err) {
+					*lastNotFound = err.Error()
+					continue
+				}
 
-			res, err := g.httpClient.Do(req)
-			if err != nil {
 				return nil, err
-			}
-			defer res.Body.Close()
-
-			b, err := ioutil.ReadAll(res.Body)
-			if err != nil {
-				return nil, err
-			}
-
-			switch res.StatusCode {
-			case http.StatusOK:
-			case http.StatusNotFound, http.StatusGone:
-				*lastNotFound = string(b)
-				continue
-			default:
-				return nil, fmt.Errorf(
-					"GET %s: %s: %s",
-					redactedURL(req.URL),
-					res.Status,
-					b,
-				)
 			}
 
 			mr := modResult{}
-			if err := json.Unmarshal(b, &mr); err != nil {
+			if err := json.Unmarshal(buf.Bytes(), &mr); err != nil {
 				return nil, &notFoundError{fmt.Errorf(
 					"invalid info response: %v",
 					err,
@@ -315,52 +290,31 @@ func (g *Goproxy) modTryProxies(ctx context.Context, proxies []string,
 
 			return &mr, nil
 		case "list":
-			req, err := http.NewRequestWithContext(
+			var buf bytes.Buffer
+			if err := httpGet(
 				ctx,
-				http.MethodGet,
+				g.httpClient,
 				appendURL(
 					proxyURL,
 					escapedModulePath,
 					"@v",
 					"list",
 				).String(),
-				nil,
-			)
-			if err != nil {
-				return nil, err
-			}
-
-			res, err := g.httpClient.Do(req)
-			if err != nil {
-				return nil, err
-			}
-			defer res.Body.Close()
-
-			b, err := ioutil.ReadAll(res.Body)
-			if err != nil {
-				return nil, err
-			}
-			switch res.StatusCode {
-			case http.StatusOK:
-			case http.StatusNotFound, http.StatusGone:
-				*lastNotFound = string(b)
-				continue
-			default:
-				return nil, fmt.Errorf(
-					"GET %s: %s: %s",
-					redactedURL(req.URL),
-					res.Status,
-					b,
-				)
-			}
-
-			mr := modResult{}
-			for _, b := range bytes.Split(b, []byte{'\n'}) {
-				if !semver.IsValid(string(b)) {
+				&buf,
+			); err != nil {
+				if isNotFoundError(err) {
+					*lastNotFound = err.Error()
 					continue
 				}
 
-				mr.Versions = append(mr.Versions, string(b))
+				return nil, err
+			}
+
+			mr := modResult{}
+			for _, s := range strings.Split(buf.String(), "\n") {
+				if semver.IsValid(s) {
+					mr.Versions = append(mr.Versions, s)
+				}
 			}
 
 			sort.Slice(mr.Versions, func(i, j int) bool {
@@ -372,9 +326,14 @@ func (g *Goproxy) modTryProxies(ctx context.Context, proxies []string,
 
 			return &mr, nil
 		case "download":
-			infoFileReq, err := http.NewRequestWithContext(
+			infoFile, err := ioutil.TempFile(goproxyRoot, "info")
+			if err != nil {
+				return nil, err
+			}
+
+			if err := httpGet(
 				ctx,
-				http.MethodGet,
+				g.httpClient,
 				appendURL(
 					proxyURL,
 					escapedModulePath,
@@ -384,48 +343,14 @@ func (g *Goproxy) modTryProxies(ctx context.Context, proxies []string,
 						".info",
 					),
 				).String(),
-				nil,
-			)
-			if err != nil {
-				return nil, err
-			}
-
-			infoFileRes, err := g.httpClient.Do(infoFileReq)
-			if err != nil {
-				return nil, err
-			}
-			defer infoFileRes.Body.Close()
-
-			if infoFileRes.StatusCode != http.StatusOK {
-				b, err := ioutil.ReadAll(infoFileRes.Body)
-				if err != nil {
-					return nil, err
-				}
-
-				switch infoFileRes.StatusCode {
-				case http.StatusNotFound, http.StatusGone:
-					*lastNotFound = string(b)
+				infoFile,
+			); err != nil {
+				infoFile.Close()
+				if isNotFoundError(err) {
+					*lastNotFound = err.Error()
 					continue
 				}
 
-				return nil, fmt.Errorf(
-					"GET %s: %s: %s",
-					redactedURL(infoFileReq.URL),
-					infoFileRes.Status,
-					b,
-				)
-			}
-
-			infoFile, err := ioutil.TempFile(goproxyRoot, "info")
-			if err != nil {
-				return nil, err
-			}
-
-			if _, err := io.Copy(
-				infoFile,
-				infoFileRes.Body,
-			); err != nil {
-				infoFile.Close()
 				return nil, err
 			}
 
@@ -444,9 +369,14 @@ func (g *Goproxy) modTryProxies(ctx context.Context, proxies []string,
 				return nil, err
 			}
 
-			modFileReq, err := http.NewRequestWithContext(
+			modFile, err := ioutil.TempFile(goproxyRoot, "mod")
+			if err != nil {
+				return nil, err
+			}
+
+			if err := httpGet(
 				ctx,
-				http.MethodGet,
+				g.httpClient,
 				appendURL(
 					proxyURL,
 					escapedModulePath,
@@ -456,48 +386,14 @@ func (g *Goproxy) modTryProxies(ctx context.Context, proxies []string,
 						".mod",
 					),
 				).String(),
-				nil,
-			)
-			if err != nil {
-				return nil, err
-			}
-
-			modFileRes, err := g.httpClient.Do(modFileReq)
-			if err != nil {
-				return nil, err
-			}
-			defer modFileRes.Body.Close()
-
-			if modFileRes.StatusCode != http.StatusOK {
-				b, err := ioutil.ReadAll(modFileRes.Body)
-				if err != nil {
-					return nil, err
-				}
-
-				switch modFileRes.StatusCode {
-				case http.StatusNotFound, http.StatusGone:
-					*lastNotFound = string(b)
+				modFile,
+			); err != nil {
+				modFile.Close()
+				if isNotFoundError(err) {
+					*lastNotFound = err.Error()
 					continue
 				}
 
-				return nil, fmt.Errorf(
-					"GET %s: %s: %s",
-					redactedURL(modFileReq.URL),
-					modFileRes.Status,
-					b,
-				)
-			}
-
-			modFile, err := ioutil.TempFile(goproxyRoot, "mod")
-			if err != nil {
-				return nil, err
-			}
-
-			if _, err := io.Copy(
-				modFile,
-				modFileRes.Body,
-			); err != nil {
-				modFile.Close()
 				return nil, err
 			}
 
@@ -509,9 +405,14 @@ func (g *Goproxy) modTryProxies(ctx context.Context, proxies []string,
 				return nil, err
 			}
 
-			zipFileReq, err := http.NewRequestWithContext(
+			zipFile, err := ioutil.TempFile(goproxyRoot, "zip")
+			if err != nil {
+				return nil, err
+			}
+
+			if err := httpGet(
 				ctx,
-				http.MethodGet,
+				g.httpClient,
 				appendURL(
 					proxyURL,
 					escapedModulePath,
@@ -521,48 +422,14 @@ func (g *Goproxy) modTryProxies(ctx context.Context, proxies []string,
 						".zip",
 					),
 				).String(),
-				nil,
-			)
-			if err != nil {
-				return nil, err
-			}
-
-			zipFileRes, err := g.httpClient.Do(zipFileReq)
-			if err != nil {
-				return nil, err
-			}
-			defer zipFileRes.Body.Close()
-
-			if zipFileRes.StatusCode != http.StatusOK {
-				b, err := ioutil.ReadAll(zipFileRes.Body)
-				if err != nil {
-					return nil, err
-				}
-
-				switch zipFileRes.StatusCode {
-				case http.StatusNotFound, http.StatusGone:
-					*lastNotFound = string(b)
+				zipFile,
+			); err != nil {
+				zipFile.Close()
+				if isNotFoundError(err) {
+					*lastNotFound = err.Error()
 					continue
 				}
 
-				return nil, fmt.Errorf(
-					"GET %s: %s: %s",
-					redactedURL(zipFileReq.URL),
-					zipFileRes.Status,
-					b,
-				)
-			}
-
-			zipFile, err := ioutil.TempFile(goproxyRoot, "zip")
-			if err != nil {
-				return nil, err
-			}
-
-			if _, err := io.Copy(
-				zipFile,
-				zipFileRes.Body,
-			); err != nil {
-				zipFile.Close()
 				return nil, err
 			}
 
