@@ -27,29 +27,28 @@ func httpGet(
 	}
 	defer res.Body.Close()
 
-	if res.StatusCode != http.StatusOK {
-		b, err := ioutil.ReadAll(res.Body)
-		if err != nil {
+	if res.StatusCode == http.StatusOK {
+		if dst != nil {
+			_, err := io.Copy(dst, res.Body)
 			return err
 		}
 
-		switch res.StatusCode {
-		case http.StatusNotFound, http.StatusGone:
-			return &notFoundError{errors.New(string(b))}
-		}
-
-		return fmt.Errorf(
-			"GET %s: %s: %s",
-			redactedURL(req.URL),
-			res.Status,
-			b,
-		)
+		return nil
 	}
 
-	if dst != nil {
-		_, err := io.Copy(dst, res.Body)
+	b, err := ioutil.ReadAll(res.Body)
+	if err != nil {
 		return err
 	}
 
-	return nil
+	switch res.StatusCode {
+	case http.StatusBadRequest, http.StatusNotFound, http.StatusGone:
+		return &notFoundError{errors.New(string(b))}
+	case http.StatusBadGateway, http.StatusServiceUnavailable:
+		return &notFoundError{errors.New("bad upstream")}
+	case http.StatusGatewayTimeout:
+		return errors.New("fetch timed out")
+	}
+
+	return fmt.Errorf("GET %s: %s: %s", redactedURL(req.URL), res.Status, b)
 }
