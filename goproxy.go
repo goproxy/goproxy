@@ -788,11 +788,9 @@ func isNotFoundError(err error) bool {
 
 // isTimeoutError reports whether the err means an operation has timed out.
 func isTimeoutError(err error) bool {
-	if ue, ok := err.(*url.Error); ok && ue.Timeout() {
-		return true
-	}
-
-	return errors.Is(err, context.DeadlineExceeded) ||
+	ue, ok := err.(*url.Error)
+	return (ok && ue.Timeout()) ||
+		errors.Is(err, context.DeadlineExceeded) ||
 		strings.Contains(err.Error(), "fetch timed out")
 }
 
