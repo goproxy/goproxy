@@ -86,7 +86,7 @@ func (sco *sumdbClientOps) load() {
 		}
 
 		proxyURL, err := parseRawURL(proxy)
-		if sco.loadError != nil {
+		if err != nil {
 			if fallBackOnError {
 				continue
 			}
