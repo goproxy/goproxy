@@ -58,7 +58,7 @@ func (g *Goproxy) mod(
 
 	tryDirect := globsMatchPath(g.goBinEnv["GONOPROXY"], modulePath)
 
-	var errNotFound error
+	var proxyError error
 	for goproxy := g.goBinEnv["GOPROXY"]; goproxy != "" && !tryDirect; {
 		var (
 			proxy           string
@@ -85,6 +85,7 @@ func (g *Goproxy) mod(
 		proxyURL, err := parseRawURL(proxy)
 		if err != nil {
 			if fallBackOnError {
+				proxyError = err
 				continue
 			}
 
@@ -119,10 +120,9 @@ func (g *Goproxy) mod(
 				operationURL.String(),
 				&buf,
 			); err != nil {
-				if isNotFoundError(err) {
-					errNotFound = err
-					continue
-				} else if fallBackOnError {
+				if fallBackOnError ||
+					errors.Is(err, errNotFound) {
+					proxyError = err
 					continue
 				}
 
@@ -161,10 +161,9 @@ func (g *Goproxy) mod(
 				).String(),
 				&buf,
 			); err != nil {
-				if isNotFoundError(err) {
-					errNotFound = err
-					continue
-				} else if fallBackOnError {
+				if fallBackOnError ||
+					errors.Is(err, errNotFound) {
+					proxyError = err
 					continue
 				}
 
@@ -190,6 +189,7 @@ func (g *Goproxy) mod(
 			infoFile, err := ioutil.TempFile(goproxyRoot, "info")
 			if err != nil {
 				if fallBackOnError {
+					proxyError = err
 					continue
 				}
 
@@ -211,10 +211,9 @@ func (g *Goproxy) mod(
 				infoFile,
 			); err != nil {
 				infoFile.Close()
-				if isNotFoundError(err) {
-					errNotFound = err
-					continue
-				} else if fallBackOnError {
+				if fallBackOnError ||
+					errors.Is(err, errNotFound) {
+					proxyError = err
 					continue
 				}
 
@@ -223,6 +222,7 @@ func (g *Goproxy) mod(
 
 			if err := infoFile.Close(); err != nil {
 				if fallBackOnError {
+					proxyError = err
 					continue
 				}
 
@@ -230,10 +230,9 @@ func (g *Goproxy) mod(
 			}
 
 			if err := checkInfoFile(infoFile.Name()); err != nil {
-				if isNotFoundError(err) {
-					errNotFound = err
-					continue
-				} else if fallBackOnError {
+				if fallBackOnError ||
+					errors.Is(err, errNotFound) {
+					proxyError = err
 					continue
 				}
 
@@ -245,6 +244,7 @@ func (g *Goproxy) mod(
 				"",
 			); err != nil {
 				if fallBackOnError {
+					proxyError = err
 					continue
 				}
 
@@ -254,6 +254,7 @@ func (g *Goproxy) mod(
 			modFile, err := ioutil.TempFile(goproxyRoot, "mod")
 			if err != nil {
 				if fallBackOnError {
+					proxyError = err
 					continue
 				}
 
@@ -275,10 +276,9 @@ func (g *Goproxy) mod(
 				modFile,
 			); err != nil {
 				modFile.Close()
-				if isNotFoundError(err) {
-					errNotFound = err
-					continue
-				} else if fallBackOnError {
+				if fallBackOnError ||
+					errors.Is(err, errNotFound) {
+					proxyError = err
 					continue
 				}
 
@@ -287,6 +287,7 @@ func (g *Goproxy) mod(
 
 			if err := modFile.Close(); err != nil {
 				if fallBackOnError {
+					proxyError = err
 					continue
 				}
 
@@ -294,10 +295,9 @@ func (g *Goproxy) mod(
 			}
 
 			if err := checkModFile(modFile.Name()); err != nil {
-				if isNotFoundError(err) {
-					errNotFound = err
-					continue
-				} else if fallBackOnError {
+				if fallBackOnError ||
+					errors.Is(err, errNotFound) {
+					proxyError = err
 					continue
 				}
 
@@ -307,6 +307,7 @@ func (g *Goproxy) mod(
 			zipFile, err := ioutil.TempFile(goproxyRoot, "zip")
 			if err != nil {
 				if fallBackOnError {
+					proxyError = err
 					continue
 				}
 
@@ -328,10 +329,9 @@ func (g *Goproxy) mod(
 				zipFile,
 			); err != nil {
 				zipFile.Close()
-				if isNotFoundError(err) {
-					errNotFound = err
-					continue
-				} else if fallBackOnError {
+				if fallBackOnError ||
+					errors.Is(err, errNotFound) {
+					proxyError = err
 					continue
 				}
 
@@ -340,6 +340,7 @@ func (g *Goproxy) mod(
 
 			if err := zipFile.Close(); err != nil {
 				if fallBackOnError {
+					proxyError = err
 					continue
 				}
 
@@ -351,10 +352,9 @@ func (g *Goproxy) mod(
 				modulePath,
 				moduleVersion,
 			); err != nil {
-				if isNotFoundError(err) {
-					errNotFound = err
-					continue
-				} else if fallBackOnError {
+				if fallBackOnError ||
+					errors.Is(err, errNotFound) {
+					proxyError = err
 					continue
 				}
 
@@ -370,8 +370,8 @@ func (g *Goproxy) mod(
 	}
 
 	if !tryDirect {
-		if errNotFound != nil {
-			return nil, errNotFound
+		if proxyError != nil {
+			return nil, proxyError
 		}
 
 		return nil, &notFoundError{fmt.Errorf(
@@ -442,8 +442,8 @@ func (g *Goproxy) mod(
 	cmd.Dir = goproxyRoot
 	stdout, err := cmd.Output()
 	if err != nil {
-		if err := ctx.Err(); err == context.DeadlineExceeded {
-			return nil, err
+		if err := ctx.Err(); errors.Is(err, context.DeadlineExceeded) {
+			return nil, fmt.Errorf("command %v: %w", cmd.Args, err)
 		}
 
 		output := stdout

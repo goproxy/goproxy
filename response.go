@@ -1,8 +1,11 @@
 package goproxy
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -69,17 +72,30 @@ func responseInternalServerError(rw http.ResponseWriter) {
 
 // responseModError responses the err as a mod operation error to the client.
 func responseModError(rw http.ResponseWriter, err error, cacheSensitive bool) {
-	if isNotFoundError(err) {
-		if cacheSensitive {
+	if errors.Is(err, errNotFound) {
+		msg := err.Error()
+		if strings.Contains(msg, errBadUpstream.Error()) {
+			msg = errBadUpstream.Error()
+			setResponseCacheControlHeader(rw, -1)
+		} else if strings.Contains(msg, errFetchTimedOut.Error()) {
+			msg = errFetchTimedOut.Error()
+			setResponseCacheControlHeader(rw, -1)
+		} else if cacheSensitive {
 			setResponseCacheControlHeader(rw, 60)
 		} else {
 			setResponseCacheControlHeader(rw, 600)
 		}
 
-		responseNotFound(rw, err)
-	} else if isTimeoutError(err) {
+		responseNotFound(rw, msg)
+	} else if errors.Is(err, errBadUpstream) {
 		setResponseCacheControlHeader(rw, -1)
-		responseNotFound(rw, "fetch timed out")
+		responseNotFound(rw, errBadUpstream)
+	} else if ue, ok := err.(*url.Error); (ok && ue.Timeout()) ||
+		errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, errFetchTimedOut) ||
+		strings.Contains(err.Error(), errFetchTimedOut.Error()) {
+		setResponseCacheControlHeader(rw, -1)
+		responseNotFound(rw, errFetchTimedOut)
 	} else {
 		responseInternalServerError(rw)
 	}

@@ -66,6 +66,7 @@ func (sco *sumdbClientOps) load() {
 		return
 	}
 
+	var proxyError error
 	for goproxy := sco.envGOPROXY; goproxy != ""; {
 		var (
 			proxy           string
@@ -82,12 +83,14 @@ func (sco *sumdbClientOps) load() {
 		}
 
 		if proxy == "direct" || proxy == "off" {
+			proxyError = nil
 			break
 		}
 
 		proxyURL, err := parseRawURL(proxy)
 		if err != nil {
 			if fallBackOnError {
+				proxyError = err
 				continue
 			}
 
@@ -104,7 +107,8 @@ func (sco *sumdbClientOps) load() {
 			appendURL(endpointURL, "/supported").String(),
 			nil,
 		); err != nil {
-			if isNotFoundError(err) || fallBackOnError {
+			if fallBackOnError || errors.Is(err, errNotFound) {
+				proxyError = err
 				continue
 			}
 
@@ -115,7 +119,13 @@ func (sco *sumdbClientOps) load() {
 
 		sco.endpointURL = endpointURL
 
+		proxyError = nil
+
 		break
+	}
+
+	if proxyError != nil && !errors.Is(proxyError, errNotFound) {
+		sco.loadError = proxyError
 	}
 }
 

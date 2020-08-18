@@ -20,7 +20,6 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -773,91 +772,6 @@ func (g *Goproxy) logErrorf(format string, v ...interface{}) {
 // logError logs the err.
 func (g *Goproxy) logError(err error) {
 	g.logErrorf("%v", err)
-}
-
-// notFoundError is an error indicating that something was not found.
-type notFoundError struct {
-	error
-}
-
-// isNotFoundError reports whether the err means something was not found.
-func isNotFoundError(err error) bool {
-	_, ok := err.(*notFoundError)
-	return ok
-}
-
-// isTimeoutError reports whether the err means an operation has timed out.
-func isTimeoutError(err error) bool {
-	ue, ok := err.(*url.Error)
-	return (ok && ue.Timeout()) ||
-		errors.Is(err, context.DeadlineExceeded) ||
-		strings.Contains(err.Error(), "fetch timed out")
-}
-
-// parseRawURL parses the rawURL.
-func parseRawURL(rawURL string) (*url.URL, error) {
-	if strings.ContainsAny(rawURL, ".:/") &&
-		!strings.Contains(rawURL, ":/") &&
-		!filepath.IsAbs(rawURL) &&
-		!path.IsAbs(rawURL) {
-		rawURL = fmt.Sprint("https://", rawURL)
-	}
-
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return nil, err
-	}
-
-	switch strings.ToLower(u.Scheme) {
-	case "http", "https":
-	default:
-		return nil, fmt.Errorf(
-			"invalid URL scheme (must be http or https): %s",
-			redactedURL(u),
-		)
-	}
-
-	return u, nil
-}
-
-// appendURL appends the extraPaths to the u safely and reutrns a new instance
-// of the `url.URL`.
-func appendURL(u *url.URL, extraPaths ...string) *url.URL {
-	nu := *u
-	u = &nu
-	for _, ep := range extraPaths {
-		if ep == "" {
-			continue
-		}
-
-		u.Path = path.Join(u.Path, ep)
-		u.RawPath = path.Join(
-			u.RawPath,
-			strings.Replace(url.PathEscape(ep), "%2F", "/", -1),
-		)
-		if ep[len(ep)-1] == '/' {
-			u.Path = fmt.Sprint(u.Path, "/")
-			u.RawPath = fmt.Sprint(u.RawPath, "/")
-		}
-	}
-
-	return u
-}
-
-// redactedURL returns a redacted string form of the u, suitable for printing in
-// error messages. The string form replaces any non-empty password in the u with
-// "xxxxx".
-//
-// TODO: Remove the `redactedURL` when the minimum supported Go version is 1.15.
-// See https://golang.org/doc/go1.15#net/url.
-func redactedURL(u *url.URL) string {
-	if _, ok := u.User.Password(); ok {
-		ru := *u
-		u = &ru
-		u.User = url.UserPassword(u.User.Username(), "xxxxx")
-	}
-
-	return u.String()
 }
 
 // stringSliceContains reports whether the ss contains the s.

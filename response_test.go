@@ -228,7 +228,81 @@ func TestResponseModError(t *testing.T) {
 
 	rec = httptest.NewRecorder()
 
-	responseModError(rec, errors.New("fetch timed out"), false)
+	responseModError(
+		rec,
+		&notFoundError{errors.New("not found: bad upstream")},
+		false,
+	)
+
+	recr = rec.Result()
+	recrb, _ = ioutil.ReadAll(recr.Body)
+
+	assert.Equal(t, http.StatusNotFound, recr.StatusCode)
+	assert.Equal(
+		t,
+		"text/plain; charset=utf-8",
+		recr.Header.Get("Content-Type"),
+	)
+	assert.Equal(
+		t,
+		"must-revalidate, no-cache, no-store",
+		recr.Header.Get("Cache-Control"),
+	)
+	assert.Equal(t, "not found: bad upstream", string(recrb))
+
+	// ---
+
+	rec = httptest.NewRecorder()
+
+	responseModError(
+		rec,
+		&notFoundError{errors.New("not found: fetch timed out")},
+		false,
+	)
+
+	recr = rec.Result()
+	recrb, _ = ioutil.ReadAll(recr.Body)
+
+	assert.Equal(t, http.StatusNotFound, recr.StatusCode)
+	assert.Equal(
+		t,
+		"text/plain; charset=utf-8",
+		recr.Header.Get("Content-Type"),
+	)
+	assert.Equal(
+		t,
+		"must-revalidate, no-cache, no-store",
+		recr.Header.Get("Cache-Control"),
+	)
+	assert.Equal(t, "not found: fetch timed out", string(recrb))
+
+	// ---
+
+	rec = httptest.NewRecorder()
+
+	responseModError(rec, errBadUpstream, false)
+
+	recr = rec.Result()
+	recrb, _ = ioutil.ReadAll(recr.Body)
+
+	assert.Equal(t, http.StatusNotFound, recr.StatusCode)
+	assert.Equal(
+		t,
+		"text/plain; charset=utf-8",
+		recr.Header.Get("Content-Type"),
+	)
+	assert.Equal(
+		t,
+		"must-revalidate, no-cache, no-store",
+		recr.Header.Get("Cache-Control"),
+	)
+	assert.Equal(t, "not found: bad upstream", string(recrb))
+
+	// ---
+
+	rec = httptest.NewRecorder()
+
+	responseModError(rec, errFetchTimedOut, false)
 
 	recr = rec.Result()
 	recrb, _ = ioutil.ReadAll(recr.Body)
