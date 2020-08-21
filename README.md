@@ -140,6 +140,6 @@ requests [here](https://github.com/goproxy/goproxy/pulls).
 
 ## License
 
-This project is licensed under the Unlicense.
+This project is licensed under the MIT License.
 
 License can be found [here](LICENSE).
