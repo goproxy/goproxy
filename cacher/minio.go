@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/goproxy/goproxy"
-	"github.com/minio/minio-go/v6"
-	"github.com/minio/minio-go/v6/pkg/credentials"
-	"github.com/minio/minio-go/v6/pkg/s3utils"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/minio/minio-go/v7/pkg/s3utils"
 )
 
 // MinIO implements the `goproxy.Cacher` by using the MinIO.
@@ -75,7 +75,7 @@ func (m *MinIO) load() {
 	}
 
 	u.Scheme = ""
-	m.client, m.loadError = minio.NewWithOptions(
+	m.client, m.loadError = minio.New(
 		strings.TrimPrefix(u.String(), "//"),
 		options,
 	)
@@ -92,7 +92,7 @@ func (m *MinIO) Cache(ctx context.Context, name string) (goproxy.Cache, error) {
 		return nil, m.loadError
 	}
 
-	object, err := m.client.GetObjectWithContext(
+	object, err := m.client.GetObject(
 		ctx,
 		m.BucketName,
 		path.Join(m.Root, name),
@@ -143,7 +143,7 @@ func (m *MinIO) SetCache(ctx context.Context, c goproxy.Cache) error {
 		return m.loadError
 	}
 
-	_, err := m.client.PutObjectWithContext(
+	_, err := m.client.PutObject(
 		ctx,
 		m.BucketName,
 		path.Join(m.Root, c.Name()),
