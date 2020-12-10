@@ -20,7 +20,6 @@ func TestNew(t *testing.T) {
 	assert.Nil(t, g.ProxiedSUMDBs)
 	assert.False(t, g.InsecureMode)
 	assert.Nil(t, g.ErrorLogger)
-	assert.NotNil(t, g.loadOnce)
 	assert.NotNil(t, g.httpClient)
 	assert.NotNil(t, g.goBinEnv)
 	assert.Nil(t, g.goBinWorkerChan)
