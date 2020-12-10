@@ -114,12 +114,12 @@ type Goproxy struct {
 	// Default value: 0
 	CacherMaxCacheBytes int `mapstructure:"cacher_max_cache_bytes"`
 
-	// ProxiedSUMDBs is the proxied checksum databases. Each value should be
-	// given the format of "<sumdb-name>" or "<sumdb-name> <sumdb-URL>". The
-	// first format can be seen as a shorthand for the second format. In the
-	// case of the first format, the corresponding checksum database URL
-	// will be the checksum database name itself as a host with an "https"
-	// scheme.
+	// ProxiedSUMDBs is the list of proxied checksum databases. Each value
+	// should be given the format of "<sumdb-name>" or
+	// "<sumdb-name> <sumdb-URL>". The first format can be seen as a
+	// shorthand for the second format. In the case of the first format, the
+	// corresponding checksum database URL will be the checksum database
+	// name itself as a host with an "https" scheme.
 	//
 	// Default value: nil
 	ProxiedSUMDBs []string `mapstructure:"proxied_sumdbs"`
