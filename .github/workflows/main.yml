@@ -12,11 +12,11 @@ jobs:
           - "1.15.x"
     steps:
       - name: Set up Go
-        uses: actions/setup-go@v2.1.2
+        uses: actions/setup-go@v2.1.3
         with:
           go-version: ${{matrix.go}}
       - name: Check out code
-        uses: actions/checkout@v2.3.2
+        uses: actions/checkout@v2.3.4
       - name: Download modules
         run: go mod download
       - name: Test
