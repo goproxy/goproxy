@@ -139,7 +139,7 @@ type Goproxy struct {
 	// Default value: nil
 	ErrorLogger *log.Logger `mapstructure:"-"`
 
-	loadOnce        *sync.Once
+	loadOnce        sync.Once
 	httpClient      *http.Client
 	goBinEnv        map[string]string
 	goBinWorkerChan chan struct{}
@@ -156,7 +156,6 @@ func New() *Goproxy {
 		GoBinName:         "go",
 		GoBinEnv:          os.Environ(),
 		GoBinFetchTimeout: time.Minute,
-		loadOnce:          &sync.Once{},
 		httpClient: &http.Client{
 			Transport: &http.Transport{
 				Proxy: http.ProxyFromEnvironment,
