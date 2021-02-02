@@ -5,12 +5,12 @@
 
 A minimalist Go module proxy handler.
 
-Goproxy has fully implemented the Go's
-[module proxy protocol](https://golang.org/cmd/go/#hdr-Module_proxy_protocol).
-Our goal is to find the most dead simple way to provide a minimalist handler
-that can act as a full-featured Go module proxy for those who want to build
-their own proxies. Yeah, there is no `Makefile`, no configuration files, no
-crazy file organization, no lengthy documentation, no annoying stuff, just a
+Goproxy has fully implemented the
+[GOPROXY protocol](https://golang.org/ref/mod#goproxy-protocol). Our goal is to
+find the most dead simple way to provide a minimalist handler that can act as a
+full-featured Go module proxy for those who want to build their own proxies.
+Yeah, there is no `Makefile`, no configuration files, no crazy file
+organization, no lengthy documentation, no annoying stuff, just a
 [`goproxy.Goproxy`](https://pkg.go.dev/github.com/goproxy/goproxy#Goproxy) that
 implements the [`http.Handler`](https://pkg.go.dev/net/http#Handler).
 
@@ -20,14 +20,14 @@ implements the [`http.Handler`](https://pkg.go.dev/net/http#Handler).
 	* One function: [`goproxy.New`](https://pkg.go.dev/github.com/goproxy/goproxy#New)
 	* One struct: [`goproxy.Goproxy`](https://pkg.go.dev/github.com/goproxy/goproxy#Goproxy)
 	* Two interfaces: [`goproxy.Cacher`](https://pkg.go.dev/github.com/goproxy/goproxy#Cacher) and [`goproxy.Cache`](https://pkg.go.dev/github.com/goproxy/goproxy#Cache)
-* Built-in [`GOPROXY`](https://golang.org/cmd/go/#hdr-Environment_variables) support
+* Built-in [`GOPROXY`](https://golang.org/ref/mod#environment-variables) support
 	* Defaulted to `https://proxy.golang.org,direct` (just like what Go is doing right now)
-* Built-in [`GONOPROXY`](https://golang.org/cmd/go/#hdr-Environment_variables) support
-* Built-in [`GOSUMDB`](https://golang.org/cmd/go/#hdr-Environment_variables) support
+* Built-in [`GONOPROXY`](https://golang.org/ref/mod#environment-variables) support
+* Built-in [`GOSUMDB`](https://golang.org/ref/mod#environment-variables) support
 	* Defaulted to `sum.golang.org` (just like what Go is doing right now)
-* Built-in [`GONOSUMDB`](https://golang.org/cmd/go/#hdr-Environment_variables) support
-* Built-in [`GOPRIVATE`](https://golang.org/cmd/go/#hdr-Environment_variables) support
-* Supports serving under other Go module proxies by setting [`GOPROXY`](https://golang.org/cmd/go/#hdr-Environment_variables)
+* Built-in [`GONOSUMDB`](https://golang.org/ref/mod#environment-variables) support
+* Built-in [`GOPRIVATE`](https://golang.org/ref/mod#environment-variables) support
+* Supports serving under other Go module proxies by setting [`GOPROXY`](https://golang.org/ref/mod#environment-variables)
 * Supports [proxying checksum databases](http://golang.org/design/25530-sumdb#proxying-a-checksum-database)
 * Supports multiple mainstream implementations of the [`goproxy.Cacher`](https://pkg.go.dev/github.com/goproxy/goproxy#Cacher)
 	* Disk: [`cacher.Disk`](https://pkg.go.dev/github.com/goproxy/goproxy/cacher#Disk)
