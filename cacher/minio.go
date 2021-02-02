@@ -118,14 +118,10 @@ func (m *MinIO) Cache(ctx context.Context, name string) (goproxy.Cache, error) {
 		return nil, err
 	}
 
-	dashIndex := strings.Index(objectInfo.ETag, "-")
-	if dashIndex < 0 {
-		dashIndex = len(objectInfo.ETag)
-	}
-
-	checksum, err := hex.DecodeString(objectInfo.ETag[:dashIndex])
-	if err != nil {
-		return nil, err
+	checksum, _ := hex.DecodeString(objectInfo.ETag)
+	if len(checksum) != md5.Size {
+		nameChecksum := md5.Sum([]byte(name))
+		checksum = nameChecksum[:]
 	}
 
 	return &minioCache{
