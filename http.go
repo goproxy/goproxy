@@ -117,7 +117,7 @@ func appendURL(u *url.URL, extraPaths ...string) *url.URL {
 		u.Path = path.Join(u.Path, ep)
 		u.RawPath = path.Join(
 			u.RawPath,
-			strings.Replace(url.PathEscape(ep), "%2F", "/", -1),
+			strings.ReplaceAll(url.PathEscape(ep), "%2F", "/"),
 		)
 		if ep[len(ep)-1] == '/' {
 			u.Path = fmt.Sprint(u.Path, "/")

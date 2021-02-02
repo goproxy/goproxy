@@ -62,7 +62,10 @@ type Cache interface {
 
 // tempCache implements the `Cache`.
 type tempCache struct {
-	file     *os.File
+	io.Reader
+	io.Seeker
+	io.Closer
+
 	name     string
 	mimeType string
 	size     int64
@@ -104,28 +107,15 @@ func newTempCache(filename, name string, fileHash hash.Hash) (Cache, error) {
 	}
 
 	return &tempCache{
-		file:     file,
+		Reader:   file,
+		Seeker:   file,
+		Closer:   file,
 		name:     name,
 		mimeType: mimeType,
 		size:     fileInfo.Size(),
 		modTime:  fileInfo.ModTime(),
 		checksum: fileHash.Sum(nil),
 	}, nil
-}
-
-// Read implements the `Cache`.
-func (tc *tempCache) Read(b []byte) (int, error) {
-	return tc.file.Read(b)
-}
-
-// Seek implements the `Cache`.
-func (tc *tempCache) Seek(offset int64, whence int) (int64, error) {
-	return tc.file.Seek(offset, whence)
-}
-
-// Close implements the `Cache`.
-func (tc *tempCache) Close() error {
-	return tc.file.Close()
 }
 
 // Name implements the `Cache`.

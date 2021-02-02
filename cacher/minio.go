@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"hash"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -128,7 +129,9 @@ func (m *MinIO) Cache(ctx context.Context, name string) (goproxy.Cache, error) {
 	}
 
 	return &minioCache{
-		object:   object,
+		Reader:   object,
+		Seeker:   object,
+		Closer:   object,
 		name:     name,
 		mimeType: objectInfo.ContentType,
 		size:     objectInfo.Size,
@@ -166,27 +169,15 @@ func isMinIOObjectNotExist(err error) bool {
 // minioCache implements the `goproxy.Cache`. It is the cache unit of the
 // `MinIO`.
 type minioCache struct {
-	object   *minio.Object
+	io.Reader
+	io.Seeker
+	io.Closer
+
 	name     string
 	mimeType string
 	size     int64
 	modTime  time.Time
 	checksum []byte
-}
-
-// Read implements the `goproxy.Cache`.
-func (mc *minioCache) Read(b []byte) (int, error) {
-	return mc.object.Read(b)
-}
-
-// Seek implements the `goproxy.Cache`.
-func (mc *minioCache) Seek(offset int64, whence int) (int64, error) {
-	return mc.object.Seek(offset, whence)
-}
-
-// Close implements the `goproxy.Cache`.
-func (mc *minioCache) Close() error {
-	return mc.object.Close()
 }
 
 // Name implements the `goproxy.Cache`.

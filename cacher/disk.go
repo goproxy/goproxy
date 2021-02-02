@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"fmt"
 	"hash"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -60,7 +61,9 @@ func (d *Disk) Cache(ctx context.Context, name string) (goproxy.Cache, error) {
 	}
 
 	return &diskCache{
-		file:     file,
+		Reader:   file,
+		Seeker:   file,
+		Closer:   file,
 		name:     name,
 		mimeType: string(fileMIMEType),
 		size:     fileInfo.Size(),
@@ -105,27 +108,15 @@ func (d *Disk) SetCache(ctx context.Context, c goproxy.Cache) error {
 
 // diskCache implements the `goproxy.Cache`. It is the cache unit of the `Disk`.
 type diskCache struct {
-	file     *os.File
+	io.Reader
+	io.Seeker
+	io.Closer
+
 	name     string
 	mimeType string
 	size     int64
 	modTime  time.Time
 	checksum []byte
-}
-
-// Read implements the `goproxy.Cache`.
-func (dc *diskCache) Read(b []byte) (int, error) {
-	return dc.file.Read(b)
-}
-
-// Seek implements the `goproxy.Cache`.
-func (dc *diskCache) Seek(offset int64, whence int) (int64, error) {
-	return dc.file.Seek(offset, whence)
-}
-
-// Close implements the `goproxy.Cache`.
-func (dc *diskCache) Close() error {
-	return dc.file.Close()
 }
 
 // Name implements the `goproxy.Cache`.
