@@ -17,6 +17,7 @@ implements the [`http.Handler`](https://pkg.go.dev/net/http#Handler).
 ## Features
 
 * Extremely easy to use
+	* One function: [`goproxy.New`](https://pkg.go.dev/github.com/goproxy/goproxy#New)
 	* One struct: [`goproxy.Goproxy`](https://pkg.go.dev/github.com/goproxy/goproxy#Goproxy)
 	* Two interfaces: [`goproxy.Cacher`](https://pkg.go.dev/github.com/goproxy/goproxy#Cacher) and [`goproxy.Cache`](https://pkg.go.dev/github.com/goproxy/goproxy#Cache)
 * Built-in [`GOPROXY`](https://golang.org/cmd/go/#hdr-Environment_variables) support
