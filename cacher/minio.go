@@ -153,7 +153,8 @@ func (m *MinIO) SetCache(ctx context.Context, c goproxy.Cache) error {
 		c,
 		c.Size(),
 		minio.PutObjectOptions{
-			ContentType: c.MIMEType(),
+			ContentType:      c.MIMEType(),
+			DisableMultipart: true,
 		},
 	)
 
