@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 )
 
@@ -72,8 +71,8 @@ func responseInternalServerError(rw http.ResponseWriter) {
 
 // responseModError responses the err as a mod operation error to the client.
 func responseModError(rw http.ResponseWriter, err error, cacheSensitive bool) {
-	msg := err.Error()
 	if errors.Is(err, errNotFound) {
+		msg := err.Error()
 		if strings.Contains(msg, errBadUpstream.Error()) {
 			msg = errBadUpstream.Error()
 			setResponseCacheControlHeader(rw, -1)
@@ -90,11 +89,12 @@ func responseModError(rw http.ResponseWriter, err error, cacheSensitive bool) {
 	} else if errors.Is(err, errBadUpstream) {
 		setResponseCacheControlHeader(rw, -1)
 		responseNotFound(rw, errBadUpstream)
-	} else if ue, ok := err.(*url.Error); (ok && ue.Timeout()) ||
+	} else if t, ok := err.(interface {
+		Timeout() bool
+	}); (ok && t.Timeout()) ||
 		errors.Is(err, context.DeadlineExceeded) ||
-		strings.Contains(msg, context.DeadlineExceeded.Error()) ||
 		errors.Is(err, errFetchTimedOut) ||
-		strings.Contains(msg, errFetchTimedOut.Error()) {
+		strings.Contains(err.Error(), errFetchTimedOut.Error()) {
 		setResponseCacheControlHeader(rw, -1)
 		responseNotFound(rw, errFetchTimedOut)
 	} else {
