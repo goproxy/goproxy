@@ -72,8 +72,8 @@ func responseInternalServerError(rw http.ResponseWriter) {
 
 // responseModError responses the err as a mod operation error to the client.
 func responseModError(rw http.ResponseWriter, err error, cacheSensitive bool) {
+	msg := err.Error()
 	if errors.Is(err, errNotFound) {
-		msg := err.Error()
 		if strings.Contains(msg, errBadUpstream.Error()) {
 			msg = errBadUpstream.Error()
 			setResponseCacheControlHeader(rw, -1)
@@ -92,8 +92,9 @@ func responseModError(rw http.ResponseWriter, err error, cacheSensitive bool) {
 		responseNotFound(rw, errBadUpstream)
 	} else if ue, ok := err.(*url.Error); (ok && ue.Timeout()) ||
 		errors.Is(err, context.DeadlineExceeded) ||
+		strings.Contains(msg, context.DeadlineExceeded.Error()) ||
 		errors.Is(err, errFetchTimedOut) ||
-		strings.Contains(err.Error(), errFetchTimedOut.Error()) {
+		strings.Contains(msg, errFetchTimedOut.Error()) {
 		setResponseCacheControlHeader(rw, -1)
 		responseNotFound(rw, errFetchTimedOut)
 	} else {

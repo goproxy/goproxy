@@ -1,7 +1,9 @@
 package goproxy
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -297,6 +299,35 @@ func TestResponseModError(t *testing.T) {
 		recr.Header.Get("Cache-Control"),
 	)
 	assert.Equal(t, "not found: bad upstream", string(recrb))
+
+	// ---
+
+	rec = httptest.NewRecorder()
+
+	responseModError(
+		rec,
+		fmt.Errorf(
+			"%v (operation timed out)",
+			context.DeadlineExceeded,
+		),
+		false,
+	)
+
+	recr = rec.Result()
+	recrb, _ = ioutil.ReadAll(recr.Body)
+
+	assert.Equal(t, http.StatusNotFound, recr.StatusCode)
+	assert.Equal(
+		t,
+		"text/plain; charset=utf-8",
+		recr.Header.Get("Content-Type"),
+	)
+	assert.Equal(
+		t,
+		"must-revalidate, no-cache, no-store",
+		recr.Header.Get("Cache-Control"),
+	)
+	assert.Equal(t, "not found: fetch timed out", string(recrb))
 
 	// ---
 
