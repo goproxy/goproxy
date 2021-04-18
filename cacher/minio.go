@@ -16,7 +16,6 @@ import (
 	"github.com/goproxy/goproxy"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	"github.com/minio/minio-go/v7/pkg/s3utils"
 )
 
 // MinIO implements the `goproxy.Cacher` by using the MinIO.
@@ -55,19 +54,13 @@ func (m *MinIO) load() {
 		return
 	}
 
-	signerType := credentials.SignatureDefault
-	if s3utils.IsGoogleEndpoint(*u) {
-		signerType = credentials.SignatureV2
-	}
-
 	options := &minio.Options{
-		Creds: credentials.NewStatic(
+		Creds: credentials.NewStaticV4(
 			m.AccessKeyID,
 			m.SecretAccessKey,
 			"",
-			signerType,
 		),
-		Secure:       strings.ToLower(u.Scheme) == "https",
+		Secure:       u.Scheme == "https",
 		Region:       m.BucketLocation,
 		BucketLookup: minio.BucketLookupPath,
 	}

@@ -92,7 +92,7 @@ func parseRawURL(rawURL string) (*url.URL, error) {
 		return nil, err
 	}
 
-	switch strings.ToLower(u.Scheme) {
+	switch u.Scheme {
 	case "http", "https":
 	default:
 		return nil, fmt.Errorf(
