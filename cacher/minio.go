@@ -86,24 +86,13 @@ func (m *MinIO) Cache(ctx context.Context, name string) (goproxy.Cache, error) {
 		return nil, m.loadError
 	}
 
-	object, err := m.client.GetObject(
+	objectInfo, err := m.client.StatObject(
 		ctx,
 		m.BucketName,
 		path.Join(m.Root, name),
-		minio.GetObjectOptions{},
+		minio.StatObjectOptions{},
 	)
 	if err != nil {
-		if isMinIOObjectNotExist(err) {
-			return nil, goproxy.ErrCacheNotFound
-		}
-
-		return nil, err
-	}
-
-	objectInfo, err := object.Stat()
-	if err != nil {
-		// Somehow it should be checked again. The check above for some
-		// implementations (such as `Kodo`) is not sufficient.
 		if isMinIOObjectNotExist(err) {
 			return nil, goproxy.ErrCacheNotFound
 		}
@@ -115,6 +104,16 @@ func (m *MinIO) Cache(ctx context.Context, name string) (goproxy.Cache, error) {
 	if len(checksum) != md5.Size {
 		eTagChecksum := md5.Sum([]byte(objectInfo.ETag))
 		checksum = eTagChecksum[:]
+	}
+
+	object, err := m.client.GetObject(
+		ctx,
+		m.BucketName,
+		objectInfo.Key,
+		minio.GetObjectOptions{},
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	return &minioCache{
