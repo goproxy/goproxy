@@ -1,7 +1,6 @@
 package goproxy
 
 import (
-	"archive/zip"
 	"bufio"
 	"bytes"
 	"context"
@@ -16,8 +15,10 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
+	"golang.org/x/mod/zip"
 )
 
 // modResult is an unified result of the `mod`.
@@ -294,7 +295,10 @@ func (g *Goproxy) mod(
 				return nil, err
 			}
 
-			if err := checkModFile(modFile.Name()); err != nil {
+			if err := checkModFile(
+				modFile.Name(),
+				modulePath,
+			); err != nil {
 				if fallBackOnError ||
 					errors.Is(err, errNotFound) {
 					proxyError = err
@@ -583,8 +587,8 @@ func formatInfoFile(name, tempDir string) (string, error) {
 	return name, nil
 }
 
-// checkModFile checks the mod file targeted by the name.
-func checkModFile(name string) error {
+// checkModFile checks the mod file targeted by the name with the modulePath.
+func checkModFile(name, modulePath string) error {
 	f, err := os.Open(name)
 	if err != nil {
 		return err
@@ -593,7 +597,7 @@ func checkModFile(name string) error {
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		if strings.Contains(scanner.Text(), "module") {
+		if modfile.ModulePath(scanner.Bytes()) == modulePath {
 			return nil
 		}
 	}
@@ -608,27 +612,14 @@ func checkModFile(name string) error {
 // checkZipFile checks the zip file targeted by the name with the modulePath and
 // moduleVersion.
 func checkZipFile(name, modulePath, moduleVersion string) error {
-	f, err := os.Open(name)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	fi, err := f.Stat()
-	if err != nil {
-		return err
-	}
-
-	zr, err := zip.NewReader(f, fi.Size())
-	if err != nil {
+	if _, err := zip.CheckZip(
+		module.Version{
+			Path:    modulePath,
+			Version: moduleVersion,
+		},
+		name,
+	); err != nil {
 		return &notFoundError{fmt.Errorf("invalid zip file: %v", err)}
-	}
-
-	namePrefix := fmt.Sprintf("%s@%s/", modulePath, moduleVersion)
-	for _, f := range zr.File {
-		if !strings.HasPrefix(f.Name, namePrefix) {
-			return &notFoundError{errors.New("invalid zip file")}
-		}
 	}
 
 	return nil
