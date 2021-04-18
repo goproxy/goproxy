@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
 	"golang.org/x/mod/zip"
@@ -295,10 +294,7 @@ func (g *Goproxy) mod(
 				return nil, err
 			}
 
-			if err := checkModFile(
-				modFile.Name(),
-				modulePath,
-			); err != nil {
+			if err := checkModFile(modFile.Name()); err != nil {
 				if fallBackOnError ||
 					errors.Is(err, errNotFound) {
 					proxyError = err
@@ -587,8 +583,8 @@ func formatInfoFile(name, tempDir string) (string, error) {
 	return name, nil
 }
 
-// checkModFile checks the mod file targeted by the name with the modulePath.
-func checkModFile(name, modulePath string) error {
+// checkModFile checks the mod file targeted by the name.
+func checkModFile(name string) error {
 	f, err := os.Open(name)
 	if err != nil {
 		return err
@@ -597,7 +593,7 @@ func checkModFile(name, modulePath string) error {
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		if modfile.ModulePath(scanner.Bytes()) == modulePath {
+		if strings.Contains(scanner.Text(), "module") {
 			return nil
 		}
 	}
