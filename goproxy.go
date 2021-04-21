@@ -6,6 +6,7 @@ package goproxy
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -497,6 +498,8 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	var (
 		content     io.Reader
 		contentType string
+		modTime     time.Time
+		checksum    []byte
 	)
 
 	if cache, err := g.cache(r.Context(), name); err == nil {
@@ -509,6 +512,14 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			contentType = "text/plain; charset=utf-8"
 		case ".zip":
 			contentType = "application/zip"
+		}
+
+		if mt, ok := content.(interface{ ModTime() time.Time }); ok {
+			modTime = mt.ModTime()
+		}
+
+		if cs, ok := content.(interface{ Checksum() []byte }); ok {
+			checksum = cs.Checksum()
 		}
 	} else if errors.Is(err, os.ErrNotExist) {
 		mr, err := g.mod(
@@ -611,54 +622,54 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 		namePrefix := strings.TrimSuffix(name, nameExt)
 
-		infoCache, err := os.Open(mr.Info)
+		infoFile, err := os.Open(mr.Info)
 		if err != nil {
 			g.logError(err)
 			responseInternalServerError(rw)
 			return
 		}
-		defer infoCache.Close()
+		defer infoFile.Close()
 
 		if err := g.setCache(
 			r.Context(),
 			fmt.Sprint(namePrefix, ".info"),
-			infoCache,
+			infoFile,
 		); err != nil {
 			g.logError(err)
 			responseInternalServerError(rw)
 			return
 		}
 
-		modCache, err := os.Open(mr.GoMod)
+		modFile, err := os.Open(mr.GoMod)
 		if err != nil {
 			g.logError(err)
 			responseInternalServerError(rw)
 			return
 		}
-		defer modCache.Close()
+		defer modFile.Close()
 
 		if err := g.setCache(
 			r.Context(),
 			fmt.Sprint(namePrefix, ".mod"),
-			modCache,
+			modFile,
 		); err != nil {
 			g.logError(err)
 			responseInternalServerError(rw)
 			return
 		}
 
-		zipCache, err := os.Open(mr.Zip)
+		zipFile, err := os.Open(mr.Zip)
 		if err != nil {
 			g.logError(err)
 			responseInternalServerError(rw)
 			return
 		}
-		defer zipCache.Close()
+		defer zipFile.Close()
 
 		if err := g.setCache(
 			r.Context(),
 			fmt.Sprint(namePrefix, ".zip"),
-			zipCache,
+			zipFile,
 		); err != nil {
 			g.logError(err)
 			responseInternalServerError(rw)
@@ -667,13 +678,13 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 		switch nameExt {
 		case ".info":
-			content = infoCache
+			content = infoFile
 			contentType = "application/json; charset=utf-8"
 		case ".mod":
-			content = modCache
+			content = modFile
 			contentType = "text/plain; charset=utf-8"
 		case ".zip":
-			content = zipCache
+			content = zipFile
 			contentType = "application/zip"
 		}
 
@@ -692,10 +703,24 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	rw.Header().Set("Content-Type", contentType)
+	if checksum != nil {
+		rw.Header().Set("ETag", fmt.Sprintf(
+			"%q",
+			base64.StdEncoding.EncodeToString(checksum),
+		))
+	}
+
 	setResponseCacheControlHeader(rw, 604800)
 	if content, ok := content.(io.ReadSeeker); ok {
-		http.ServeContent(rw, r, "", time.Time{}, content)
+		http.ServeContent(rw, r, "", modTime, content)
 	} else {
+		if !modTime.IsZero() {
+			rw.Header().Set(
+				"Last-Modified",
+				modTime.UTC().Format(http.TimeFormat),
+			)
+		}
+
 		io.Copy(rw, content)
 	}
 }

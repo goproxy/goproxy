@@ -15,6 +15,15 @@ type Cacher interface {
 	//
 	// It is the caller's responsibility to close the returned
 	// `io.ReadCloser`.
+	//
+	// Note that the returned `io.ReadCloser` can optionally implement the
+	// following interfaces:
+	//   * `io.Seeker`
+	//       For the Range request header.
+	//   * `interface { ModTime() time.Time }`
+	//       For the Last-Modified response header.
+	//   * `interface { Checksum() []byte }`
+	//       For the ETag response header.
 	Get(ctx context.Context, name string) (io.ReadCloser, error)
 
 	// Set sets the content as a cache with the name.
