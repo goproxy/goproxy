@@ -87,7 +87,7 @@ type Goproxy struct {
 	//
 	// If the `Cacher` is nil, the module files will be temporarily stored
 	// in the local disk and discarded as the request ends.
-	Cacher Cacher `mapstructure:"cacher"`
+	Cacher Cacher `mapstructure:"-"`
 
 	// CacherMaxCacheBytes is the maximum number of bytes allowed for the
 	// `Cacher` to store a cache.
