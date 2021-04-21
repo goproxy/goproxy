@@ -417,13 +417,7 @@ func (g *Goproxy) mod(
 		}
 	}
 
-	if g.GoBinFetchTimeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, g.GoBinFetchTimeout)
-		defer cancel()
-	}
-
-	cmd := exec.CommandContext(ctx, g.GoBinName, args...)
+	cmd := exec.CommandContext(ctx, g.goBinName, args...)
 	cmd.Env = make([]string, 0, len(g.goBinEnv)+6)
 	for k, v := range g.goBinEnv {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))

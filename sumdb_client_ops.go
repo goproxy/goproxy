@@ -5,9 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 )
@@ -21,7 +21,7 @@ type sumdbClientOps struct {
 	envGOPROXY  string
 	envGOSUMDB  string
 	httpClient  *http.Client
-	errorLogger *log.Logger
+	logErrorf   func(format string, v ...interface{})
 }
 
 // load loads the stuff of the sco up.
@@ -175,7 +175,7 @@ func (sco *sumdbClientOps) ReadCache(file string) ([]byte, error) {
 		return nil, sco.loadError
 	}
 
-	return nil, ErrCacheNotFound
+	return nil, os.ErrNotExist
 }
 
 // WriteCache implements the `sumdb.ClientOps`.
@@ -191,9 +191,5 @@ func (sco *sumdbClientOps) Log(msg string) {
 // SecurityError implements the `sumdb.ClientOps`.
 func (sco *sumdbClientOps) SecurityError(msg string) {
 	sco.loadOnce.Do(sco.load)
-	if sco.errorLogger != nil {
-		sco.errorLogger.Print(msg)
-	} else {
-		log.Print(msg)
-	}
+	sco.logErrorf("%s", msg)
 }

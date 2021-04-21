@@ -17,9 +17,8 @@ implements the [`http.Handler`](https://pkg.go.dev/net/http#Handler).
 ## Features
 
 * Extremely easy to use
-	* One function: [`goproxy.New`](https://pkg.go.dev/github.com/goproxy/goproxy#New)
-	* One struct: [`goproxy.Goproxy`](https://pkg.go.dev/github.com/goproxy/goproxy#Goproxy)
-	* Two interfaces: [`goproxy.Cacher`](https://pkg.go.dev/github.com/goproxy/goproxy#Cacher) and [`goproxy.Cache`](https://pkg.go.dev/github.com/goproxy/goproxy#Cache)
+	* Two structs: [`goproxy.Goproxy`](https://pkg.go.dev/github.com/goproxy/goproxy#Goproxy) and [`goproxy.DirCacher`](https://pkg.go.dev/github.com/goproxy/goproxy#DirCacher)
+	* One interface: [`goproxy.Cacher`](https://pkg.go.dev/github.com/goproxy/goproxy#Cacher)
 * Built-in [`GOPROXY`](https://golang.org/ref/mod#environment-variables) support
 	* Defaulted to `https://proxy.golang.org,direct` (just like what Go is doing right now)
 * Built-in [`GONOPROXY`](https://golang.org/ref/mod#environment-variables) support
@@ -29,15 +28,6 @@ implements the [`http.Handler`](https://pkg.go.dev/net/http#Handler).
 * Built-in [`GOPRIVATE`](https://golang.org/ref/mod#environment-variables) support
 * Supports serving under other Go module proxies by setting [`GOPROXY`](https://golang.org/ref/mod#environment-variables)
 * Supports [proxying checksum databases](http://golang.org/design/25530-sumdb#proxying-a-checksum-database)
-* Supports multiple mainstream implementations of the [`goproxy.Cacher`](https://pkg.go.dev/github.com/goproxy/goproxy#Cacher)
-	* Disk: [`cacher.Disk`](https://pkg.go.dev/github.com/goproxy/goproxy/cacher#Disk)
-	* MinIO: [`cacher.MinIO`](https://pkg.go.dev/github.com/goproxy/goproxy/cacher#MinIO)
-	* Google Cloud Storage: [`cacher.GCS`](https://pkg.go.dev/github.com/goproxy/goproxy/cacher#GCS)
-	* Amazon Simple Storage Service: [`cacher.S3`](https://pkg.go.dev/github.com/goproxy/goproxy/cacher#S3)
-	* Microsoft Azure Blob Storage: [`cacher.MABS`](https://pkg.go.dev/github.com/goproxy/goproxy/cacher#MABS)
-	* DigitalOcean Spaces: [`cacher.DOS`](https://pkg.go.dev/github.com/goproxy/goproxy/cacher#DOS)
-	* Alibaba Cloud Object Storage Service: [`cacher.OSS`](https://pkg.go.dev/github.com/goproxy/goproxy/cacher#OSS)
-	* Qiniu Cloud Kodo: [`cacher.Kodo`](https://pkg.go.dev/github.com/goproxy/goproxy/cacher#Kodo)
 
 ## Installation
 
@@ -65,7 +55,7 @@ import (
 )
 
 func main() {
-	http.ListenAndServe("localhost:8080", goproxy.New())
+	http.ListenAndServe("localhost:8080", &goproxy.Goproxy{})
 }
 ```
 
