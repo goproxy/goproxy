@@ -25,7 +25,7 @@ type Cacher interface {
 // If the directory does not exist, it will be created with 0700 permissions.
 type DirCacher string
 
-// Get implements the `goproxy.Cacher`.
+// Get implements the `Cacher`.
 func (dc DirCacher) Get(
 	ctx context.Context,
 	name string,
@@ -33,7 +33,7 @@ func (dc DirCacher) Get(
 	return os.Open(filepath.Join(string(dc), filepath.FromSlash(name)))
 }
 
-// Set implements the `goproxy.Cacher`.
+// Set implements the `Cacher`.
 func (dc DirCacher) Set(
 	ctx context.Context,
 	name string,
