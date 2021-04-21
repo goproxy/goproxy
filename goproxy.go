@@ -495,32 +495,10 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var (
-		content     io.Reader
-		contentType string
-		modTime     time.Time
-		checksum    []byte
-	)
-
-	if cache, err := g.cache(r.Context(), name); err == nil {
-		defer cache.Close()
-		content = cache
-		switch nameExt {
-		case ".info":
-			contentType = "application/json; charset=utf-8"
-		case ".mod":
-			contentType = "text/plain; charset=utf-8"
-		case ".zip":
-			contentType = "application/zip"
-		}
-
-		if mt, ok := content.(interface{ ModTime() time.Time }); ok {
-			modTime = mt.ModTime()
-		}
-
-		if cs, ok := content.(interface{ Checksum() []byte }); ok {
-			checksum = cs.Checksum()
-		}
+	var content io.Reader
+	if rc, err := g.cache(r.Context(), name); err == nil {
+		defer rc.Close()
+		content = rc
 	} else if errors.Is(err, os.ErrNotExist) {
 		mr, err := g.mod(
 			r.Context(),
@@ -679,16 +657,31 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		switch nameExt {
 		case ".info":
 			content = infoFile
-			contentType = "application/json; charset=utf-8"
+			os.Remove(modFile.Name())
+			os.Remove(zipFile.Name())
 		case ".mod":
 			content = modFile
-			contentType = "text/plain; charset=utf-8"
+			os.Remove(infoFile.Name())
+			os.Remove(zipFile.Name())
 		case ".zip":
 			content = zipFile
-			contentType = "application/zip"
+			os.Remove(infoFile.Name())
+			os.Remove(modFile.Name())
 		}
 
-		if _, err := content.(io.Seeker).Seek(
+		if dc, ok := g.Cacher.(DirCacher); ok {
+			os.Remove(content.(*os.File).Name())
+
+			rc, err := dc.Get(r.Context(), name)
+			if err != nil {
+				g.logError(err)
+				responseInternalServerError(rw)
+				return
+			}
+			defer rc.Close()
+
+			content = rc
+		} else if _, err := content.(io.Seeker).Seek(
 			0,
 			io.SeekStart,
 		); err != nil {
@@ -702,11 +695,27 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var contentType string
+	switch nameExt {
+	case ".info":
+		contentType = "application/json; charset=utf-8"
+	case ".mod":
+		contentType = "text/plain; charset=utf-8"
+	case ".zip":
+		contentType = "application/zip"
+	}
+
 	rw.Header().Set("Content-Type", contentType)
-	if checksum != nil {
+
+	var modTime time.Time
+	if mt, ok := content.(interface{ ModTime() time.Time }); ok {
+		modTime = mt.ModTime()
+	}
+
+	if cs, ok := content.(interface{ Checksum() []byte }); ok {
 		rw.Header().Set("ETag", fmt.Sprintf(
 			"%q",
-			base64.StdEncoding.EncodeToString(checksum),
+			base64.StdEncoding.EncodeToString(cs.Checksum()),
 		))
 	}
 

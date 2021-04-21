@@ -3,6 +3,7 @@ package goproxy
 import (
 	"context"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 )
@@ -20,9 +21,9 @@ type Cacher interface {
 	// following interfaces:
 	//   * `io.Seeker`
 	//       For the Range request header.
-	//   * `interface { ModTime() time.Time }`
+	//   * `interface{ ModTime() time.Time }`
 	//       For the Last-Modified response header.
-	//   * `interface { Checksum() []byte }`
+	//   * `interface{ Checksum() []byte }`
 	//       For the ETag response header.
 	Get(ctx context.Context, name string) (io.ReadCloser, error)
 
@@ -39,7 +40,25 @@ func (dc DirCacher) Get(
 	ctx context.Context,
 	name string,
 ) (io.ReadCloser, error) {
-	return os.Open(filepath.Join(string(dc), filepath.FromSlash(name)))
+	fileName := filepath.Join(string(dc), filepath.FromSlash(name))
+
+	fileInfo, err := os.Stat(fileName)
+	if err != nil {
+		return nil, err
+	}
+
+	file, err := os.Open(fileName)
+	if err != nil {
+		return nil, err
+	}
+
+	return &struct {
+		*os.File
+		os.FileInfo
+	}{
+		File:     file,
+		FileInfo: fileInfo,
+	}, nil
 }
 
 // Set implements the `Cacher`.
@@ -48,25 +67,26 @@ func (dc DirCacher) Set(
 	name string,
 	content io.Reader,
 ) error {
-	filename := filepath.Join(string(dc), filepath.FromSlash(name))
-	if err := os.MkdirAll(filepath.Dir(filename), 0700); err != nil {
+	fileName := filepath.Join(string(dc), filepath.FromSlash(name))
+
+	dir := filepath.Dir(fileName)
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
 
-	file, err := os.OpenFile(
-		filename,
-		os.O_RDWR|os.O_CREATE|os.O_EXCL,
-		0600,
-	)
+	file, err := ioutil.TempFile(dir, "")
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer os.Remove(file.Name())
 
 	if _, err := io.Copy(file, content); err != nil {
-		os.Remove(file.Name())
 		return err
 	}
 
-	return nil
+	if err := file.Close(); err != nil {
+		return err
+	}
+
+	return os.Rename(file.Name(), fileName)
 }
