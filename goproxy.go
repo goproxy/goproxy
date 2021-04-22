@@ -657,21 +657,13 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		switch nameExt {
 		case ".info":
 			content = infoFile
-			os.Remove(modFile.Name())
-			os.Remove(zipFile.Name())
 		case ".mod":
 			content = modFile
-			os.Remove(infoFile.Name())
-			os.Remove(zipFile.Name())
 		case ".zip":
 			content = zipFile
-			os.Remove(infoFile.Name())
-			os.Remove(modFile.Name())
 		}
 
 		if dc, ok := g.Cacher.(DirCacher); ok {
-			os.Remove(content.(*os.File).Name())
-
 			rc, err := dc.Get(r.Context(), name)
 			if err != nil {
 				g.logError(err)

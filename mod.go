@@ -210,7 +210,6 @@ func (g *Goproxy) mod(
 				).String(),
 				infoFile,
 			); err != nil {
-				infoFile.Close()
 				if fallBackOnError ||
 					errors.Is(err, errNotFound) {
 					proxyError = err
@@ -275,7 +274,6 @@ func (g *Goproxy) mod(
 				).String(),
 				modFile,
 			); err != nil {
-				modFile.Close()
 				if fallBackOnError ||
 					errors.Is(err, errNotFound) {
 					proxyError = err
@@ -328,7 +326,6 @@ func (g *Goproxy) mod(
 				).String(),
 				zipFile,
 			); err != nil {
-				zipFile.Close()
 				if fallBackOnError ||
 					errors.Is(err, errNotFound) {
 					proxyError = err
@@ -554,7 +551,6 @@ func formatInfoFile(name, tempDir string) (string, error) {
 		}
 
 		if _, err := f.Write(fb); err != nil {
-			f.Close()
 			return "", err
 		}
 
