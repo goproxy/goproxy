@@ -28,7 +28,7 @@ type Cacher interface {
 	Get(ctx context.Context, name string) (io.ReadCloser, error)
 
 	// Set sets the content as a cache with the name.
-	Set(ctx context.Context, name string, content io.Reader) error
+	Set(ctx context.Context, name string, content io.ReadSeeker) error
 }
 
 // DirCacher implements the `Cacher` using a directory on the local filesystem.
@@ -65,7 +65,7 @@ func (dc DirCacher) Get(
 func (dc DirCacher) Set(
 	ctx context.Context,
 	name string,
-	content io.Reader,
+	content io.ReadSeeker,
 ) error {
 	fileName := filepath.Join(string(dc), filepath.FromSlash(name))
 
