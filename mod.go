@@ -131,17 +131,17 @@ func (g *Goproxy) mod(
 
 			mr := modResult{}
 			if err := json.Unmarshal(buf.Bytes(), &mr); err != nil {
-				errNotFound = &notFoundError{fmt.Errorf(
+				errNotFound = notFoundError(fmt.Sprintf(
 					"invalid info response: %v",
 					err,
-				)}
+				))
 				continue
 			}
 
 			if !semver.IsValid(mr.Version) || mr.Time.IsZero() {
-				errNotFound = &notFoundError{errors.New(
+				errNotFound = notFoundError(
 					"invalid info response",
-				)}
+				)
 				continue
 			}
 
@@ -371,12 +371,12 @@ func (g *Goproxy) mod(
 			return nil, proxyError
 		}
 
-		return nil, &notFoundError{fmt.Errorf(
+		return nil, notFoundError(fmt.Sprintf(
 			"%s@%s: invalid version: unknown revision %s",
 			modulePath,
 			moduleVersion,
 			moduleVersion,
-		)}
+		))
 	}
 
 	// Try direct.
@@ -466,7 +466,7 @@ func (g *Goproxy) mod(
 		errorMessage = strings.TrimPrefix(errorMessage, "go list -m: ")
 		errorMessage = strings.TrimRight(errorMessage, "\n")
 
-		return nil, &notFoundError{errors.New(errorMessage)}
+		return nil, notFoundError(errorMessage)
 	}
 
 	mr := modResult{}
@@ -508,11 +508,11 @@ func checkInfoFile(name string) error {
 	}
 
 	if err := json.NewDecoder(f).Decode(&info); err != nil {
-		return &notFoundError{fmt.Errorf("invalid info file: %v", err)}
+		return notFoundError(fmt.Sprintf("invalid info file: %v", err))
 	}
 
 	if !semver.IsValid(info.Version) || info.Time.IsZero() {
-		return &notFoundError{errors.New("invalid info file")}
+		return notFoundError("invalid info file")
 	}
 
 	return nil
@@ -589,10 +589,10 @@ func checkModFile(name string) error {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return &notFoundError{fmt.Errorf("invalid mod file: %v", err)}
+		return notFoundError(fmt.Sprintf("invalid mod file: %v", err))
 	}
 
-	return &notFoundError{errors.New("invalid mod file")}
+	return notFoundError("invalid mod file")
 }
 
 // checkZipFile checks the zip file targeted by the name with the modulePath and
@@ -605,7 +605,7 @@ func checkZipFile(name, modulePath, moduleVersion string) error {
 		},
 		name,
 	); err != nil {
-		return &notFoundError{fmt.Errorf("invalid zip file: %v", err)}
+		return notFoundError(fmt.Sprintf("invalid zip file: %v", err))
 	}
 
 	return nil

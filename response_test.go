@@ -184,11 +184,7 @@ func TestResponseInternalServerError(t *testing.T) {
 func TestResponseModError(t *testing.T) {
 	rec := httptest.NewRecorder()
 
-	responseModError(
-		rec,
-		&notFoundError{errors.New("cache insensitive")},
-		false,
-	)
+	responseModError(rec, notFoundError("cache insensitive"), false)
 
 	recr := rec.Result()
 	recrb, _ := ioutil.ReadAll(recr.Body)
@@ -206,11 +202,7 @@ func TestResponseModError(t *testing.T) {
 
 	rec = httptest.NewRecorder()
 
-	responseModError(
-		rec,
-		&notFoundError{errors.New("cache sensitive")},
-		true,
-	)
+	responseModError(rec, notFoundError("cache sensitive"), true)
 
 	recr = rec.Result()
 	recrb, _ = ioutil.ReadAll(recr.Body)
@@ -228,11 +220,7 @@ func TestResponseModError(t *testing.T) {
 
 	rec = httptest.NewRecorder()
 
-	responseModError(
-		rec,
-		&notFoundError{errors.New("not found: bad upstream")},
-		false,
-	)
+	responseModError(rec, notFoundError("not found: bad upstream"), false)
 
 	recr = rec.Result()
 	recrb, _ = ioutil.ReadAll(recr.Body)
@@ -256,7 +244,7 @@ func TestResponseModError(t *testing.T) {
 
 	responseModError(
 		rec,
-		&notFoundError{errors.New("not found: fetch timed out")},
+		notFoundError("not found: fetch timed out"),
 		false,
 	)
 

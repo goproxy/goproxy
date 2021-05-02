@@ -105,7 +105,7 @@ type Goproxy struct {
 	ProxiedSUMDBs []string `mapstructure:"proxied_sumdbs"`
 
 	// Transport is used to perform all requests except those started by
-	// calling the go binary targeted by the `GoBinName`.
+	// calling the Go binary targeted by the `GoBinName`.
 	//
 	// If the `Transport` is nil, the `http.DefaultTransport` is used.
 	Transport http.RoundTripper `mapstructure:"-"`

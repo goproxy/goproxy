@@ -25,13 +25,16 @@ var (
 )
 
 // notFoundError is an error indicating that something was not found.
-type notFoundError struct {
-	error
+type notFoundError string
+
+// Error implements the `error`.
+func (nfe notFoundError) Error() string {
+	return string(nfe)
 }
 
-// Is reports whether the err is `errNotFound`.
-func (notFoundError) Is(err error) bool {
-	return err == errNotFound
+// Is reports whether the target is `errNotFound`.
+func (notFoundError) Is(target error) bool {
+	return target == errNotFound
 }
 
 // httpGet gets the content targeted by the url into the dst.
@@ -68,7 +71,7 @@ func httpGet(
 
 	switch res.StatusCode {
 	case http.StatusBadRequest, http.StatusNotFound, http.StatusGone:
-		return &notFoundError{errors.New(string(b))}
+		return notFoundError(b)
 	case http.StatusBadGateway, http.StatusServiceUnavailable:
 		return errBadUpstream
 	case http.StatusGatewayTimeout:
