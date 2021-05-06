@@ -417,12 +417,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		responseInternalServerError(rw)
 		return
 	}
-	defer func() {
-		go func() {
-			<-r.Context().Done()
-			os.RemoveAll(goproxyRoot)
-		}()
-	}()
+	defer os.RemoveAll(goproxyRoot)
 
 	if isList {
 		mr, err := g.mod(
