@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/url"
 	"os"
@@ -17,10 +18,12 @@ import (
 
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
+	"golang.org/x/mod/sumdb"
+	"golang.org/x/mod/sumdb/dirhash"
 	"golang.org/x/mod/zip"
 )
 
-// modResult is an unified result of the `mod`.
+// modResult is an unified result for the `Goproxy.mod`.
 type modResult struct {
 	Version  string
 	Time     time.Time
@@ -39,7 +42,12 @@ func (g *Goproxy) mod(
 	moduleVersion string,
 ) (*modResult, error) {
 	switch operation {
-	case "lookup", "latest", "list", "download":
+	case "lookup",
+		"latest",
+		"list",
+		"download info",
+		"download mod",
+		"download zip":
 	default:
 		return nil, errors.New("invalid mod operation")
 	}
@@ -53,6 +61,9 @@ func (g *Goproxy) mod(
 	if err != nil {
 		return nil, err
 	}
+
+	verify := g.goBinEnv["GOSUMDB"] != "off" &&
+		!globsMatchPath(g.goBinEnv["GONOSUMDB"], modulePath)
 
 	// Try proxies.
 
@@ -185,7 +196,7 @@ func (g *Goproxy) mod(
 			})
 
 			return &mr, nil
-		case "download":
+		case "download info":
 			infoFile, err := ioutil.TempFile(goproxyRoot, "info")
 			if err != nil {
 				if fallBackOnError {
@@ -228,7 +239,10 @@ func (g *Goproxy) mod(
 				return nil, err
 			}
 
-			if err := checkInfoFile(infoFile.Name()); err != nil {
+			if _, err := checkAndFormatInfoFile(
+				infoFile.Name(),
+				"",
+			); err != nil {
 				if fallBackOnError ||
 					errors.Is(err, errNotFound) {
 					proxyError = err
@@ -238,18 +252,10 @@ func (g *Goproxy) mod(
 				return nil, err
 			}
 
-			if _, err := formatInfoFile(
-				infoFile.Name(),
-				"",
-			); err != nil {
-				if fallBackOnError {
-					proxyError = err
-					continue
-				}
-
-				return nil, err
-			}
-
+			return &modResult{
+				Info: infoFile.Name(),
+			}, nil
+		case "download mod":
 			modFile, err := ioutil.TempFile(goproxyRoot, "mod")
 			if err != nil {
 				if fallBackOnError {
@@ -302,6 +308,21 @@ func (g *Goproxy) mod(
 				return nil, err
 			}
 
+			if verify {
+				if err := verifyModFile(
+					g.sumdbClient,
+					modFile.Name(),
+					modulePath,
+					moduleVersion,
+				); err != nil {
+					return nil, err
+				}
+			}
+
+			return &modResult{
+				GoMod: modFile.Name(),
+			}, nil
+		case "download zip":
 			zipFile, err := ioutil.TempFile(goproxyRoot, "zip")
 			if err != nil {
 				if fallBackOnError {
@@ -358,10 +379,19 @@ func (g *Goproxy) mod(
 				return nil, err
 			}
 
+			if verify {
+				if err := verifyZipFile(
+					g.sumdbClient,
+					zipFile.Name(),
+					modulePath,
+					moduleVersion,
+				); err != nil {
+					return nil, err
+				}
+			}
+
 			return &modResult{
-				Info:  infoFile.Name(),
-				GoMod: modFile.Name(),
-				Zip:   zipFile.Name(),
+				Zip: zipFile.Name(),
 			}, nil
 		}
 	}
@@ -405,7 +435,7 @@ func (g *Goproxy) mod(
 			"-versions",
 			fmt.Sprint(modulePath, "@", moduleVersion),
 		}
-	case "download":
+	case "download info", "download mod", "download zip":
 		args = []string{
 			"mod",
 			"download",
@@ -484,45 +514,41 @@ func (g *Goproxy) mod(
 				mr.Versions[j],
 			) < 0
 		})
-	case "download":
-		mr.Info, err = formatInfoFile(mr.Info, goproxyRoot)
+	case "download info", "download mod", "download zip":
+		mr.Info, err = checkAndFormatInfoFile(mr.Info, goproxyRoot)
 		if err != nil {
 			return nil, err
+		}
+
+		if verify {
+			if err := verifyModFile(
+				g.sumdbClient,
+				mr.GoMod,
+				modulePath,
+				moduleVersion,
+			); err != nil {
+				return nil, err
+			}
+
+			if err := verifyZipFile(
+				g.sumdbClient,
+				mr.Zip,
+				modulePath,
+				moduleVersion,
+			); err != nil {
+				return nil, err
+			}
 		}
 	}
 
 	return &mr, nil
 }
 
-// checkInfoFile checks the info file targeted by the name.
-func checkInfoFile(name string) error {
-	f, err := os.Open(name)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	var info struct {
-		Version string
-		Time    time.Time
-	}
-
-	if err := json.NewDecoder(f).Decode(&info); err != nil {
-		return notFoundError(fmt.Sprintf("invalid info file: %v", err))
-	}
-
-	if !semver.IsValid(info.Version) || info.Time.IsZero() {
-		return notFoundError("invalid info file")
-	}
-
-	return nil
-}
-
-// formatInfoFile formats the info file targeted by the name.
+// checkAndFormatInfoFile checks and formats the info file targeted by the name.
 //
 // If the tempDir is not empty, a new temporary info file will be created in it.
 // Otherwise, the info file targeted by the name will be replaced.
-func formatInfoFile(name, tempDir string) (string, error) {
+func checkAndFormatInfoFile(name, tempDir string) (string, error) {
 	b, err := ioutil.ReadFile(name)
 	if err != nil {
 		return "", err
@@ -534,7 +560,14 @@ func formatInfoFile(name, tempDir string) (string, error) {
 	}
 
 	if err := json.Unmarshal(b, &info); err != nil {
-		return "", err
+		return "", notFoundError(fmt.Sprintf(
+			"invalid info file: %v",
+			err,
+		))
+	}
+
+	if !semver.IsValid(info.Version) || info.Time.IsZero() {
+		return "", notFoundError("invalid info file")
 	}
 
 	info.Time = info.Time.UTC()
@@ -542,6 +575,10 @@ func formatInfoFile(name, tempDir string) (string, error) {
 	fb, err := json.Marshal(info)
 	if err != nil {
 		return "", err
+	}
+
+	if bytes.Equal(fb, b) {
+		return name, nil
 	}
 
 	if tempDir != "" {
@@ -595,6 +632,52 @@ func checkModFile(name string) error {
 	return notFoundError("invalid mod file")
 }
 
+// verifyModFile uses the sumdbClient to verify the mod file targeted by the
+// name with the modulePath and moduleVersion.
+func verifyModFile(
+	sumdbClient *sumdb.Client,
+	name string,
+	modulePath string,
+	moduleVersion string,
+) error {
+	modLines, err := sumdbClient.Lookup(
+		modulePath,
+		fmt.Sprint(moduleVersion, "/go.mod"),
+	)
+	if err != nil {
+		return err
+	}
+
+	modHash, err := dirhash.Hash1(
+		[]string{"go.mod"},
+		func(string) (io.ReadCloser, error) {
+			return os.Open(name)
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	if !stringSliceContains(
+		modLines,
+		fmt.Sprintf(
+			"%s %s/go.mod %s",
+			modulePath,
+			moduleVersion,
+			modHash,
+		),
+	) {
+		return notFoundError(fmt.Sprintf(
+			"%s@%s: invalid version: untrusted revision %s",
+			modulePath,
+			moduleVersion,
+			moduleVersion,
+		))
+	}
+
+	return nil
+}
+
 // checkZipFile checks the zip file targeted by the name with the modulePath and
 // moduleVersion.
 func checkZipFile(name, modulePath, moduleVersion string) error {
@@ -606,6 +689,39 @@ func checkZipFile(name, modulePath, moduleVersion string) error {
 		name,
 	); err != nil {
 		return notFoundError(fmt.Sprintf("invalid zip file: %v", err))
+	}
+
+	return nil
+}
+
+// verifyZipFile uses the sumdbClient to verify the zip file targeted by the
+// name with the modulePath and moduleVersion.
+func verifyZipFile(
+	sumdbClient *sumdb.Client,
+	name string,
+	modulePath string,
+	moduleVersion string,
+) error {
+	zipLines, err := sumdbClient.Lookup(modulePath, moduleVersion)
+	if err != nil {
+		return err
+	}
+
+	zipHash, err := dirhash.HashZip(name, dirhash.DefaultHash)
+	if err != nil {
+		return err
+	}
+
+	if !stringSliceContains(
+		zipLines,
+		fmt.Sprintf("%s %s %s", modulePath, moduleVersion, zipHash),
+	) {
+		return notFoundError(fmt.Sprintf(
+			"%s@%s: invalid version: untrusted revision %s",
+			modulePath,
+			moduleVersion,
+			moduleVersion,
+		))
 	}
 
 	return nil

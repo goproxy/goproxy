@@ -25,7 +25,6 @@ import (
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
 	"golang.org/x/mod/sumdb"
-	"golang.org/x/mod/sumdb/dirhash"
 	"golang.org/x/net/idna"
 )
 
@@ -497,7 +496,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	} else if errors.Is(err, os.ErrNotExist) {
 		mr, err := g.mod(
 			r.Context(),
-			"download",
+			fmt.Sprint("download ", nameExt[1:]),
 			goproxyRoot,
 			modulePath,
 			moduleVersion,
@@ -508,154 +507,66 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if g.goBinEnv["GOSUMDB"] != "off" &&
-			!globsMatchPath(g.goBinEnv["GONOSUMDB"], modulePath) {
-			zipLines, err := g.sumdbClient.Lookup(
-				modulePath,
-				moduleVersion,
-			)
-			if err != nil {
-				g.logError(err)
-				responseModError(rw, err, false)
-				return
-			}
-
-			zipHash, err := dirhash.HashZip(
-				mr.Zip,
-				dirhash.DefaultHash,
-			)
-			if err != nil {
-				g.logError(err)
-				responseInternalServerError(rw)
-				return
-			}
-
-			if !stringSliceContains(
-				zipLines,
-				fmt.Sprintf(
-					"%s %s %s",
-					modulePath,
-					moduleVersion,
-					zipHash,
-				),
-			) {
-				setResponseCacheControlHeader(rw, 86400)
-				responseNotFound(rw, fmt.Sprintf(
-					"%s@%s: invalid version: untrusted "+
-						"revision %s",
-					modulePath,
-					moduleVersion,
-					moduleVersion,
-				))
-				return
-			}
-
-			modLines, err := g.sumdbClient.Lookup(
-				modulePath,
-				fmt.Sprint(moduleVersion, "/go.mod"),
-			)
-			if err != nil {
-				g.logError(err)
-				responseModError(rw, err, false)
-				return
-			}
-
-			modHash, err := dirhash.Hash1(
-				[]string{"go.mod"},
-				func(string) (io.ReadCloser, error) {
-					return os.Open(mr.GoMod)
-				},
-			)
-			if err != nil {
-				g.logError(err)
-				responseInternalServerError(rw)
-				return
-			}
-
-			if !stringSliceContains(
-				modLines,
-				fmt.Sprintf(
-					"%s %s/go.mod %s",
-					modulePath,
-					moduleVersion,
-					modHash,
-				),
-			) {
-				setResponseCacheControlHeader(rw, 86400)
-				responseNotFound(rw, fmt.Sprintf(
-					"%s@%s: invalid version: untrusted "+
-						"revision %s",
-					modulePath,
-					moduleVersion,
-					moduleVersion,
-				))
-				return
-			}
-		}
-
 		namePrefix := strings.TrimSuffix(name, nameExt)
 
-		infoFile, err := os.Open(mr.Info)
-		if err != nil {
-			g.logError(err)
-			responseInternalServerError(rw)
-			return
-		}
-		defer infoFile.Close()
+		var infoFile *os.File
+		if mr.Info != "" {
+			if infoFile, err = os.Open(mr.Info); err != nil {
+				g.logError(err)
+				responseInternalServerError(rw)
+				return
+			}
+			defer infoFile.Close()
 
-		if err := g.setCache(
-			r.Context(),
-			fmt.Sprint(namePrefix, ".info"),
-			infoFile,
-		); err != nil {
-			g.logError(err)
-			responseInternalServerError(rw)
-			return
-		}
-
-		modFile, err := os.Open(mr.GoMod)
-		if err != nil {
-			g.logError(err)
-			responseInternalServerError(rw)
-			return
-		}
-		defer modFile.Close()
-
-		if err := g.setCache(
-			r.Context(),
-			fmt.Sprint(namePrefix, ".mod"),
-			modFile,
-		); err != nil {
-			g.logError(err)
-			responseInternalServerError(rw)
-			return
+			if err := g.setCache(
+				r.Context(),
+				fmt.Sprint(namePrefix, ".info"),
+				infoFile,
+			); err != nil {
+				g.logError(err)
+				responseInternalServerError(rw)
+				return
+			}
 		}
 
-		zipFile, err := os.Open(mr.Zip)
-		if err != nil {
-			g.logError(err)
-			responseInternalServerError(rw)
-			return
-		}
-		defer zipFile.Close()
+		var modFile *os.File
+		if mr.GoMod != "" {
+			if modFile, err = os.Open(mr.GoMod); err != nil {
+				g.logError(err)
+				responseInternalServerError(rw)
+				return
+			}
+			defer modFile.Close()
 
-		if err := g.setCache(
-			r.Context(),
-			fmt.Sprint(namePrefix, ".zip"),
-			zipFile,
-		); err != nil {
-			g.logError(err)
-			responseInternalServerError(rw)
-			return
+			if err := g.setCache(
+				r.Context(),
+				fmt.Sprint(namePrefix, ".mod"),
+				modFile,
+			); err != nil {
+				g.logError(err)
+				responseInternalServerError(rw)
+				return
+			}
 		}
 
-		switch nameExt {
-		case ".info":
-			content = infoFile
-		case ".mod":
-			content = modFile
-		case ".zip":
-			content = zipFile
+		var zipFile *os.File
+		if mr.Zip != "" {
+			if zipFile, err = os.Open(mr.Zip); err != nil {
+				g.logError(err)
+				responseInternalServerError(rw)
+				return
+			}
+			defer zipFile.Close()
+
+			if err := g.setCache(
+				r.Context(),
+				fmt.Sprint(namePrefix, ".zip"),
+				zipFile,
+			); err != nil {
+				g.logError(err)
+				responseInternalServerError(rw)
+				return
+			}
 		}
 
 		if dc, ok := g.Cacher.(DirCacher); ok {
@@ -668,13 +579,24 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			defer rc.Close()
 
 			content = rc
-		} else if _, err := content.(io.Seeker).Seek(
-			0,
-			io.SeekStart,
-		); err != nil {
-			g.logError(err)
-			responseInternalServerError(rw)
-			return
+		} else {
+			switch nameExt {
+			case ".info":
+				content = infoFile
+			case ".mod":
+				content = modFile
+			case ".zip":
+				content = zipFile
+			}
+
+			if _, err := content.(io.Seeker).Seek(
+				0,
+				io.SeekStart,
+			); err != nil {
+				g.logError(err)
+				responseInternalServerError(rw)
+				return
+			}
 		}
 	} else {
 		g.logError(err)
