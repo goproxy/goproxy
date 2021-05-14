@@ -509,9 +509,9 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 		namePrefix := strings.TrimSuffix(name, nameExt)
 
-		var infoFile *os.File
 		if mr.Info != "" {
-			if infoFile, err = os.Open(mr.Info); err != nil {
+			infoFile, err := os.Open(mr.Info)
+			if err != nil {
 				g.logError(err)
 				responseInternalServerError(rw)
 				return
@@ -529,9 +529,9 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		var modFile *os.File
 		if mr.GoMod != "" {
-			if modFile, err = os.Open(mr.GoMod); err != nil {
+			modFile, err := os.Open(mr.GoMod)
+			if err != nil {
 				g.logError(err)
 				responseInternalServerError(rw)
 				return
@@ -549,9 +549,9 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		var zipFile *os.File
 		if mr.Zip != "" {
-			if zipFile, err = os.Open(mr.Zip); err != nil {
+			zipFile, err := os.Open(mr.Zip)
+			if err != nil {
 				g.logError(err)
 				responseInternalServerError(rw)
 				return
@@ -582,21 +582,19 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		} else {
 			switch nameExt {
 			case ".info":
-				content = infoFile
+				content, err = os.Open(mr.Info)
 			case ".mod":
-				content = modFile
+				content, err = os.Open(mr.GoMod)
 			case ".zip":
-				content = zipFile
+				content, err = os.Open(mr.Zip)
 			}
 
-			if _, err := content.(io.Seeker).Seek(
-				0,
-				io.SeekStart,
-			); err != nil {
+			if err != nil {
 				g.logError(err)
 				responseInternalServerError(rw)
 				return
 			}
+			defer content.(*os.File).Close()
 		}
 	} else {
 		g.logError(err)
@@ -668,10 +666,10 @@ func (g *Goproxy) setCache(
 	if g.CacherMaxCacheBytes != 0 {
 		if size, err := content.Seek(0, io.SeekEnd); err != nil {
 			return err
-		} else if _, err := content.Seek(0, io.SeekStart); err != nil {
-			return err
 		} else if size > int64(g.CacherMaxCacheBytes) {
 			return nil
+		} else if _, err := content.Seek(0, io.SeekStart); err != nil {
+			return err
 		}
 	}
 
