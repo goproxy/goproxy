@@ -142,7 +142,7 @@ func (g *Goproxy) mod(
 
 			mr := modResult{}
 			if err := json.Unmarshal(buf.Bytes(), &mr); err != nil {
-				errNotFound = notFoundError(fmt.Sprintf(
+				proxyError = notFoundError(fmt.Sprintf(
 					"invalid info response: %v",
 					err,
 				))
@@ -150,7 +150,7 @@ func (g *Goproxy) mod(
 			}
 
 			if !semver.IsValid(mr.Version) || mr.Time.IsZero() {
-				errNotFound = notFoundError(
+				proxyError = notFoundError(
 					"invalid info response",
 				)
 				continue
@@ -315,6 +315,12 @@ func (g *Goproxy) mod(
 					modulePath,
 					moduleVersion,
 				); err != nil {
+					if fallBackOnError ||
+						errors.Is(err, errNotFound) {
+						proxyError = err
+						continue
+					}
+
 					return nil, err
 				}
 			}
@@ -386,6 +392,12 @@ func (g *Goproxy) mod(
 					modulePath,
 					moduleVersion,
 				); err != nil {
+					if fallBackOnError ||
+						errors.Is(err, errNotFound) {
+						proxyError = err
+						continue
+					}
+
 					return nil, err
 				}
 			}
