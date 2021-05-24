@@ -568,7 +568,7 @@ func checkAndFormatInfoFile(name, tempDir string) (string, error) {
 
 	var info struct {
 		Version string
-		Time    time.Time
+		Time    string
 	}
 
 	if err := json.Unmarshal(b, &info); err != nil {
@@ -578,13 +578,25 @@ func checkAndFormatInfoFile(name, tempDir string) (string, error) {
 		))
 	}
 
-	if !semver.IsValid(info.Version) || info.Time.IsZero() {
+	if !semver.IsValid(info.Version) || info.Time == "" {
 		return "", notFoundError("invalid info file")
 	}
 
-	info.Time = info.Time.UTC()
+	t, err := time.Parse(time.RFC3339Nano, info.Time)
+	if err != nil {
+		return "", notFoundError(fmt.Sprintf(
+			"invalid info file: %v",
+			err,
+		))
+	}
 
-	fb, err := json.Marshal(info)
+	fb, err := json.Marshal(struct {
+		Version string
+		Time    time.Time
+	}{
+		Version: info.Version,
+		Time:    t.UTC(),
+	})
 	if err != nil {
 		return "", err
 	}
