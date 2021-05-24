@@ -252,7 +252,7 @@ func (g *Goproxy) load() {
 		envGOPROXY: g.goBinEnv["GOPROXY"],
 		envGOSUMDB: g.goBinEnv["GOSUMDB"],
 		httpClient: g.httpClient,
-		logErrorf:  g.logErrorf,
+		logError:   g.logError,
 	})
 }
 
@@ -676,19 +676,13 @@ func (g *Goproxy) setCache(
 	return g.Cacher.Set(ctx, name, content)
 }
 
-// logErrorf logs the v as an error in the format.
-func (g *Goproxy) logErrorf(format string, v ...interface{}) {
-	s := fmt.Sprintf(format, v...)
+// logError logs the v as an error.
+func (g *Goproxy) logError(v ...interface{}) {
 	if g.ErrorLogger != nil {
-		g.ErrorLogger.Output(2, s)
+		g.ErrorLogger.Output(2, fmt.Sprint(v...))
 	} else {
-		log.Output(2, s)
+		log.Output(2, fmt.Sprint(v...))
 	}
-}
-
-// logError logs the err.
-func (g *Goproxy) logError(err error) {
-	g.logErrorf("%v", err)
 }
 
 // stringSliceContains reports whether the ss contains the s.
