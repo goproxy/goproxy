@@ -268,24 +268,30 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !strings.HasPrefix(r.URL.Path, "/") {
+	name, err := url.PathUnescape(r.URL.Path)
+	if err != nil ||
+		!strings.HasPrefix(name, "/") ||
+		strings.HasSuffix(name, "/") {
 		setResponseCacheControlHeader(rw, 86400)
 		responseNotFound(rw)
 		return
 	}
 
-	trimmedPath := path.Clean(r.URL.Path)
+	if strings.Contains(name, "..") {
+		for _, part := range strings.Split(name, "/") {
+			if part == ".." {
+				setResponseCacheControlHeader(rw, 86400)
+				responseNotFound(rw)
+				return
+			}
+		}
+	}
+
+	name = path.Clean(name)
 	if g.PathPrefix != "" {
-		trimmedPath = strings.TrimPrefix(trimmedPath, g.PathPrefix)
+		name = strings.TrimPrefix(name, g.PathPrefix)
 	} else {
-		trimmedPath = strings.TrimPrefix(trimmedPath, "/")
-	}
-
-	name, err := url.PathUnescape(trimmedPath)
-	if err != nil {
-		setResponseCacheControlHeader(rw, 86400)
-		responseNotFound(rw)
-		return
+		name = strings.TrimPrefix(name, "/")
 	}
 
 	if strings.HasPrefix(name, "sumdb/") {
