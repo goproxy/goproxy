@@ -19,6 +19,13 @@ func TestSetResponseCacheControlHeader(t *testing.T) {
 	// ---
 
 	rec = httptest.NewRecorder()
+	setResponseCacheControlHeader(rec, 0)
+	recr = rec.Result()
+	assert.Equal(t, "public, max-age=0", recr.Header.Get("Cache-Control"))
+
+	// ---
+
+	rec = httptest.NewRecorder()
 	setResponseCacheControlHeader(rec, -1)
 	recr = rec.Result()
 	assert.Equal(
@@ -26,12 +33,19 @@ func TestSetResponseCacheControlHeader(t *testing.T) {
 		"must-revalidate, no-cache, no-store",
 		recr.Header.Get("Cache-Control"),
 	)
+
+	// ---
+
+	rec = httptest.NewRecorder()
+	setResponseCacheControlHeader(rec, -2)
+	recr = rec.Result()
+	assert.Empty(t, recr.Header.Get("Cache-Control"))
 }
 
 func TestResponseString(t *testing.T) {
 	rec := httptest.NewRecorder()
 
-	responseString(rec, http.StatusOK, "Foobar")
+	responseString(rec, http.StatusOK, 60, "foobar")
 
 	recr := rec.Result()
 	recrb, _ := ioutil.ReadAll(recr.Body)
@@ -42,13 +56,14 @@ func TestResponseString(t *testing.T) {
 		"text/plain; charset=utf-8",
 		recr.Header.Get("Content-Type"),
 	)
-	assert.Equal(t, "Foobar", string(recrb))
+	assert.Equal(t, "public, max-age=60", recr.Header.Get("Cache-Control"))
+	assert.Equal(t, "foobar", string(recrb))
 }
 
 func TestResponseJSON(t *testing.T) {
 	rec := httptest.NewRecorder()
 
-	responseJSON(rec, http.StatusOK, []byte(`{"Foo":"Bar"}`))
+	responseJSON(rec, http.StatusOK, 60, []byte(`{"foo":"bar"}`))
 
 	recr := rec.Result()
 	recrb, _ := ioutil.ReadAll(recr.Body)
@@ -59,13 +74,14 @@ func TestResponseJSON(t *testing.T) {
 		"application/json; charset=utf-8",
 		recr.Header.Get("Content-Type"),
 	)
-	assert.Equal(t, `{"Foo":"Bar"}`, string(recrb))
+	assert.Equal(t, "public, max-age=60", recr.Header.Get("Cache-Control"))
+	assert.Equal(t, `{"foo":"bar"}`, string(recrb))
 }
 
 func TestResponseNotFound(t *testing.T) {
 	rec := httptest.NewRecorder()
 
-	responseNotFound(rec)
+	responseNotFound(rec, 60)
 
 	recr := rec.Result()
 	recrb, _ := ioutil.ReadAll(recr.Body)
@@ -76,13 +92,14 @@ func TestResponseNotFound(t *testing.T) {
 		"text/plain; charset=utf-8",
 		recr.Header.Get("Content-Type"),
 	)
+	assert.Equal(t, "public, max-age=60", recr.Header.Get("Cache-Control"))
 	assert.Equal(t, "not found", string(recrb))
 
 	// ---
 
 	rec = httptest.NewRecorder()
 
-	responseNotFound(rec, "foobar")
+	responseNotFound(rec, 60, "foobar")
 
 	recr = rec.Result()
 	recrb, _ = ioutil.ReadAll(recr.Body)
@@ -93,13 +110,14 @@ func TestResponseNotFound(t *testing.T) {
 		"text/plain; charset=utf-8",
 		recr.Header.Get("Content-Type"),
 	)
+	assert.Equal(t, "public, max-age=60", recr.Header.Get("Cache-Control"))
 	assert.Equal(t, "not found: foobar", string(recrb))
 
 	// ---
 
 	rec = httptest.NewRecorder()
 
-	responseNotFound(rec, "bad request: foobar")
+	responseNotFound(rec, 60, "bad request: foobar")
 
 	recr = rec.Result()
 	recrb, _ = ioutil.ReadAll(recr.Body)
@@ -110,13 +128,14 @@ func TestResponseNotFound(t *testing.T) {
 		"text/plain; charset=utf-8",
 		recr.Header.Get("Content-Type"),
 	)
+	assert.Equal(t, "public, max-age=60", recr.Header.Get("Cache-Control"))
 	assert.Equal(t, "not found: foobar", string(recrb))
 
 	// ---
 
 	rec = httptest.NewRecorder()
 
-	responseNotFound(rec, "not found: foobar")
+	responseNotFound(rec, 60, "not found: foobar")
 
 	recr = rec.Result()
 	recrb, _ = ioutil.ReadAll(recr.Body)
@@ -127,13 +146,14 @@ func TestResponseNotFound(t *testing.T) {
 		"text/plain; charset=utf-8",
 		recr.Header.Get("Content-Type"),
 	)
+	assert.Equal(t, "public, max-age=60", recr.Header.Get("Cache-Control"))
 	assert.Equal(t, "not found: foobar", string(recrb))
 
 	// ---
 
 	rec = httptest.NewRecorder()
 
-	responseNotFound(rec, "gone: foobar")
+	responseNotFound(rec, 60, "gone: foobar")
 
 	recr = rec.Result()
 	recrb, _ = ioutil.ReadAll(recr.Body)
@@ -144,13 +164,14 @@ func TestResponseNotFound(t *testing.T) {
 		"text/plain; charset=utf-8",
 		recr.Header.Get("Content-Type"),
 	)
+	assert.Equal(t, "public, max-age=60", recr.Header.Get("Cache-Control"))
 	assert.Equal(t, "not found: foobar", string(recrb))
 }
 
 func TestResponseMethodNotAllowed(t *testing.T) {
 	rec := httptest.NewRecorder()
 
-	responseMethodNotAllowed(rec)
+	responseMethodNotAllowed(rec, 60)
 
 	recr := rec.Result()
 	recrb, _ := ioutil.ReadAll(recr.Body)
@@ -161,6 +182,7 @@ func TestResponseMethodNotAllowed(t *testing.T) {
 		"text/plain; charset=utf-8",
 		recr.Header.Get("Content-Type"),
 	)
+	assert.Equal(t, "public, max-age=60", recr.Header.Get("Cache-Control"))
 	assert.Equal(t, "method not allowed", string(recrb))
 }
 
@@ -178,6 +200,7 @@ func TestResponseInternalServerError(t *testing.T) {
 		"text/plain; charset=utf-8",
 		recr.Header.Get("Content-Type"),
 	)
+	assert.Empty(t, recr.Header.Get("Cache-Control"))
 	assert.Equal(t, "internal server error", string(recrb))
 }
 

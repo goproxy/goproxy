@@ -263,8 +263,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
 	default:
-		setResponseCacheControlHeader(rw, 86400)
-		responseMethodNotAllowed(rw)
+		responseMethodNotAllowed(rw, 86400)
 		return
 	}
 
@@ -272,16 +271,14 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	if err != nil ||
 		!strings.HasPrefix(name, "/") ||
 		strings.HasSuffix(name, "/") {
-		setResponseCacheControlHeader(rw, 86400)
-		responseNotFound(rw)
+		responseNotFound(rw, 86400)
 		return
 	}
 
 	if strings.Contains(name, "..") {
 		for _, part := range strings.Split(name, "/") {
 			if part == ".." {
-				setResponseCacheControlHeader(rw, 86400)
-				responseNotFound(rw)
+				responseNotFound(rw, 86400)
 				return
 			}
 		}
@@ -297,27 +294,24 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(name, "sumdb/") {
 		sumdbURL, err := parseRawURL(strings.TrimPrefix(name, "sumdb/"))
 		if err != nil {
-			setResponseCacheControlHeader(rw, 86400)
-			responseNotFound(rw)
+			responseNotFound(rw, 86400)
 			return
 		}
 
 		sumdbName, err := idna.Lookup.ToASCII(sumdbURL.Host)
 		if err != nil {
-			setResponseCacheControlHeader(rw, 86400)
-			responseNotFound(rw)
+			responseNotFound(rw, 86400)
 			return
 		}
 
 		if g.proxiedSUMDBs[sumdbName] == "" {
-			setResponseCacheControlHeader(rw, 86400)
-			responseNotFound(rw)
+			responseNotFound(rw, 86400)
 			return
 		}
 
 		var (
-			contentType string
-			maxAge      int
+			contentType        string
+			cacheControlMaxAge int
 		)
 
 		if sumdbURL.Path == "/supported" {
@@ -326,16 +320,15 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		} else if sumdbURL.Path == "/latest" {
 			contentType = "text/plain; charset=utf-8"
-			maxAge = 3600
+			cacheControlMaxAge = 3600
 		} else if strings.HasPrefix(sumdbURL.Path, "/lookup/") {
 			contentType = "text/plain; charset=utf-8"
-			maxAge = 86400
+			cacheControlMaxAge = 86400
 		} else if strings.HasPrefix(sumdbURL.Path, "/tile/") {
 			contentType = "application/octet-stream"
-			maxAge = 86400
+			cacheControlMaxAge = 86400
 		} else {
-			setResponseCacheControlHeader(rw, 86400)
-			responseNotFound(rw)
+			responseNotFound(rw, 86400)
 			return
 		}
 
@@ -364,7 +357,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", contentType)
 		rw.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
 
-		setResponseCacheControlHeader(rw, maxAge)
+		setResponseCacheControlHeader(rw, cacheControlMaxAge)
 		buf.WriteTo(rw)
 
 		return
@@ -385,16 +378,14 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	nameParts := strings.Split(name, "/@v/")
 	if len(nameParts) != 2 {
-		setResponseCacheControlHeader(rw, 86400)
-		responseNotFound(rw)
+		responseNotFound(rw, 86400)
 		return
 	}
 
 	escapedModulePath := nameParts[0]
 	modulePath, err := module.UnescapePath(escapedModulePath)
 	if err != nil {
-		setResponseCacheControlHeader(rw, 86400)
-		responseNotFound(rw)
+		responseNotFound(rw, 86400)
 		return
 	}
 
@@ -403,16 +394,14 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	switch nameExt {
 	case ".info", ".mod", ".zip":
 	default:
-		setResponseCacheControlHeader(rw, 86400)
-		responseNotFound(rw)
+		responseNotFound(rw, 86400)
 		return
 	}
 
 	escapedModuleVersion := strings.TrimSuffix(nameBase, nameExt)
 	moduleVersion, err := module.UnescapeVersion(escapedModuleVersion)
 	if err != nil {
-		setResponseCacheControlHeader(rw, 86400)
-		responseNotFound(rw)
+		responseNotFound(rw, 86400)
 		return
 	}
 
@@ -438,10 +427,10 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		setResponseCacheControlHeader(rw, 60)
 		responseString(
 			rw,
 			http.StatusOK,
+			60,
 			strings.Join(mr.Versions, "\n"),
 		)
 
@@ -453,8 +442,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		} else if nameExt == ".info" {
 			operation = "lookup"
 		} else {
-			setResponseCacheControlHeader(rw, 86400)
-			responseNotFound(rw, fmt.Sprintf(
+			responseNotFound(rw, 86400, fmt.Sprintf(
 				"%s@%s: invalid version: unknown revision %s",
 				modulePath,
 				moduleVersion,
@@ -489,8 +477,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		setResponseCacheControlHeader(rw, 60)
-		responseJSON(rw, http.StatusOK, b)
+		responseJSON(rw, http.StatusOK, 60, b)
 
 		return
 	}

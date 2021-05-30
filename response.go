@@ -11,34 +11,55 @@ import (
 // setResponseCacheControlHeader sets the Cache-Control header based on the
 // maxAge.
 func setResponseCacheControlHeader(rw http.ResponseWriter, maxAge int) {
+	if maxAge < -1 {
+		return
+	}
+
 	cacheControl := ""
-	if maxAge >= 0 {
-		cacheControl = fmt.Sprintf("public, max-age=%d", maxAge)
-	} else {
+	if maxAge == -1 {
 		cacheControl = "must-revalidate, no-cache, no-store"
+	} else {
+		cacheControl = fmt.Sprintf("public, max-age=%d", maxAge)
 	}
 
 	rw.Header().Set("Cache-Control", cacheControl)
 }
 
 // responseString responses the s as a "text/plain" content to the client with
-// the statusCode.
-func responseString(rw http.ResponseWriter, statusCode int, s string) {
+// the statusCode and cacheControlMaxAge.
+func responseString(
+	rw http.ResponseWriter,
+	statusCode int,
+	cacheControlMaxAge int,
+	s string,
+) {
 	rw.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	setResponseCacheControlHeader(rw, cacheControlMaxAge)
 	rw.WriteHeader(statusCode)
 	rw.Write([]byte(s))
 }
 
 // responseJSON responses the b as a "application/json" content to the client
-// with the statusCode.
-func responseJSON(rw http.ResponseWriter, statusCode int, b []byte) {
+// with the statusCode and cacheControlMaxAge.
+func responseJSON(
+	rw http.ResponseWriter,
+	statusCode int,
+	cacheControlMaxAge int,
+	b []byte,
+) {
 	rw.Header().Set("Content-Type", "application/json; charset=utf-8")
+	setResponseCacheControlHeader(rw, cacheControlMaxAge)
 	rw.WriteHeader(statusCode)
 	rw.Write(b)
 }
 
-// responseNotFound responses "not found" to the client with the optional msgs.
-func responseNotFound(rw http.ResponseWriter, msgs ...interface{}) {
+// responseNotFound responses "not found" to the client with the
+// cacheControlMaxAge and optional msgs.
+func responseNotFound(
+	rw http.ResponseWriter,
+	cacheControlMaxAge int,
+	msgs ...interface{},
+) {
 	var msg string
 	if len(msgs) > 0 {
 		msg = strings.TrimPrefix(fmt.Sprint(msgs...), "bad request: ")
@@ -52,12 +73,18 @@ func responseNotFound(rw http.ResponseWriter, msgs ...interface{}) {
 		msg = "not found"
 	}
 
-	responseString(rw, http.StatusNotFound, msg)
+	responseString(rw, http.StatusNotFound, cacheControlMaxAge, msg)
 }
 
-// responseMethodNotAllowed responses "method not allowed" to the client.
-func responseMethodNotAllowed(rw http.ResponseWriter) {
-	responseString(rw, http.StatusMethodNotAllowed, "method not allowed")
+// responseMethodNotAllowed responses "method not allowed" to the client with
+// the cacheControlMaxAge.
+func responseMethodNotAllowed(rw http.ResponseWriter, cacheControlMaxAge int) {
+	responseString(
+		rw,
+		http.StatusMethodNotAllowed,
+		cacheControlMaxAge,
+		"method not allowed",
+	)
 }
 
 // responseInternalServerError responses "internal server error" to the client.
@@ -65,6 +92,7 @@ func responseInternalServerError(rw http.ResponseWriter) {
 	responseString(
 		rw,
 		http.StatusInternalServerError,
+		-2,
 		"internal server error",
 	)
 }
@@ -72,31 +100,28 @@ func responseInternalServerError(rw http.ResponseWriter) {
 // responseModError responses the err as a mod operation error to the client.
 func responseModError(rw http.ResponseWriter, err error, cacheSensitive bool) {
 	if errors.Is(err, errNotFound) {
+		cacheControlMaxAge := -1
 		msg := err.Error()
 		if strings.Contains(msg, errBadUpstream.Error()) {
 			msg = errBadUpstream.Error()
-			setResponseCacheControlHeader(rw, -1)
 		} else if strings.Contains(msg, errFetchTimedOut.Error()) {
 			msg = errFetchTimedOut.Error()
-			setResponseCacheControlHeader(rw, -1)
 		} else if cacheSensitive {
-			setResponseCacheControlHeader(rw, 60)
+			cacheControlMaxAge = 60
 		} else {
-			setResponseCacheControlHeader(rw, 600)
+			cacheControlMaxAge = 600
 		}
 
-		responseNotFound(rw, msg)
+		responseNotFound(rw, cacheControlMaxAge, msg)
 	} else if errors.Is(err, errBadUpstream) {
-		setResponseCacheControlHeader(rw, -1)
-		responseNotFound(rw, errBadUpstream)
+		responseNotFound(rw, -1, errBadUpstream)
 	} else if t, ok := err.(interface {
 		Timeout() bool
 	}); (ok && t.Timeout()) ||
 		errors.Is(err, context.DeadlineExceeded) ||
 		errors.Is(err, errFetchTimedOut) ||
 		strings.Contains(err.Error(), errFetchTimedOut.Error()) {
-		setResponseCacheControlHeader(rw, -1)
-		responseNotFound(rw, errFetchTimedOut)
+		responseNotFound(rw, -1, errFetchTimedOut)
 	} else {
 		responseInternalServerError(rw)
 	}
