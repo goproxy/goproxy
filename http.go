@@ -11,6 +11,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 )
 
 var (
@@ -44,41 +46,88 @@ func httpGet(
 	url string,
 	dst io.Writer,
 ) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return err
-	}
+	var lastError error
+	for i := 0; i < 10; i++ {
+		if i > 0 {
+			select {
+			case <-ctx.Done():
+				return lastError
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
 
-	res, err := httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode == http.StatusOK {
-		if dst != nil {
-			_, err := io.Copy(dst, res.Body)
+		req, err := http.NewRequestWithContext(
+			ctx,
+			http.MethodGet,
+			url,
+			nil,
+		)
+		if err != nil {
 			return err
 		}
 
-		return nil
+		res, err := httpClient.Do(req)
+		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				return err
+			}
+
+			if t, ok := err.(interface {
+				Timeout() bool
+			}); ok && t.Timeout() {
+				lastError = err
+				continue
+			}
+
+			if errors.Is(err, syscall.ECONNRESET) {
+				lastError = err
+				continue
+			}
+
+			return err
+		}
+
+		if res.StatusCode == http.StatusOK {
+			if dst != nil {
+				_, err = io.Copy(dst, res.Body)
+			}
+
+			res.Body.Close()
+
+			return err
+		}
+
+		b, err := ioutil.ReadAll(res.Body)
+		res.Body.Close()
+		if err != nil {
+			return err
+		}
+
+		switch res.StatusCode {
+		case http.StatusBadRequest,
+			http.StatusNotFound,
+			http.StatusGone:
+			return notFoundError(b)
+		case http.StatusBadGateway, http.StatusServiceUnavailable:
+			lastError = errBadUpstream
+			continue
+		case http.StatusGatewayTimeout:
+			lastError = errFetchTimedOut
+			continue
+		}
+
+		lastError = fmt.Errorf(
+			"GET %s: %s: %s",
+			redactedURL(req.URL),
+			res.Status,
+			b,
+		)
+		if res.StatusCode != http.StatusInternalServerError {
+			return lastError
+		}
 	}
 
-	b, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		return err
-	}
-
-	switch res.StatusCode {
-	case http.StatusBadRequest, http.StatusNotFound, http.StatusGone:
-		return notFoundError(b)
-	case http.StatusBadGateway, http.StatusServiceUnavailable:
-		return errBadUpstream
-	case http.StatusGatewayTimeout:
-		return errFetchTimedOut
-	}
-
-	return fmt.Errorf("GET %s: %s: %s", redactedURL(req.URL), res.Status, b)
+	return lastError
 }
 
 // parseRawURL parses the rawURL.
