@@ -620,8 +620,8 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	setResponseCacheControlHeader(rw, 604800)
-	if content, ok := content.(io.ReadSeeker); ok {
-		http.ServeContent(rw, r, "", modTime, content)
+	if contentRS, ok := content.(io.ReadSeeker); ok {
+		http.ServeContent(rw, r, "", modTime, contentRS)
 	} else {
 		if !modTime.IsZero() {
 			rw.Header().Set(
