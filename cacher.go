@@ -32,7 +32,7 @@ type Cacher interface {
 }
 
 // DirCacher implements the `Cacher` using a directory on the local filesystem.
-// If the directory does not exist, it will be created with 0700 permissions.
+// If the directory does not exist, it will be created with 0750 permissions.
 type DirCacher string
 
 // Get implements the `Cacher`.
@@ -70,7 +70,7 @@ func (dc DirCacher) Set(
 	fileName := filepath.Join(string(dc), filepath.FromSlash(name))
 
 	dir := filepath.Dir(fileName)
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return err
 	}
 
