@@ -51,7 +51,7 @@ type Goproxy struct {
 	//
 	// If the `GoBinName` is empty, the "go" is used.
 	//
-	// Not that the version of the Go binary targeted by the `GoBinName`
+	// Note that the version of the Go binary targeted by the `GoBinName`
 	// must be at least v1.11.
 	GoBinName string `mapstructure:"go_bin_name"`
 
@@ -94,7 +94,8 @@ type Goproxy struct {
 	// If the `CacherMaxCacheBytes` is zero, there is no limitation.
 	CacherMaxCacheBytes int `mapstructure:"cacher_max_cache_bytes"`
 
-	// ProxiedSUMDBs is the list of proxied checksum databases.
+	// ProxiedSUMDBs is the list of proxied checksum databases. See
+	// https://golang.org/design/25530-sumdb#proxying-a-checksum-database.
 	//
 	// If the `ProxiedSUMDBs` is not nil, each value should be given the
 	// format of "<sumdb-name>" or "<sumdb-name> <sumdb-URL>". The first
@@ -257,17 +258,17 @@ func (g *Goproxy) load() {
 }
 
 // ServeHTTP implements the `http.Handler`.
-func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
+func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	g.loadOnce.Do(g.load)
 
-	switch r.Method {
+	switch req.Method {
 	case http.MethodGet, http.MethodHead:
 	default:
 		responseMethodNotAllowed(rw, 86400)
 		return
 	}
 
-	name, err := url.PathUnescape(r.URL.Path)
+	name, err := url.PathUnescape(req.URL.Path)
 	if err != nil ||
 		!strings.HasPrefix(name, "/") ||
 		strings.HasSuffix(name, "/") {
@@ -344,7 +345,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 		var buf bytes.Buffer
 		if err := httpGet(
-			r.Context(),
+			req.Context(),
 			g.httpClient,
 			sumdbURL.String(),
 			&buf,
@@ -356,7 +357,6 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 		rw.Header().Set("Content-Type", contentType)
 		rw.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
-
 		setResponseCacheControlHeader(rw, cacheControlMaxAge)
 		buf.WriteTo(rw)
 
@@ -415,7 +415,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	if isList {
 		mr, err := g.mod(
-			r.Context(),
+			req.Context(),
 			"list",
 			goproxyRoot,
 			modulePath,
@@ -452,7 +452,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 
 		mr, err := g.mod(
-			r.Context(),
+			req.Context(),
 			operation,
 			goproxyRoot,
 			modulePath,
@@ -483,12 +483,12 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	var content io.Reader
-	if rc, err := g.cache(r.Context(), name); err == nil {
+	if rc, err := g.cache(req.Context(), name); err == nil {
 		defer rc.Close()
 		content = rc
 	} else if errors.Is(err, os.ErrNotExist) {
 		mr, err := g.mod(
-			r.Context(),
+			req.Context(),
 			fmt.Sprint("download ", nameExt[1:]),
 			goproxyRoot,
 			modulePath,
@@ -512,7 +512,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			defer infoFile.Close()
 
 			if err := g.setCache(
-				r.Context(),
+				req.Context(),
 				fmt.Sprint(namePrefix, ".info"),
 				infoFile,
 			); err != nil {
@@ -532,7 +532,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			defer modFile.Close()
 
 			if err := g.setCache(
-				r.Context(),
+				req.Context(),
 				fmt.Sprint(namePrefix, ".mod"),
 				modFile,
 			); err != nil {
@@ -552,7 +552,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			defer zipFile.Close()
 
 			if err := g.setCache(
-				r.Context(),
+				req.Context(),
 				fmt.Sprint(namePrefix, ".zip"),
 				zipFile,
 			); err != nil {
@@ -563,7 +563,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 
 		if dc, ok := g.Cacher.(DirCacher); ok {
-			rc, err := dc.Get(r.Context(), name)
+			rc, err := dc.Get(req.Context(), name)
 			if err != nil {
 				g.logError(err)
 				responseInternalServerError(rw)
@@ -620,18 +620,20 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	setResponseCacheControlHeader(rw, 604800)
-	if contentRS, ok := content.(io.ReadSeeker); ok {
-		http.ServeContent(rw, r, "", modTime, contentRS)
-	} else {
-		if !modTime.IsZero() {
-			rw.Header().Set(
-				"Last-Modified",
-				modTime.UTC().Format(http.TimeFormat),
-			)
-		}
 
-		io.Copy(rw, content)
+	if content, ok := content.(io.ReadSeeker); ok {
+		http.ServeContent(rw, req, "", modTime, content)
+		return
 	}
+
+	if !modTime.IsZero() {
+		rw.Header().Set(
+			"Last-Modified",
+			modTime.UTC().Format(http.TimeFormat),
+		)
+	}
+
+	io.Copy(rw, content)
 }
 
 // cache returns the matched cache for the name from the `Cacher` of the g.
