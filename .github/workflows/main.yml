@@ -14,12 +14,12 @@ jobs:
           - "1.17.x"
     steps:
       - name: Set up Go
-        uses: actions/setup-go@v2.1.4
+        uses: actions/setup-go@v2
         with:
           go-version: ${{matrix.go}}
       - name: Check out code
-        uses: actions/checkout@v2.3.5
+        uses: actions/checkout@v2
       - name: Download modules
         run: go mod download
       - name: Test
-        run: go test -v ./...
+        run: go test -v -race -covermode=atomic -coverprofile=coverage.out ./...
