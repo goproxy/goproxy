@@ -1,32 +1,53 @@
 package goproxy
 
 import (
+	"errors"
 	"io/ioutil"
 	"os"
 	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
 )
 
 func TestDirCacher(t *testing.T) {
 	tempDir, err := ioutil.TempDir("", "goproxy.TestDirCacher")
-	assert.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
 	defer os.RemoveAll(tempDir)
 
 	dirCacher := DirCacher(tempDir)
 
+	if rc, err := dirCacher.Get(
+		nil,
+		"a/b/c",
+	); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("got error %q, want error %q", err, os.ErrNotExist)
+	} else if rc != nil {
+		t.Errorf("got %v, want nil", rc)
+	}
+
+	if err := dirCacher.Set(
+		nil,
+		"a/b/c",
+		strings.NewReader("foobar"),
+	); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+
 	rc, err := dirCacher.Get(nil, "a/b/c")
-	assert.ErrorIs(t, err, os.ErrNotExist)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if rc == nil {
+		t.Fatal("unexpected nil")
+	}
 
-	err = dirCacher.Set(nil, "a/b/c", strings.NewReader("foobar"))
-	assert.NoError(t, err)
+	if b, err := ioutil.ReadAll(rc); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if want := "foobar"; string(b) != want {
+		t.Errorf("got %q, want %q", b, want)
+	}
 
-	rc, err = dirCacher.Get(nil, "a/b/c")
-	assert.NoError(t, err)
-	defer rc.Close()
-
-	b, err := ioutil.ReadAll(rc)
-	assert.NoError(t, err)
-	assert.Equal(t, "foobar", string(b))
+	if err := rc.Close(); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
 }

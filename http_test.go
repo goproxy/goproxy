@@ -3,104 +3,142 @@ package goproxy
 import (
 	"net/url"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
 )
 
 func TestParseRawURL(t *testing.T) {
-	u, err := parseRawURL("example.com")
-	assert.NoError(t, err)
-	assert.NotNil(t, u)
-	assert.Equal(t, "https://example.com", u.String())
+	if u, err := parseRawURL("example.com"); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if u == nil {
+		t.Fatal("unexpected nil")
+	} else if got, want := u.String(), "https://example.com"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
 
-	// ---
+	if u, err := parseRawURL("http://example.com"); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if u == nil {
+		t.Fatal("unexpected nil")
+	} else if got, want := u.String(), "http://example.com"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
 
-	u, err = parseRawURL("http://example.com")
-	assert.NoError(t, err)
-	assert.NotNil(t, u)
-	assert.Equal(t, "http://example.com", u.String())
+	if u, err := parseRawURL("https://example.com"); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if u == nil {
+		t.Fatal("unexpected nil")
+	} else if got, want := u.String(), "https://example.com"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
 
-	// ---
+	if u, err := parseRawURL("\n"); err == nil {
+		t.Fatal("expected error")
+	} else if u != nil {
+		t.Errorf("got %v, want nil", u)
+	}
 
-	u, err = parseRawURL("https://example.com")
-	assert.NoError(t, err)
-	assert.NotNil(t, u)
-	assert.Equal(t, "https://example.com", u.String())
-
-	// ---
-
-	u, err = parseRawURL("\n")
-	assert.Error(t, err)
-	assert.Nil(t, u)
-
-	// ---
-
-	u, err = parseRawURL("scheme://example.com")
-	assert.Error(t, err)
-	assert.Nil(t, u)
+	if u, err := parseRawURL("scheme://example.com"); err == nil {
+		t.Fatal("expected error")
+	} else if u != nil {
+		t.Errorf("got %v, want nil", u)
+	}
 }
 
 func TestAppendURL(t *testing.T) {
-	assert.Equal(t, "https://example.com/foobar", appendURL(&url.URL{
-		Scheme: "https",
-		Host:   "example.com",
-	}, "foobar").String())
+	us := appendURL(
+		&url.URL{
+			Scheme: "https",
+			Host:   "example.com",
+		},
+		"foobar",
+	).String()
+	if want := "https://example.com/foobar"; us != want {
+		t.Errorf("got %q, want %q", us, want)
+	}
 
-	// ---
+	us = appendURL(
+		&url.URL{
+			Scheme: "https",
+			Host:   "example.com",
+		},
+		"foo",
+		"bar",
+	).String()
+	if want := "https://example.com/foo/bar"; us != want {
+		t.Errorf("got %q, want %q", us, want)
+	}
 
-	assert.Equal(t, "https://example.com/foo/bar", appendURL(&url.URL{
-		Scheme: "https",
-		Host:   "example.com",
-	}, "foo", "bar").String())
+	us = appendURL(
+		&url.URL{
+			Scheme: "https",
+			Host:   "example.com",
+		},
+		"",
+		"foo",
+		"",
+		"bar",
+	).String()
+	if want := "https://example.com/foo/bar"; us != want {
+		t.Errorf("got %q, want %q", us, want)
+	}
 
-	// ---
+	us = appendURL(
+		&url.URL{
+			Scheme: "https",
+			Host:   "example.com",
+		},
+		"foo/bar",
+	).String()
+	if want := "https://example.com/foo/bar"; us != want {
+		t.Errorf("got %q, want %q", us, want)
+	}
 
-	assert.Equal(t, "https://example.com/foo/bar", appendURL(&url.URL{
-		Scheme: "https",
-		Host:   "example.com",
-	}, "", "foo", "", "bar").String())
+	us = appendURL(
+		&url.URL{
+			Scheme: "https",
+			Host:   "example.com",
+		},
+		"/foo/bar",
+	).String()
+	if want := "https://example.com/foo/bar"; us != want {
+		t.Errorf("got %q, want %q", us, want)
+	}
 
-	// ---
-
-	assert.Equal(t, "https://example.com/foo/bar", appendURL(&url.URL{
-		Scheme: "https",
-		Host:   "example.com",
-	}, "foo/bar").String())
-
-	// ---
-
-	assert.Equal(t, "https://example.com/foo/bar", appendURL(&url.URL{
-		Scheme: "https",
-		Host:   "example.com",
-	}, "/foo/bar").String())
-
-	// ---
-
-	assert.Equal(t, "https://example.com/foo/bar/", appendURL(&url.URL{
-		Scheme: "https",
-		Host:   "example.com",
-	}, "/foo/bar/").String())
+	us = appendURL(
+		&url.URL{
+			Scheme: "https",
+			Host:   "example.com",
+		},
+		"/foo/bar/",
+	).String()
+	if want := "https://example.com/foo/bar/"; us != want {
+		t.Errorf("got %q, want %q", us, want)
+	}
 }
 
 func TestRedactedURL(t *testing.T) {
-	assert.Equal(t, "https://example.com", redactedURL(&url.URL{
+	ru := redactedURL(&url.URL{
 		Scheme: "https",
 		Host:   "example.com",
-	}))
+	})
+	if want := "https://example.com"; ru != want {
+		t.Errorf("got %q, want %q", ru, want)
+	}
 
-	// ---
-
-	assert.Equal(t, "https://user@example.com", redactedURL(&url.URL{
+	ru = redactedURL(&url.URL{
 		Scheme: "https",
 		User:   url.User("user"),
 		Host:   "example.com",
-	}))
+	})
+	if want := "https://user@example.com"; ru != want {
+		t.Errorf("got %q, want %q", ru, want)
+	}
 
-	// ---
-
-	assert.Equal(t, "https://user:xxxxx@example.com", redactedURL(&url.URL{
+	ru = redactedURL(&url.URL{
 		Scheme: "https",
 		User:   url.UserPassword("user", "password"),
 		Host:   "example.com",
-	}))
+	})
+	if want := "https://user:xxxxx@example.com"; ru != want {
+		t.Errorf("got %q, want %q", ru, want)
+	}
 }

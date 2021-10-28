@@ -1,52 +1,55 @@
 package goproxy
 
-import (
-	"testing"
-
-	"github.com/stretchr/testify/assert"
-)
+import "testing"
 
 func TestStringSliceContains(t *testing.T) {
-	assert.True(t, stringSliceContains([]string{"foo", "bar"}, "foo"))
-	assert.False(t, stringSliceContains([]string{"foo", "bar"}, "foobar"))
+	if !stringSliceContains([]string{"foo", "bar"}, "foo") {
+		t.Error("want true")
+	}
+
+	if stringSliceContains([]string{"foo", "bar"}, "foobar") {
+		t.Error("want false")
+	}
 }
 
 func TestGlobsMatchPath(t *testing.T) {
-	assert.True(t, globsMatchPath("foobar", "foobar"))
+	if !globsMatchPath("foobar", "foobar") {
+		t.Error("want true")
+	}
 
-	// ---
+	if !globsMatchPath("foo", "foo/bar") {
+		t.Error("want true")
+	}
 
-	assert.True(t, globsMatchPath("foo", "foo/bar"))
+	if globsMatchPath("foo", "bar/foo") {
+		t.Error("want false")
+	}
 
-	// ---
+	if globsMatchPath("foo", "foobar") {
+		t.Error("want false")
+	}
 
-	assert.False(t, globsMatchPath("foo", "bar/foo"))
+	if !globsMatchPath("foo/bar", "foo/bar") {
+		t.Error("want true")
+	}
 
-	// ---
+	if globsMatchPath("foo/bar", "foobar") {
+		t.Error("want false")
+	}
 
-	assert.False(t, globsMatchPath("foo", "foobar"))
+	if !globsMatchPath("foo,bar", "foo") {
+		t.Error("want true")
+	}
 
-	// ---
+	if !globsMatchPath("foo,", "foo") {
+		t.Error("want true")
+	}
 
-	assert.True(t, globsMatchPath("foo/bar", "foo/bar"))
+	if !globsMatchPath(",bar", "bar") {
+		t.Error("want true")
+	}
 
-	// ---
-
-	assert.False(t, globsMatchPath("foo/bar", "foobar"))
-
-	// ---
-
-	assert.True(t, globsMatchPath("foo,bar", "foo"))
-
-	// ---
-
-	assert.True(t, globsMatchPath("foo,", "foo"))
-
-	// ---
-
-	assert.True(t, globsMatchPath(",bar", "bar"))
-
-	// ---
-
-	assert.False(t, globsMatchPath("", "foobar"))
+	if globsMatchPath("", "foobar") {
+		t.Error("want false")
+	}
 }
