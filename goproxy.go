@@ -113,7 +113,7 @@ type Goproxy struct {
 	// ErrorLogger is the `log.Logger` that logs errors that occur while
 	// proxying.
 	//
-	// If the `ErrorLogger` is nil, logging is done via the "log" package's
+	// If the `ErrorLogger` is nil, logging is done via the `log` package's
 	// standard logger.
 	ErrorLogger *log.Logger `mapstructure:"-"`
 
@@ -126,7 +126,7 @@ type Goproxy struct {
 	sumdbClient     *sumdb.Client
 }
 
-// load loads the stuff of the g up.
+// load loads the stuff of the `g` up.
 func (g *Goproxy) load() {
 	if g.GoBinName != "" {
 		g.goBinName = g.GoBinName
@@ -636,7 +636,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	io.Copy(rw, content)
 }
 
-// cache returns the matched cache for the name from the `Cacher` of the g.
+// cache returns the matched cache for the `name` from the `Cacher` of the `g`.
 func (g *Goproxy) cache(
 	ctx context.Context,
 	name string,
@@ -648,7 +648,8 @@ func (g *Goproxy) cache(
 	return g.Cacher.Get(ctx, name)
 }
 
-// setCache sets the content as a cache with the name to the `Cacher` of the g.
+// setCache sets the `content` as a cache with the `name` to the `Cacher` of the
+// `g`.
 func (g *Goproxy) setCache(
 	ctx context.Context,
 	name string,
@@ -671,7 +672,7 @@ func (g *Goproxy) setCache(
 	return g.Cacher.Set(ctx, name, content)
 }
 
-// logError logs the v as an error.
+// logError logs the `v` as an error.
 func (g *Goproxy) logError(v ...interface{}) {
 	if g.ErrorLogger != nil {
 		g.ErrorLogger.Output(2, fmt.Sprint(v...))
@@ -691,8 +692,8 @@ func stringSliceContains(ss []string, s string) bool {
 	return false
 }
 
-// globsMatchPath reports whether any path prefix of target matches one of the
-// glob patterns (as defined by the `path.Match`) in the comma-separated globs
+// globsMatchPath reports whether any path prefix of `target` matches one of the
+// glob patterns (as defined by the `path.Match`) in the comma-separated `globs`
 // list. It ignores any empty or malformed patterns in the list.
 func globsMatchPath(globs, target string) bool {
 	for globs != "" {

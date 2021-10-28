@@ -11,7 +11,7 @@ import (
 // Cacher defines a set of intuitive methods used to cache module files for the
 // `Goproxy`.
 type Cacher interface {
-	// Get gets the matched cache for the name. It returns the
+	// Get gets the matched cache for the `name`. It returns the
 	// `os.ErrNotExist` if not found.
 	//
 	// It is the caller's responsibility to close the returned
@@ -27,7 +27,7 @@ type Cacher interface {
 	//       For the ETag response header.
 	Get(ctx context.Context, name string) (io.ReadCloser, error)
 
-	// Set sets the content as a cache with the name.
+	// Set sets the `content` as a cache with the `name`.
 	Set(ctx context.Context, name string, content io.ReadSeeker) error
 }
 

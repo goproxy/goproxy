@@ -34,12 +34,12 @@ func (nfe notFoundError) Error() string {
 	return string(nfe)
 }
 
-// Is reports whether the target is `errNotFound`.
+// Is reports whether the `target` is `errNotFound`.
 func (notFoundError) Is(target error) bool {
 	return target == errNotFound
 }
 
-// httpGet gets the content targeted by the url into the dst.
+// httpGet gets the content targeted by the `url` into the `dst`.
 func httpGet(
 	ctx context.Context,
 	httpClient *http.Client,
@@ -130,7 +130,7 @@ func httpGet(
 	return lastError
 }
 
-// parseRawURL parses the rawURL.
+// parseRawURL parses the `rawURL`.
 func parseRawURL(rawURL string) (*url.URL, error) {
 	if strings.ContainsAny(rawURL, ".:/") &&
 		!strings.Contains(rawURL, ":/") &&
@@ -156,8 +156,8 @@ func parseRawURL(rawURL string) (*url.URL, error) {
 	return u, nil
 }
 
-// appendURL appends the extraPaths to the u safely and reutrns a new instance
-// of the `url.URL`.
+// appendURL appends the `extraPaths` to the `u` safely and reutrns a new
+// instance of the `url.URL`.
 func appendURL(u *url.URL, extraPaths ...string) *url.URL {
 	nu := *u
 	u = &nu
@@ -180,9 +180,9 @@ func appendURL(u *url.URL, extraPaths ...string) *url.URL {
 	return u
 }
 
-// redactedURL returns a redacted string form of the u, suitable for printing in
-// error messages. The string form replaces any non-empty password in the u with
-// "xxxxx".
+// redactedURL returns a redacted string form of the `u`, suitable for printing
+// in error messages. The string form replaces any non-empty password in the `u`
+// with "xxxxx".
 //
 // TODO: Remove the `redactedURL` when the minimum supported Go version is 1.15.
 // See https://golang.org/doc/go1.15#net/url.

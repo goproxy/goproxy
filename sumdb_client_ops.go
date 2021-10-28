@@ -24,7 +24,7 @@ type sumdbClientOps struct {
 	logError    func(v ...interface{})
 }
 
-// load loads the stuff of the sco up.
+// load loads the stuff of the `sco` up.
 func (sco *sumdbClientOps) load() {
 	sumdbParts := strings.Fields(sco.envGOSUMDB)
 	if l := len(sumdbParts); l == 0 {
