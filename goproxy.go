@@ -110,6 +110,11 @@ type Goproxy struct {
 	// If the `Transport` is nil, the `http.DefaultTransport` is used.
 	Transport http.RoundTripper `mapstructure:"-"`
 
+	// TempDir is the directory for storing temporary files.
+	//
+	// If the `TempDir` is empty, the result of the `os.TempDir()` is used.
+	TempDir string `mapstructure:"temp_dir"`
+
 	// ErrorLogger is the `log.Logger` that logs errors that occur while
 	// proxying.
 	//
@@ -405,7 +410,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	goproxyRoot, err := ioutil.TempDir("", "goproxy")
+	goproxyRoot, err := ioutil.TempDir(g.TempDir, "goproxy")
 	if err != nil {
 		g.logError(err)
 		responseInternalServerError(rw)
