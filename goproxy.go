@@ -53,7 +53,7 @@ type Goproxy struct {
 	//
 	// Note that the version of the Go binary targeted by the `GoBinName`
 	// must be at least v1.11.
-	GoBinName string `mapstructure:"go_bin_name"`
+	GoBinName string
 
 	// GoBinEnv is the environment of the Go binary. Each entry is of the
 	// form "key=value".
@@ -67,32 +67,32 @@ type Goproxy struct {
 	// GOSUMDB, GONOSUMDB and GOPRIVATE are built-in supported. It means
 	// that they can be set even the version of the Go binary targeted by
 	// the `GoBinName` is before v1.13.
-	GoBinEnv []string `mapstructure:"go_bin_env"`
+	GoBinEnv []string
 
 	// GoBinMaxWorkers is the maximum number of commands allowed for the Go
 	// binary to execute at the same time.
 	//
 	// If the `GoBinMaxWorkers` is zero, there is no limitation.
-	GoBinMaxWorkers int `mapstructure:"go_bin_max_workers"`
+	GoBinMaxWorkers int
 
 	// PathPrefix is the prefix of all request paths. It will be used to
 	// trim the request paths via the `strings.TrimPrefix`.
 	//
 	// If the `PathPrefix` is not empty, it must start with "/", and usually
 	// should also end with "/".
-	PathPrefix string `mapstructure:"path_prefix"`
+	PathPrefix string
 
 	// Cacher is the `Cacher` that used to cache module files.
 	//
 	// If the `Cacher` is nil, the module files will be temporarily stored
 	// in the local disk and discarded as the request ends.
-	Cacher Cacher `mapstructure:"-"`
+	Cacher Cacher
 
 	// CacherMaxCacheBytes is the maximum number of bytes allowed for the
 	// `Cacher` to store a cache.
 	//
 	// If the `CacherMaxCacheBytes` is zero, there is no limitation.
-	CacherMaxCacheBytes int `mapstructure:"cacher_max_cache_bytes"`
+	CacherMaxCacheBytes int
 
 	// ProxiedSUMDBs is the list of proxied checksum databases. See
 	// https://golang.org/design/25530-sumdb#proxying-a-checksum-database.
@@ -102,25 +102,25 @@ type Goproxy struct {
 	// format can be seen as a shorthand for the second format. In the case
 	// of the first format, the corresponding checksum database URL will be
 	// the checksum database name itself as a host with an "https" scheme.
-	ProxiedSUMDBs []string `mapstructure:"proxied_sumdbs"`
+	ProxiedSUMDBs []string
 
 	// Transport is used to perform all requests except those started by
 	// calling the Go binary targeted by the `GoBinName`.
 	//
 	// If the `Transport` is nil, the `http.DefaultTransport` is used.
-	Transport http.RoundTripper `mapstructure:"-"`
+	Transport http.RoundTripper
 
 	// TempDir is the directory for storing temporary files.
 	//
 	// If the `TempDir` is empty, the result of the `os.TempDir()` is used.
-	TempDir string `mapstructure:"temp_dir"`
+	TempDir string
 
 	// ErrorLogger is the `log.Logger` that logs errors that occur while
 	// proxying.
 	//
 	// If the `ErrorLogger` is nil, logging is done via the `log` package's
 	// standard logger.
-	ErrorLogger *log.Logger `mapstructure:"-"`
+	ErrorLogger *log.Logger
 
 	loadOnce        sync.Once
 	goBinName       string
