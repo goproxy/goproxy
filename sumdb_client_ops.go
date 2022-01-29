@@ -21,7 +21,6 @@ type sumdbClientOps struct {
 	envGOPROXY  string
 	envGOSUMDB  string
 	httpClient  *http.Client
-	logError    func(v ...interface{})
 }
 
 // load loads the stuff of the `sco` up.
@@ -191,5 +190,4 @@ func (sco *sumdbClientOps) Log(msg string) {
 // SecurityError implements the `sumdb.ClientOps`.
 func (sco *sumdbClientOps) SecurityError(msg string) {
 	sco.loadOnce.Do(sco.load)
-	sco.logError(msg)
 }

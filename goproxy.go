@@ -258,7 +258,6 @@ func (g *Goproxy) load() {
 		envGOPROXY: g.goBinEnv["GOPROXY"],
 		envGOSUMDB: g.goBinEnv["GOSUMDB"],
 		httpClient: g.httpClient,
-		logError:   g.logError,
 	})
 }
 
