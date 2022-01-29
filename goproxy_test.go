@@ -2,6 +2,23 @@ package goproxy
 
 import "testing"
 
+func TestPrefixToIfNotIn(t *testing.T) {
+	got := prefixToIfNotIn("foo: bar", "foo")
+	if want := "foo: bar"; got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+
+	got = prefixToIfNotIn("bar", "foo")
+	if want := "foo: bar"; got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+
+	got = prefixToIfNotIn("foobar", "foo")
+	if want := "foobar"; got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
 func TestStringSliceContains(t *testing.T) {
 	if !stringSliceContains([]string{"foo", "bar"}, "foo") {
 		t.Error("want true")
