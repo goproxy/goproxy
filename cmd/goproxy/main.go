@@ -22,6 +22,9 @@ func main() {
 			&cli.StringFlag{Name: "listen", Aliases: []string{"l"}, Value: ":8080", Usage: "address to listen to"},
 			&cli.StringFlag{Name: "cache-dir", Aliases: []string{"c"}, Value: "", Usage: "cache directory (none if empty)"},
 			&cli.StringFlag{Name: "proxy-path-prefix", Value: "", Usage: "base prefix of all request paths"},
+
+			&cli.StringFlag{Name: "tls-cert", Value: "", Usage: "TLS cert file to listen as HTTPS (http if empty)"},
+			&cli.StringFlag{Name: "tls-key", Value: "", Usage: "TLS key file to listen as HTTPS (http if empty)"},
 		},
 	}
 
@@ -60,9 +63,17 @@ func run(c *cli.Context) error {
 		p.ServeHTTP(w, req)
 	})
 
-	log.Printf("listen address: %v", c.String("listen"))
+	listenAddr := c.String("listen")
 
-	err := http.ListenAndServe(c.String("listen"), h)
+	log.Printf("listen address: %v", listenAddr)
+
+	var err error
+	if cf, kf := c.String("tls-cert"), c.String("tls-key"); cf != "" || kf != "" {
+		err = http.ListenAndServeTLS(listenAddr, cf, kf, h)
+	} else {
+		err = http.ListenAndServe(listenAddr, h)
+	}
+
 	if err != nil {
 		return errors.Wrap(err, "listen and serve")
 	}
