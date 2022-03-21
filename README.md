@@ -1,5 +1,6 @@
 # Goproxy
 
+[![GitHub Actions](https://github.com/goproxy/goproxy/workflows/Test/badge.svg)](https://github.com/goproxy/goproxy)
 [![Go Report Card](https://goreportcard.com/badge/github.com/goproxy/goproxy)](https://goreportcard.com/report/github.com/goproxy/goproxy)
 [![PkgGoDev](https://pkg.go.dev/badge/github.com/goproxy/goproxy)](https://pkg.go.dev/github.com/goproxy/goproxy)
 
