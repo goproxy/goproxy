@@ -34,7 +34,10 @@ implements the [`http.Handler`](https://pkg.go.dev/net/http#Handler).
 Open your terminal and execute
 
 ```bash
+$ # Use it programmatically (RECOMMENDED).
 $ go get github.com/goproxy/goproxy
+$ # Or use our minimalist CLI implementation.
+$ go install github.com/goproxy/goproxy/cmd/goproxy@latest
 ```
 
 done.

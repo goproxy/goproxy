@@ -237,6 +237,9 @@ func (g *Goproxy) load() {
 	g.proxiedSUMDBs = map[string]string{}
 	for _, proxiedSUMDB := range g.ProxiedSUMDBs {
 		sumdbParts := strings.Fields(proxiedSUMDB)
+		if len(sumdbParts) == 0 {
+			continue
+		}
 
 		sumdbName, err := idna.Lookup.ToASCII(sumdbParts[0])
 		if err != nil {
