@@ -13,15 +13,15 @@ jobs:
           - "1.17.x"
           - "1.18.x"
     steps:
+      - name: Check out code
+        uses: actions/checkout@v3
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
           go-version: ${{matrix.go}}
-      - name: Check out code
-        uses: actions/checkout@v3
-      - name: Download modules
+      - name: Download Go modules
         run: go mod download
-      - name: Test
+      - name: Run Go test
         run: go test -v -race -covermode=atomic -coverprofile=coverage.out ./...
       - name: Upload coverage profile
         uses: codecov/codecov-action@v2
