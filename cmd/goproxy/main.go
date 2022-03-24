@@ -17,7 +17,7 @@ var (
 	tlsCertFile         = flag.String("tls-cert-file", "", "path to the TLS certificate file")
 	tlsKeyFile          = flag.String("tls-key-file", "", "path to the TLS key file")
 	goBinName           = flag.String("go-bin-name", "go", "name of the Go binary")
-	goBinMaxWorkers     = flag.Int("go-bin-max-workers", 1, "maximum number (0 means no limit) of commands allowed for the Go binary to execute at the same time")
+	goBinMaxWorkers     = flag.Int("go-bin-max-workers", 0, "maximum number (0 means no limit) of commands allowed for the Go binary to execute at the same time")
 	pathPrefix          = flag.String("path-prefix", "", "prefix of all request paths")
 	cacherDir           = flag.String("cacher-dir", "caches", "directory that used to cache module files")
 	cacherMaxCacheBytes = flag.Int("cacher-max-cache-bytes", 0, "maximum number (0 means no limit) of bytes allowed for the cacher to store a cache")
