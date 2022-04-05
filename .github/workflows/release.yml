@@ -22,4 +22,4 @@ jobs:
           args: release --rm-dist
           workdir: cmd/goproxy
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{github.token}}
