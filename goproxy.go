@@ -486,7 +486,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			return
 		}
 
-		b, err := json.Marshal(struct {
+		moduleVersionInfo, err := json.Marshal(struct {
 			Version string
 			Time    time.Time
 		}{
@@ -495,14 +495,14 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		})
 		if err != nil {
 			g.logErrorf(
-				"failed to marshal module info: %s",
+				"failed to marshal module version info: %s",
 				prefixToIfNotIn(err.Error(), modAtVer),
 			)
 			responseInternalServerError(rw)
 			return
 		}
 
-		responseJSON(rw, http.StatusOK, 60, b)
+		responseJSON(rw, http.StatusOK, 60, moduleVersionInfo)
 
 		return
 	}
@@ -521,8 +521,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		)
 		if err != nil {
 			g.logErrorf(
-				"failed to download module %s file: %s",
-				nameExt[1:],
+				"failed to download module file: %s",
 				prefixToIfNotIn(err.Error(), modAtVer),
 			)
 			responseModError(rw, err, false)
@@ -532,24 +531,13 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		namePrefix := strings.TrimSuffix(name, nameExt)
 
 		if mr.Info != "" {
-			infoFile, err := os.Open(mr.Info)
-			if err != nil {
-				g.logErrorf(
-					"failed to open module info file: %s",
-					prefixToIfNotIn(err.Error(), modAtVer),
-				)
-				responseInternalServerError(rw)
-				return
-			}
-			defer infoFile.Close()
-
-			if err := g.setCache(
+			if err := g.setCacheFile(
 				req.Context(),
 				fmt.Sprint(namePrefix, ".info"),
-				infoFile,
+				mr.Info,
 			); err != nil {
 				g.logErrorf(
-					"failed to cache module info file: %s",
+					"failed to cache module file: %s",
 					prefixToIfNotIn(err.Error(), modAtVer),
 				)
 				responseInternalServerError(rw)
@@ -558,24 +546,13 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		}
 
 		if mr.GoMod != "" {
-			modFile, err := os.Open(mr.GoMod)
-			if err != nil {
-				g.logErrorf(
-					"failed to open module mod file: %s",
-					prefixToIfNotIn(err.Error(), modAtVer),
-				)
-				responseInternalServerError(rw)
-				return
-			}
-			defer modFile.Close()
-
-			if err := g.setCache(
+			if err := g.setCacheFile(
 				req.Context(),
 				fmt.Sprint(namePrefix, ".mod"),
-				modFile,
+				mr.GoMod,
 			); err != nil {
 				g.logErrorf(
-					"failed to cache module mod file: %s",
+					"failed to cache module file: %s",
 					prefixToIfNotIn(err.Error(), modAtVer),
 				)
 				responseInternalServerError(rw)
@@ -584,24 +561,13 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		}
 
 		if mr.Zip != "" {
-			zipFile, err := os.Open(mr.Zip)
-			if err != nil {
-				g.logErrorf(
-					"failed to open module zip file: %s",
-					prefixToIfNotIn(err.Error(), modAtVer),
-				)
-				responseInternalServerError(rw)
-				return
-			}
-			defer zipFile.Close()
-
-			if err := g.setCache(
+			if err := g.setCacheFile(
 				req.Context(),
 				fmt.Sprint(namePrefix, ".zip"),
-				zipFile,
+				mr.Zip,
 			); err != nil {
 				g.logErrorf(
-					"failed to cache module zip file: %s",
+					"failed to cache module file: %s",
 					prefixToIfNotIn(err.Error(), modAtVer),
 				)
 				responseInternalServerError(rw)
@@ -609,46 +575,27 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			}
 		}
 
-		if dc, ok := g.Cacher.(DirCacher); ok {
-			rc, err := dc.Get(req.Context(), name)
-			if err != nil {
-				g.logErrorf(
-					"failed to get cached module %s file: "+
-						"%s",
-					nameExt[1:],
-					prefixToIfNotIn(err.Error(), modAtVer),
-				)
-				responseInternalServerError(rw)
-				return
-			}
-			defer rc.Close()
-
-			content = rc
-		} else {
-			switch nameExt {
-			case ".info":
-				content, err = os.Open(mr.Info)
-			case ".mod":
-				content, err = os.Open(mr.GoMod)
-			case ".zip":
-				content, err = os.Open(mr.Zip)
-			}
-
-			if err != nil {
-				g.logErrorf(
-					"failed to open module %s file: %s",
-					nameExt[1:],
-					prefixToIfNotIn(err.Error(), modAtVer),
-				)
-				responseInternalServerError(rw)
-				return
-			}
-			defer content.(*os.File).Close()
+		switch nameExt {
+		case ".info":
+			content, err = os.Open(mr.Info)
+		case ".mod":
+			content, err = os.Open(mr.GoMod)
+		case ".zip":
+			content, err = os.Open(mr.Zip)
 		}
+
+		if err != nil {
+			g.logErrorf(
+				"failed to open module file: %s",
+				prefixToIfNotIn(err.Error(), modAtVer),
+			)
+			responseInternalServerError(rw)
+			return
+		}
+		defer content.(*os.File).Close()
 	} else {
 		g.logErrorf(
-			"failed to get cached module %s file: %s",
-			nameExt[1:],
+			"failed to get cached module file: %s",
 			prefixToIfNotIn(err.Error(), modAtVer),
 		)
 		responseModError(rw, err, false)
@@ -730,6 +677,18 @@ func (g *Goproxy) setCache(
 	}
 
 	return g.Cacher.Set(ctx, name, content)
+}
+
+// setCacheFile sets the local file targeted by the `file` as a cache with the
+// `name` to the `Cacher` of the `g`.
+func (g *Goproxy) setCacheFile(ctx context.Context, name, file string) error {
+	f, err := os.Open(file)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	return g.setCache(ctx, name, f)
 }
 
 // logErrorf formats according to the `format` and logs the `v` as an error.
