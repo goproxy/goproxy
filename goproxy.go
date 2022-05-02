@@ -348,22 +348,14 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			return
 		}
 
-		sumdbURL = appendURL(g.proxiedSUMDBs[sumdbName], sumdbURL.Path)
-		if err != nil {
-			g.logErrorf(
-				"failed to build proxy url for checksum "+
-					"database request: %s",
-				prefixToIfNotIn(err.Error(), name),
-			)
-			responseInternalServerError(rw)
-			return
-		}
-
 		var buf bytes.Buffer
 		if err := httpGet(
 			req.Context(),
 			g.httpClient,
-			sumdbURL.String(),
+			appendURL(
+				g.proxiedSUMDBs[sumdbName],
+				sumdbURL.Path,
+			).String(),
 			&buf,
 		); err != nil {
 			g.logErrorf(
@@ -435,6 +427,11 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	defer os.RemoveAll(goproxyRoot)
 
 	if isList {
+		moduleVersionListCacheName := fmt.Sprint(
+			strings.TrimSuffix(name, path.Base(name)),
+			"list",
+		)
+
 		mr, err := g.mod(
 			req.Context(),
 			"list",
@@ -443,20 +440,61 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			moduleVersion,
 		)
 		if err != nil {
+			if content, err := g.cache(
+				req.Context(),
+				moduleVersionListCacheName,
+			); err == nil {
+				b, err := ioutil.ReadAll(content)
+				content.Close()
+				if err != nil {
+					g.logErrorf(
+						"failed to get cached module "+
+							"file: %s",
+						prefixToIfNotIn(
+							err.Error(),
+							modAtVer,
+						),
+					)
+					responseModError(rw, err, false)
+					return
+				}
+
+				responseString(rw, http.StatusOK, 60, string(b))
+
+				return
+			} else if !errors.Is(err, os.ErrNotExist) {
+				g.logErrorf(
+					"failed to get cached module file: %s",
+					prefixToIfNotIn(err.Error(), modAtVer),
+				)
+				responseModError(rw, err, false)
+				return
+			}
+
 			g.logErrorf(
 				"failed to list module versions: %s",
 				prefixToIfNotIn(err.Error(), modAtVer),
 			)
 			responseModError(rw, err, true)
+
 			return
 		}
 
-		responseString(
-			rw,
-			http.StatusOK,
-			60,
-			strings.Join(mr.Versions, "\n"),
-		)
+		moduleVersionList := strings.Join(mr.Versions, "\n")
+		if err := g.setCache(
+			req.Context(),
+			moduleVersionListCacheName,
+			strings.NewReader(moduleVersionList),
+		); err != nil {
+			g.logErrorf(
+				"failed to cache module file: %s",
+				prefixToIfNotIn(err.Error(), modAtVer),
+			)
+			responseInternalServerError(rw)
+			return
+		}
+
+		responseString(rw, http.StatusOK, 60, moduleVersionList)
 
 		return
 	} else if !semver.IsValid(moduleVersion) {
