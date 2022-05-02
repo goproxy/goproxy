@@ -108,7 +108,10 @@ func httpGet(
 			http.StatusNotFound,
 			http.StatusGone:
 			return notFoundError(b)
-		case http.StatusBadGateway, http.StatusServiceUnavailable:
+		case http.StatusTooManyRequests,
+			http.StatusInternalServerError,
+			http.StatusBadGateway,
+			http.StatusServiceUnavailable:
 			lastError = errBadUpstream
 			continue
 		case http.StatusGatewayTimeout:
