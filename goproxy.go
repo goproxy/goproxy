@@ -126,7 +126,7 @@ type Goproxy struct {
 	goBinName       string
 	goBinEnv        map[string]string
 	goBinWorkerChan chan struct{}
-	proxiedSUMDBs   map[string]string
+	proxiedSUMDBs   map[string]*url.URL
 	httpClient      *http.Client
 	sumdbClient     *sumdb.Client
 }
@@ -234,7 +234,7 @@ func (g *Goproxy) load() {
 		g.goBinWorkerChan = make(chan struct{}, g.GoBinMaxWorkers)
 	}
 
-	g.proxiedSUMDBs = map[string]string{}
+	g.proxiedSUMDBs = map[string]*url.URL{}
 	for _, proxiedSUMDB := range g.ProxiedSUMDBs {
 		sumdbParts := strings.Fields(proxiedSUMDB)
 		if len(sumdbParts) == 0 {
@@ -246,11 +246,17 @@ func (g *Goproxy) load() {
 			continue
 		}
 
+		rawSUMDBURL := sumdbName
 		if len(sumdbParts) > 1 {
-			g.proxiedSUMDBs[sumdbName] = sumdbParts[1]
-		} else {
-			g.proxiedSUMDBs[sumdbName] = sumdbName
+			rawSUMDBURL = sumdbParts[1]
 		}
+
+		sumdbURL, err := parseRawURL(rawSUMDBURL)
+		if err != nil {
+			continue
+		}
+
+		g.proxiedSUMDBs[sumdbName] = sumdbURL
 	}
 
 	g.httpClient = &http.Client{
@@ -314,7 +320,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			return
 		}
 
-		if g.proxiedSUMDBs[sumdbName] == "" {
+		if g.proxiedSUMDBs[sumdbName] == nil {
 			responseNotFound(rw, 86400)
 			return
 		}
@@ -342,10 +348,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			return
 		}
 
-		sumdbURL, err = parseRawURL(fmt.Sprint(
-			g.proxiedSUMDBs[sumdbName],
-			sumdbURL.Path,
-		))
+		sumdbURL = appendURL(g.proxiedSUMDBs[sumdbName], sumdbURL.Path)
 		if err != nil {
 			g.logErrorf(
 				"failed to build proxy url for checksum "+
