@@ -455,7 +455,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 							modAtVer,
 						),
 					)
-					responseModError(rw, err, false)
+					responseInternalServerError(rw)
 					return
 				}
 
@@ -467,7 +467,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 					"failed to get cached module file: %s",
 					prefixToIfNotIn(err.Error(), modAtVer),
 				)
-				responseModError(rw, err, false)
+				responseInternalServerError(rw)
 				return
 			}
 
@@ -636,7 +636,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			"failed to get cached module file: %s",
 			prefixToIfNotIn(err.Error(), modAtVer),
 		)
-		responseModError(rw, err, false)
+		responseInternalServerError(rw)
 		return
 	}
 
@@ -731,7 +731,7 @@ func (g *Goproxy) setCacheFile(ctx context.Context, name, file string) error {
 
 // logErrorf formats according to the `format` and logs the `v` as an error.
 func (g *Goproxy) logErrorf(format string, v ...interface{}) {
-	msg := fmt.Sprintf(format, v...)
+	msg := fmt.Sprint("goproxy: ", fmt.Sprintf(format, v...))
 	if g.ErrorLogger != nil {
 		g.ErrorLogger.Output(2, msg)
 	} else {
