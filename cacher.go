@@ -9,33 +9,31 @@ import (
 )
 
 // Cacher defines a set of intuitive methods used to cache module files for the
-// `Goproxy`.
+// [Goproxy].
 type Cacher interface {
-	// Get gets the matched cache for the `name`. It returns the
-	// `os.ErrNotExist` if not found.
+	// Get gets the matched cache for the name. It returns the
+	// [os.ErrNotExist] if not found.
 	//
 	// It is the caller's responsibility to close the returned
-	// `io.ReadCloser`.
+	// [io.ReadCloser].
 	//
-	// Note that the returned `io.ReadCloser` can optionally implement the
+	// Note that the returned [io.ReadCloser] can optionally implement the
 	// following interfaces:
-	//   * `io.Seeker`
-	//       For the Range request header.
-	//   * `interface{ ModTime() time.Time }`
-	//       For the Last-Modified response header.
-	//   * `interface{ Checksum() []byte }`
-	//       For the ETag response header.
+	//   - [io.Seeker], for the Range request header.
+	//   - interface{ ModTime() time.Time }, for the Last-Modified response
+	//     header.
+	//   - interface{ Checksum() []byte }, for the ETag response header.
 	Get(ctx context.Context, name string) (io.ReadCloser, error)
 
-	// Set sets the `content` as a cache with the `name`.
+	// Set sets the content as a cache with the name.
 	Set(ctx context.Context, name string, content io.ReadSeeker) error
 }
 
-// DirCacher implements the `Cacher` using a directory on the local filesystem.
+// DirCacher implements the [Cacher] using a directory on the local filesystem.
 // If the directory does not exist, it will be created with 0750 permissions.
 type DirCacher string
 
-// Get implements the `Cacher`.
+// Get implements the [Cacher].
 func (dc DirCacher) Get(
 	ctx context.Context,
 	name string,
@@ -61,7 +59,7 @@ func (dc DirCacher) Get(
 	}, nil
 }
 
-// Set implements the `Cacher`.
+// Set implements the [Cacher].
 func (dc DirCacher) Set(
 	ctx context.Context,
 	name string,

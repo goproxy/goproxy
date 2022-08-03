@@ -30,74 +30,73 @@ import (
 
 // Goproxy is the top-level struct of this project.
 //
-// Note that the `Goproxy` will not mess with your environment variables, it
-// will still follow your GOPROXY, GONOPROXY, GOSUMDB, GONOSUMDB and GOPRIVATE.
-// It means that you can set GOPROXY to serve the `Goproxy` itself under other
+// Note that the Goproxy will not mess with your environment variables, it will
+// still follow your GOPROXY, GONOPROXY, GOSUMDB, GONOSUMDB and GOPRIVATE. It
+// means that you can set GOPROXY to serve the Goproxy itself under other
 // proxies, and by setting GONOPROXY and GOPRIVATE to indicate which modules the
-// `Goproxy` should download directly instead of using those proxies. And of
+// Goproxy should download directly instead of using those proxies. And of
 // course, you can also set GOSUMDB, GONOSUMDB and GOPRIVATE to indicate how
-// the `Goproxy` should verify the modules.
+// the Goproxy should verify the modules.
 //
 // Since GOPROXY with comma-separated list support, GONOPROXY, GOSUMDB,
 // GONOSUMDB and GOPRIVATE were first introduced in Go 1.13, so we implemented a
 // built-in support for them. Now, you can set them even the version of the Go
-// binary targeted by the `Goproxy.GoBinName` is before v1.13.
+// binary targeted by the [Goproxy.GoBinName] is before v1.13.
 //
-// It is highly recommended not to modify the value of any field of the
-// `Goproxy` after calling the `Goproxy.ServeHTTP`, which will cause
-// unpredictable problems.
+// Make sure that all fields of the Goproxy have been finalized before calling
+// any of its methods.
 type Goproxy struct {
 	// GoBinName is the name of the Go binary.
 	//
-	// If the `GoBinName` is empty, the "go" is used.
+	// If the GoBinName is empty, the "go" is used.
 	//
-	// Note that the version of the Go binary targeted by the `GoBinName`
-	// must be at least v1.11.
+	// Note that the version of the Go binary targeted by the GoBinName must
+	// be at least v1.11.
 	GoBinName string
 
 	// GoBinEnv is the environment of the Go binary. Each entry is of the
 	// form "key=value".
 	//
-	// If the `GoBinEnv` is nil, the result of the `os.Environ()` is used.
+	// If the GoBinEnv is nil, the [os.Environ] is used.
 	//
-	// If the `GoBinEnv` contains duplicate environment keys, only the last
+	// If the GoBinEnv contains duplicate environment keys, only the last
 	// value in the slice for each duplicate key is used.
 	//
 	// Note that GOPROXY (with comma-separated list support), GONOPROXY,
 	// GOSUMDB, GONOSUMDB and GOPRIVATE are built-in supported. It means
 	// that they can be set even the version of the Go binary targeted by
-	// the `GoBinName` is before v1.13.
+	// the [Goproxy.GoBinName] is before v1.13.
 	GoBinEnv []string
 
 	// GoBinMaxWorkers is the maximum number of commands allowed for the Go
 	// binary to execute at the same time.
 	//
-	// If the `GoBinMaxWorkers` is zero, there is no limitation.
+	// If the GoBinMaxWorkers is zero, there is no limitation.
 	GoBinMaxWorkers int
 
 	// PathPrefix is the prefix of all request paths. It will be used to
-	// trim the request paths via the `strings.TrimPrefix`.
+	// trim the request paths via the [strings.TrimPrefix].
 	//
-	// If the `PathPrefix` is not empty, it must start with "/", and usually
+	// If the PathPrefix is not empty, it must start with "/", and usually
 	// should also end with "/".
 	PathPrefix string
 
-	// Cacher is the `Cacher` that used to cache module files.
+	// Cacher is the [Cacher] that used to cache module files.
 	//
-	// If the `Cacher` is nil, the module files will be temporarily stored
+	// If the Cacher is nil, the module files will be temporarily stored
 	// in the local disk and discarded as the request ends.
 	Cacher Cacher
 
 	// CacherMaxCacheBytes is the maximum number of bytes allowed for the
-	// `Cacher` to store a cache.
+	// [Goproxy.Cacher] to store a cache.
 	//
-	// If the `CacherMaxCacheBytes` is zero, there is no limitation.
+	// If the CacherMaxCacheBytes is zero, there is no limitation.
 	CacherMaxCacheBytes int
 
 	// ProxiedSUMDBs is the list of proxied checksum databases. See
 	// https://golang.org/design/25530-sumdb#proxying-a-checksum-database.
 	//
-	// If the `ProxiedSUMDBs` is not nil, each value should be given the
+	// If the ProxiedSUMDBs is not nil, each value should be given the
 	// format of "<sumdb-name>" or "<sumdb-name> <sumdb-URL>". The first
 	// format can be seen as a shorthand for the second format. In the case
 	// of the first format, the corresponding checksum database URL will be
@@ -105,20 +104,20 @@ type Goproxy struct {
 	ProxiedSUMDBs []string
 
 	// Transport is used to perform all requests except those started by
-	// calling the Go binary targeted by the `GoBinName`.
+	// calling the Go binary targeted by the [Goproxy.GoBinName].
 	//
-	// If the `Transport` is nil, the `http.DefaultTransport` is used.
+	// If the Transport is nil, the [http.DefaultTransport] is used.
 	Transport http.RoundTripper
 
 	// TempDir is the directory for storing temporary files.
 	//
-	// If the `TempDir` is empty, the result of the `os.TempDir()` is used.
+	// If the TempDir is empty, the [os.TempDir] is used.
 	TempDir string
 
-	// ErrorLogger is the `log.Logger` that logs errors that occur while
+	// ErrorLogger is the [log.Logger] that logs errors that occur while
 	// proxying.
 	//
-	// If the `ErrorLogger` is nil, logging is done via the `log` package's
+	// If the ErrorLogger is nil, logging is done via the [log] package's
 	// standard logger.
 	ErrorLogger *log.Logger
 
@@ -131,7 +130,7 @@ type Goproxy struct {
 	sumdbClient     *sumdb.Client
 }
 
-// load loads the stuff of the `g` up.
+// load loads the stuff of the g up.
 func (g *Goproxy) load() {
 	if g.GoBinName != "" {
 		g.goBinName = g.GoBinName
@@ -270,7 +269,7 @@ func (g *Goproxy) load() {
 	})
 }
 
-// ServeHTTP implements the `http.Handler`.
+// ServeHTTP implements the [http.Handler].
 func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	g.loadOnce.Do(g.load)
 
@@ -681,7 +680,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	io.Copy(rw, content)
 }
 
-// cache returns the matched cache for the `name` from the `Cacher` of the `g`.
+// cache returns the matched cache for the name from the g.Cacher.
 func (g *Goproxy) cache(
 	ctx context.Context,
 	name string,
@@ -693,8 +692,7 @@ func (g *Goproxy) cache(
 	return g.Cacher.Get(ctx, name)
 }
 
-// setCache sets the `content` as a cache with the `name` to the `Cacher` of the
-// `g`.
+// setCache sets the content as a cache with the name to the g.Cacher.
 func (g *Goproxy) setCache(
 	ctx context.Context,
 	name string,
@@ -717,8 +715,8 @@ func (g *Goproxy) setCache(
 	return g.Cacher.Set(ctx, name, content)
 }
 
-// setCacheFile sets the local file targeted by the `file` as a cache with the
-// `name` to the `Cacher` of the `g`.
+// setCacheFile sets the local file targeted by the file as a cache with the
+// name to the g.Cacher.
 func (g *Goproxy) setCacheFile(ctx context.Context, name, file string) error {
 	f, err := os.Open(file)
 	if err != nil {
@@ -729,7 +727,7 @@ func (g *Goproxy) setCacheFile(ctx context.Context, name, file string) error {
 	return g.setCache(ctx, name, f)
 }
 
-// logErrorf formats according to the `format` and logs the `v` as an error.
+// logErrorf formats according to the format and logs the v as an error.
 func (g *Goproxy) logErrorf(format string, v ...interface{}) {
 	msg := fmt.Sprint("goproxy: ", fmt.Sprintf(format, v...))
 	if g.ErrorLogger != nil {
@@ -739,7 +737,7 @@ func (g *Goproxy) logErrorf(format string, v ...interface{}) {
 	}
 }
 
-// prefixToIfNotIn adds the `prefix` to the `s` if it is not in the `s`.
+// prefixToIfNotIn adds the prefix to the s if it is not in the s.
 func prefixToIfNotIn(s, prefix string) string {
 	if strings.Contains(s, prefix) {
 		return s
@@ -759,8 +757,8 @@ func stringSliceContains(ss []string, s string) bool {
 	return false
 }
 
-// globsMatchPath reports whether any path prefix of `target` matches one of the
-// glob patterns (as defined by the `path.Match`) in the comma-separated `globs`
+// globsMatchPath reports whether any path prefix of target matches one of the
+// glob patterns (as defined by the [path.Match]) in the comma-separated globs
 // list. It ignores any empty or malformed patterns in the list.
 func globsMatchPath(globs, target string) bool {
 	for globs != "" {

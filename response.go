@@ -9,7 +9,7 @@ import (
 )
 
 // setResponseCacheControlHeader sets the Cache-Control header based on the
-// `maxAge`.
+// maxAge.
 func setResponseCacheControlHeader(rw http.ResponseWriter, maxAge int) {
 	if maxAge < -1 {
 		return
@@ -25,8 +25,8 @@ func setResponseCacheControlHeader(rw http.ResponseWriter, maxAge int) {
 	rw.Header().Set("Cache-Control", cacheControl)
 }
 
-// responseString responses the `s` as a "text/plain" content to the client with
-// the `statusCode` and `cacheControlMaxAge`.
+// responseString responses the s as a "text/plain" content to the client with
+// the statusCode and cacheControlMaxAge.
 func responseString(
 	rw http.ResponseWriter,
 	statusCode int,
@@ -39,8 +39,8 @@ func responseString(
 	rw.Write([]byte(s))
 }
 
-// responseJSON responses the `b` as a "application/json" content to the client
-// with the `statusCode` and `cacheControlMaxAge`.
+// responseJSON responses the b as a "application/json" content to the client
+// with the statusCode and cacheControlMaxAge.
 func responseJSON(
 	rw http.ResponseWriter,
 	statusCode int,
@@ -54,7 +54,7 @@ func responseJSON(
 }
 
 // responseNotFound responses "not found" to the client with the
-// `cacheControlMaxAge` and optional `msgs`.
+// cacheControlMaxAge and optional msgs.
 func responseNotFound(
 	rw http.ResponseWriter,
 	cacheControlMaxAge int,
@@ -77,7 +77,7 @@ func responseNotFound(
 }
 
 // responseMethodNotAllowed responses "method not allowed" to the client with
-// the `cacheControlMaxAge`.
+// the cacheControlMaxAge.
 func responseMethodNotAllowed(rw http.ResponseWriter, cacheControlMaxAge int) {
 	responseString(
 		rw,
@@ -97,7 +97,7 @@ func responseInternalServerError(rw http.ResponseWriter) {
 	)
 }
 
-// responseModError responses the `err` as a mod operation error to the client.
+// responseModError responses the err as a mod operation error to the client.
 func responseModError(rw http.ResponseWriter, err error, cacheSensitive bool) {
 	if errors.Is(err, errNotFound) {
 		cacheControlMaxAge := -1

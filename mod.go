@@ -23,7 +23,7 @@ import (
 	"golang.org/x/mod/zip"
 )
 
-// modResult is an unified result for the `Goproxy.mod`.
+// modResult is an unified result for the [Goproxy.mod].
 type modResult struct {
 	Version  string
 	Time     time.Time
@@ -33,7 +33,7 @@ type modResult struct {
 	Zip      string
 }
 
-// mod executes the Go modules related commands based on the `operation`.
+// mod executes the Go modules related commands based on the operation.
 func (g *Goproxy) mod(
 	ctx context.Context,
 	operation string,
@@ -556,11 +556,10 @@ func (g *Goproxy) mod(
 	return &mr, nil
 }
 
-// checkAndFormatInfoFile checks and formats the info file targeted by the
-// `name`.
+// checkAndFormatInfoFile checks and formats the info file targeted by the name.
 //
-// If the `tempDir` is not empty, a new temporary info file will be created in
-// it. Otherwise, the info file targeted by the `name` will be replaced.
+// If the tempDir is not empty, a new temporary info file will be created in it.
+// Otherwise, the info file targeted by the name will be replaced.
 func checkAndFormatInfoFile(name, tempDir string) (string, error) {
 	b, err := ioutil.ReadFile(name)
 	if err != nil {
@@ -635,7 +634,7 @@ func checkAndFormatInfoFile(name, tempDir string) (string, error) {
 	return name, nil
 }
 
-// checkModFile checks the mod file targeted by the `name`.
+// checkModFile checks the mod file targeted by the name.
 func checkModFile(name string) error {
 	f, err := os.Open(name)
 	if err != nil {
@@ -657,8 +656,8 @@ func checkModFile(name string) error {
 	return notFoundError("invalid mod file")
 }
 
-// verifyModFile uses the `sumdbClient` to verify the mod file targeted by the
-// `name` with the `modulePath` and `moduleVersion`.
+// verifyModFile uses the sumdbClient to verify the mod file targeted by the
+// name with the modulePath and moduleVersion.
 func verifyModFile(
 	sumdbClient *sumdb.Client,
 	name string,
@@ -703,8 +702,8 @@ func verifyModFile(
 	return nil
 }
 
-// checkZipFile checks the zip file targeted by the `name` with the `modulePath`
-// and `moduleVersion`.
+// checkZipFile checks the zip file targeted by the name with the modulePath and
+// moduleVersion.
 func checkZipFile(name, modulePath, moduleVersion string) error {
 	if _, err := zip.CheckZip(
 		module.Version{
@@ -719,8 +718,8 @@ func checkZipFile(name, modulePath, moduleVersion string) error {
 	return nil
 }
 
-// verifyZipFile uses the `sumdbClient` to verify the zip file targeted by the
-// `name` with the `modulePath` and `moduleVersion`.
+// verifyZipFile uses the sumdbClient to verify the zip file targeted by the
+// name with the modulePath and moduleVersion.
 func verifyZipFile(
 	sumdbClient *sumdb.Client,
 	name string,
