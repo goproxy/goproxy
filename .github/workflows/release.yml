@@ -15,9 +15,9 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
-          go-version: 1.18.x
+          go-version: 1.19.x
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v2
+        uses: goreleaser/goreleaser-action@v3
         with:
           args: release --rm-dist
           workdir: cmd/goproxy
