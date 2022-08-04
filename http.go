@@ -163,7 +163,7 @@ func parseRawURL(rawURL string) (*url.URL, error) {
 // of the [url.URL].
 //
 // TODO: Remove the appendURL when the minimum supported Go version is 1.19. See
-// https://golang.org/doc/go1.19#net/url.
+// https://go.dev/doc/go1.19#net/url.
 func appendURL(u *url.URL, extraPaths ...string) *url.URL {
 	nu := *u
 	u = &nu
@@ -191,7 +191,7 @@ func appendURL(u *url.URL, extraPaths ...string) *url.URL {
 // "xxxxx".
 //
 // TODO: Remove the redactedURL when the minimum supported Go version is 1.15.
-// See https://golang.org/doc/go1.15#net/url.
+// See https://go.dev/doc/go1.15#net/url.
 func redactedURL(u *url.URL) string {
 	if _, ok := u.User.Password(); ok {
 		ru := *u

@@ -94,7 +94,7 @@ type Goproxy struct {
 	CacherMaxCacheBytes int
 
 	// ProxiedSUMDBs is the list of proxied checksum databases. See
-	// https://golang.org/design/25530-sumdb#proxying-a-checksum-database.
+	// https://go.dev/design/25530-sumdb#proxying-a-checksum-database.
 	//
 	// If the ProxiedSUMDBs is not nil, each value should be given the
 	// format of "<sumdb-name>" or "<sumdb-name> <sumdb-URL>". The first

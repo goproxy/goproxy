@@ -7,8 +7,8 @@
 A minimalist Go module proxy handler.
 
 Goproxy has fully implemented the
-[GOPROXY protocol](https://golang.org/ref/mod#goproxy-protocol). Our goal is to
-find the most dead simple way to provide a minimalist handler that can act as a
+[GOPROXY protocol](https://go.dev/ref/mod#goproxy-protocol). Our goal is to find
+the most dead simple way to provide a minimalist handler that can act as a
 full-featured Go module proxy for those who want to build their own proxies.
 Yeah, there is no `Makefile`, no configuration files, no crazy file
 organization, no lengthy documentation, no annoying stuff, just a
@@ -20,14 +20,14 @@ implements the [`http.Handler`](https://pkg.go.dev/net/http#Handler).
 * Extremely easy to use
 	* Two structs: [`goproxy.Goproxy`](https://pkg.go.dev/github.com/goproxy/goproxy#Goproxy) and [`goproxy.DirCacher`](https://pkg.go.dev/github.com/goproxy/goproxy#DirCacher)
 	* One interface: [`goproxy.Cacher`](https://pkg.go.dev/github.com/goproxy/goproxy#Cacher)
-* Built-in [`GOPROXY`](https://golang.org/ref/mod#environment-variables) support
+* Built-in [`GOPROXY`](https://go.dev/ref/mod#environment-variables) support
 	* Defaulted to `https://proxy.golang.org,direct` (just like what Go is doing right now)
-* Built-in [`GONOPROXY`](https://golang.org/ref/mod#environment-variables) support
-* Built-in [`GOSUMDB`](https://golang.org/ref/mod#environment-variables) support
+* Built-in [`GONOPROXY`](https://go.dev/ref/mod#environment-variables) support
+* Built-in [`GOSUMDB`](https://go.dev/ref/mod#environment-variables) support
 	* Defaulted to `sum.golang.org` (just like what Go is doing right now)
-* Built-in [`GONOSUMDB`](https://golang.org/ref/mod#environment-variables) support
-* Built-in [`GOPRIVATE`](https://golang.org/ref/mod#environment-variables) support
-* Supports serving under other Go module proxies by setting [`GOPROXY`](https://golang.org/ref/mod#environment-variables)
+* Built-in [`GONOSUMDB`](https://go.dev/ref/mod#environment-variables) support
+* Built-in [`GOPRIVATE`](https://go.dev/ref/mod#environment-variables) support
+* Supports serving under other Go module proxies by setting [`GOPROXY`](https://go.dev/ref/mod#environment-variables)
 * Supports [proxying checksum databases](http://golang.org/design/25530-sumdb#proxying-a-checksum-database)
 
 ## Installation
@@ -43,7 +43,7 @@ $ go install github.com/goproxy/goproxy/cmd/goproxy@latest
 
 done.
 
-> The only requirement is the [Go](https://golang.org), at least v1.13.
+> The only requirement is the [Go](https://go.dev), at least v1.13.
 
 ## Quick Start
 
