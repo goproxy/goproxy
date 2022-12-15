@@ -373,42 +373,45 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	var isLatest, isList bool
-	if isLatest = strings.HasSuffix(name, "/@latest"); isLatest {
-		name = fmt.Sprint(
-			strings.TrimSuffix(name, "latest"),
-			"v/latest.info",
-		)
-	} else if isList = strings.HasSuffix(name, "/@v/list"); isList {
-		name = fmt.Sprint(
-			strings.TrimSuffix(name, "list"),
-			"latest.info",
-		)
+	var (
+		nameExt = path.Ext(name)
+
+		isLatest, isList                        bool
+		escapedModulePath, escapedModuleVersion string
+	)
+
+	if strings.HasSuffix(name, "/@latest") {
+		isLatest = true
+		escapedModulePath = strings.TrimSuffix(name, "/@latest")
+		escapedModuleVersion = "latest"
+	} else if strings.HasSuffix(name, "/@v/list") {
+		isList = true
+		escapedModulePath = strings.TrimSuffix(name, "/@v/list")
+		escapedModuleVersion = "latest"
+	} else {
+		switch nameExt {
+		case ".info", ".mod", ".zip":
+		default:
+			responseNotFound(rw, 86400)
+			return
+		}
+
+		nameParts := strings.Split(name, "/@v/")
+		if len(nameParts) != 2 {
+			responseNotFound(rw, 86400)
+			return
+		}
+
+		escapedModulePath = nameParts[0]
+		escapedModuleVersion = strings.TrimSuffix(nameParts[1], nameExt)
 	}
 
-	nameParts := strings.Split(name, "/@v/")
-	if len(nameParts) != 2 {
-		responseNotFound(rw, 86400)
-		return
-	}
-
-	escapedModulePath := nameParts[0]
 	modulePath, err := module.UnescapePath(escapedModulePath)
 	if err != nil {
 		responseNotFound(rw, 86400)
 		return
 	}
 
-	nameBase := nameParts[1]
-	nameExt := path.Ext(nameBase)
-	switch nameExt {
-	case ".info", ".mod", ".zip":
-	default:
-		responseNotFound(rw, 86400)
-		return
-	}
-
-	escapedModuleVersion := strings.TrimSuffix(nameBase, nameExt)
 	moduleVersion, err := module.UnescapeVersion(escapedModuleVersion)
 	if err != nil {
 		responseNotFound(rw, 86400)
@@ -425,15 +428,22 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 	defer os.RemoveAll(goproxyRoot)
 
-	if isList {
-		moduleVersionListCacheName := fmt.Sprint(
-			strings.TrimSuffix(name, path.Base(name)),
-			"list",
-		)
+	if isLatest || isList || !semver.IsValid(moduleVersion) {
+		var operation string
+		if isLatest {
+			operation = "latest"
+		} else if isList {
+			operation = "list"
+		} else if nameExt == ".info" {
+			operation = "lookup"
+		} else {
+			responseNotFound(rw, 86400)
+			return
+		}
 
 		mr, err := g.mod(
 			req.Context(),
-			"list",
+			operation,
 			goproxyRoot,
 			modulePath,
 			moduleVersion,
@@ -441,7 +451,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		if err != nil {
 			if content, err := g.cache(
 				req.Context(),
-				moduleVersionListCacheName,
+				name,
 			); err == nil {
 				b, err := ioutil.ReadAll(content)
 				content.Close()
@@ -458,7 +468,16 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 					return
 				}
 
-				responseString(rw, http.StatusOK, 60, string(b))
+				if isList {
+					responseString(
+						rw,
+						http.StatusOK,
+						60,
+						string(b),
+					)
+				} else {
+					responseJSON(rw, http.StatusOK, 60, b)
+				}
 
 				return
 			} else if !errors.Is(err, os.ErrNotExist) {
@@ -471,7 +490,8 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			}
 
 			g.logErrorf(
-				"failed to list module versions: %s",
+				"failed to %s module version: %s",
+				operation,
 				prefixToIfNotIn(err.Error(), modAtVer),
 			)
 			responseModError(rw, err, true)
@@ -479,11 +499,28 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			return
 		}
 
-		moduleVersionList := strings.Join(mr.Versions, "\n")
+		var content []byte
+		if isList {
+			content = []byte(strings.Join(mr.Versions, "\n"))
+		} else if content, err = json.Marshal(struct {
+			Version string
+			Time    time.Time
+		}{
+			mr.Version,
+			mr.Time,
+		}); err != nil {
+			g.logErrorf(
+				"failed to marshal module version info: %s",
+				prefixToIfNotIn(err.Error(), modAtVer),
+			)
+			responseInternalServerError(rw)
+			return
+		}
+
 		if err := g.setCache(
 			req.Context(),
-			moduleVersionListCacheName,
-			strings.NewReader(moduleVersionList),
+			name,
+			bytes.NewReader(content),
 		); err != nil {
 			g.logErrorf(
 				"failed to cache module file: %s",
@@ -493,53 +530,11 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			return
 		}
 
-		responseString(rw, http.StatusOK, 60, moduleVersionList)
-
-		return
-	} else if !semver.IsValid(moduleVersion) {
-		var operation string
-		if isLatest {
-			operation = "latest"
-		} else if nameExt == ".info" {
-			operation = "lookup"
+		if isList {
+			responseString(rw, http.StatusOK, 60, string(content))
 		} else {
-			responseNotFound(rw, 86400)
-			return
+			responseJSON(rw, http.StatusOK, 60, content)
 		}
-
-		mr, err := g.mod(
-			req.Context(),
-			operation,
-			goproxyRoot,
-			modulePath,
-			moduleVersion,
-		)
-		if err != nil {
-			g.logErrorf(
-				"failed to resolve module version: %s",
-				prefixToIfNotIn(err.Error(), modAtVer),
-			)
-			responseModError(rw, err, true)
-			return
-		}
-
-		moduleVersionInfo, err := json.Marshal(struct {
-			Version string
-			Time    time.Time
-		}{
-			mr.Version,
-			mr.Time,
-		})
-		if err != nil {
-			g.logErrorf(
-				"failed to marshal module version info: %s",
-				prefixToIfNotIn(err.Error(), modAtVer),
-			)
-			responseInternalServerError(rw)
-			return
-		}
-
-		responseJSON(rw, http.StatusOK, 60, moduleVersionInfo)
 
 		return
 	}
