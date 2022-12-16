@@ -89,7 +89,9 @@ func newFetch(g *Goproxy, name, tempDir string) (*fetch, error) {
 			return nil, err
 		}
 
-		if !semver.IsValid(f.moduleVersion) {
+		if f.moduleVersion == "latest" {
+			return nil, errors.New("invalid version")
+		} else if !semver.IsValid(f.moduleVersion) {
 			if f.ops == fetchOpsDownloadInfo {
 				f.ops = fetchOpsResolve
 			} else {
