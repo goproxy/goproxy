@@ -4,7 +4,6 @@ Package goproxy implements a minimalist Go module proxy handler.
 package goproxy
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -290,20 +289,6 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		name = strings.TrimPrefix(name, "/")
 	}
 
-	if strings.HasPrefix(name, "sumdb/") {
-		g.serveSUMDB(rw, req, name)
-		return
-	}
-
-	g.serveFetch(rw, req, name)
-}
-
-// serveFetch serves fetch requests.
-func (g *Goproxy) serveFetch(
-	rw http.ResponseWriter,
-	req *http.Request,
-	name string,
-) {
 	tempDir, err := ioutil.TempDir(g.TempDir, "goproxy")
 	if err != nil {
 		g.logErrorf("failed to create temporary directory: %v", err)
@@ -312,6 +297,21 @@ func (g *Goproxy) serveFetch(
 	}
 	defer os.RemoveAll(tempDir)
 
+	if strings.HasPrefix(name, "sumdb/") {
+		g.serveSUMDB(rw, req, name, tempDir)
+		return
+	}
+
+	g.serveFetch(rw, req, name, tempDir)
+}
+
+// serveFetch serves fetch requests.
+func (g *Goproxy) serveFetch(
+	rw http.ResponseWriter,
+	req *http.Request,
+	name string,
+	tempDir string,
+) {
 	f, err := newFetch(g, name, tempDir)
 	if err != nil {
 		responseNotFound(rw, req, 86400, err)
@@ -423,6 +423,7 @@ func (g *Goproxy) serveSUMDB(
 	rw http.ResponseWriter,
 	req *http.Request,
 	name string,
+	tempDir string,
 ) {
 	sumdbURL, err := parseRawURL(strings.TrimPrefix(name, "sumdb/"))
 	if err != nil {
@@ -465,23 +466,62 @@ func (g *Goproxy) serveSUMDB(
 		return
 	}
 
-	var buf bytes.Buffer
+	tempFile, err := ioutil.TempFile(tempDir, "")
+	if err != nil {
+		g.logErrorf("failed to create temporary file: %v", err)
+		responseInternalServerError(rw, req)
+		return
+	}
+
 	if err := httpGet(
 		req.Context(),
 		g.httpClient,
 		appendURL(proxiedSUMDBURL, sumdbURL.Path).String(),
-		&buf,
+		tempFile,
 	); err != nil {
-		g.logErrorf(
-			"failed to proxy checksum database: %s: %v",
+		g.serveCache(
+			rw,
+			req,
 			name,
-			err,
+			contentType,
+			cacheControlMaxAge,
+			func() {
+				g.logErrorf(
+					"failed to proxy checksum database: "+
+						"%s: %v",
+					name,
+					err,
+				)
+				responseError(rw, req, err, true)
+			},
 		)
-		responseError(rw, req, err, false)
 		return
 	}
 
-	content := bytes.NewReader(buf.Bytes())
+	if err := tempFile.Close(); err != nil {
+		g.logErrorf("failed to close temporary file: %v", err)
+		responseInternalServerError(rw, req)
+		return
+	}
+
+	if err := g.setCacheFile(
+		req.Context(),
+		name,
+		tempFile.Name(),
+	); err != nil {
+		g.logErrorf("failed to cache module file: %s: %v", name, err)
+		responseInternalServerError(rw, req)
+		return
+	}
+
+	content, err := os.Open(tempFile.Name())
+	if err != nil {
+		g.logErrorf("failed to open temporary file: %s: %v", name, err)
+		responseInternalServerError(rw, req)
+		return
+	}
+	defer content.Close()
+
 	responseSuccess(rw, req, content, contentType, cacheControlMaxAge)
 }
 
