@@ -43,8 +43,9 @@ func TestSetResponseCacheControlHeader(t *testing.T) {
 }
 
 func TestResponseString(t *testing.T) {
+	req := httptest.NewRequest("", "/", nil)
 	rec := httptest.NewRecorder()
-	responseString(rec, http.StatusOK, 60, "foobar")
+	responseString(rec, req, http.StatusOK, 60, "foobar")
 	recr := rec.Result()
 	if want := http.StatusOK; recr.StatusCode != want {
 		t.Errorf("got %d, want %d", recr.StatusCode, want)
@@ -67,34 +68,10 @@ func TestResponseString(t *testing.T) {
 	}
 }
 
-func TestResponseJSON(t *testing.T) {
-	rec := httptest.NewRecorder()
-	responseJSON(rec, http.StatusOK, 60, []byte(`{"foo":"bar"}`))
-	recr := rec.Result()
-	if want := http.StatusOK; recr.StatusCode != want {
-		t.Errorf("got %d, want %d", recr.StatusCode, want)
-	}
-
-	recrCT := recr.Header.Get("Content-Type")
-	if want := "application/json; charset=utf-8"; recrCT != want {
-		t.Errorf("got %q, want %q", recrCT, want)
-	}
-
-	recrCC := recr.Header.Get("Cache-Control")
-	if want := "public, max-age=60"; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
-	}
-
-	if b, err := ioutil.ReadAll(recr.Body); err != nil {
-		t.Fatalf("unexpected error %q", err)
-	} else if want := `{"foo":"bar"}`; string(b) != want {
-		t.Errorf("got %q, want %q", b, want)
-	}
-}
-
 func TestResponseNotFound(t *testing.T) {
+	req := httptest.NewRequest("", "/", nil)
 	rec := httptest.NewRecorder()
-	responseNotFound(rec, 60)
+	responseNotFound(rec, req, 60)
 	recr := rec.Result()
 	if want := http.StatusNotFound; recr.StatusCode != want {
 		t.Errorf("got %d, want %d", recr.StatusCode, want)
@@ -117,7 +94,7 @@ func TestResponseNotFound(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	responseNotFound(rec, 60, "foobar")
+	responseNotFound(rec, req, 60, "foobar")
 	recr = rec.Result()
 	if want := http.StatusNotFound; recr.StatusCode != want {
 		t.Errorf("got %d, want %d", recr.StatusCode, want)
@@ -140,7 +117,7 @@ func TestResponseNotFound(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	responseNotFound(rec, 60, "bad request: foobar")
+	responseNotFound(rec, req, 60, "bad request: foobar")
 	recr = rec.Result()
 	if want := http.StatusNotFound; recr.StatusCode != want {
 		t.Errorf("got %d, want %d", recr.StatusCode, want)
@@ -163,7 +140,7 @@ func TestResponseNotFound(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	responseNotFound(rec, 60, "not found: foobar")
+	responseNotFound(rec, req, 60, "not found: foobar")
 	recr = rec.Result()
 	if want := http.StatusNotFound; recr.StatusCode != want {
 		t.Errorf("got %d, want %d", recr.StatusCode, want)
@@ -186,7 +163,7 @@ func TestResponseNotFound(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	responseNotFound(rec, 60, "gone: foobar")
+	responseNotFound(rec, req, 60, "gone: foobar")
 	recr = rec.Result()
 	if want := http.StatusNotFound; recr.StatusCode != want {
 		t.Errorf("got %d, want %d", recr.StatusCode, want)
@@ -210,8 +187,9 @@ func TestResponseNotFound(t *testing.T) {
 }
 
 func TestResponseMethodNotAllowed(t *testing.T) {
+	req := httptest.NewRequest("", "/", nil)
 	rec := httptest.NewRecorder()
-	responseMethodNotAllowed(rec, 60)
+	responseMethodNotAllowed(rec, req, 60)
 	recr := rec.Result()
 	if want := http.StatusMethodNotAllowed; recr.StatusCode != want {
 		t.Errorf("got %d, want %d", recr.StatusCode, want)
@@ -235,8 +213,9 @@ func TestResponseMethodNotAllowed(t *testing.T) {
 }
 
 func TestResponseInternalServerError(t *testing.T) {
+	req := httptest.NewRequest("", "/", nil)
 	rec := httptest.NewRecorder()
-	responseInternalServerError(rec)
+	responseInternalServerError(rec, req)
 	recr := rec.Result()
 	if want := http.StatusInternalServerError; recr.StatusCode != want {
 		t.Errorf("got %d, want %d", recr.StatusCode, want)
@@ -259,9 +238,10 @@ func TestResponseInternalServerError(t *testing.T) {
 	}
 }
 
-func TestResponseModError(t *testing.T) {
+func TestResponseError(t *testing.T) {
+	req := httptest.NewRequest("", "/", nil)
 	rec := httptest.NewRecorder()
-	responseModError(rec, notFoundError("cache insensitive"), false)
+	responseError(rec, req, notFoundError("cache insensitive"), false)
 	recr := rec.Result()
 	if want := http.StatusNotFound; recr.StatusCode != want {
 		t.Errorf("got %d, want %d", recr.StatusCode, want)
@@ -284,7 +264,7 @@ func TestResponseModError(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	responseModError(rec, notFoundError("cache sensitive"), true)
+	responseError(rec, req, notFoundError("cache sensitive"), true)
 	recr = rec.Result()
 	if want := http.StatusNotFound; recr.StatusCode != want {
 		t.Errorf("got %d, want %d", recr.StatusCode, want)
@@ -307,7 +287,7 @@ func TestResponseModError(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	responseModError(rec, notFoundError("not found: bad upstream"), false)
+	responseError(rec, req, notFoundError("not found: bad upstream"), false)
 	recr = rec.Result()
 	if want := http.StatusNotFound; recr.StatusCode != want {
 		t.Errorf("got %d, want %d", recr.StatusCode, want)
@@ -330,8 +310,9 @@ func TestResponseModError(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	responseModError(
+	responseError(
 		rec,
+		req,
 		notFoundError("not found: fetch timed out"),
 		false,
 	)
@@ -357,7 +338,7 @@ func TestResponseModError(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	responseModError(rec, errBadUpstream, false)
+	responseError(rec, req, errBadUpstream, false)
 	recr = rec.Result()
 	if want := http.StatusNotFound; recr.StatusCode != want {
 		t.Errorf("got %d, want %d", recr.StatusCode, want)
@@ -380,7 +361,7 @@ func TestResponseModError(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	responseModError(rec, errFetchTimedOut, false)
+	responseError(rec, req, errFetchTimedOut, false)
 	recr = rec.Result()
 	if want := http.StatusNotFound; recr.StatusCode != want {
 		t.Errorf("got %d, want %d", recr.StatusCode, want)
@@ -403,7 +384,7 @@ func TestResponseModError(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	responseModError(rec, errors.New("internal server error"), false)
+	responseError(rec, req, errors.New("internal server error"), false)
 	recr = rec.Result()
 	if want := http.StatusInternalServerError; recr.StatusCode != want {
 		t.Errorf("got %d, want %d", recr.StatusCode, want)

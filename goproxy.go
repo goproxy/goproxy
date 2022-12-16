@@ -6,8 +6,6 @@ package goproxy
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,13 +15,9 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"strconv"
 	"strings"
 	"sync"
-	"time"
 
-	"golang.org/x/mod/module"
-	"golang.org/x/mod/semver"
 	"golang.org/x/mod/sumdb"
 	"golang.org/x/net/idna"
 )
@@ -71,7 +65,7 @@ type Goproxy struct {
 	// GoBinMaxWorkers is the maximum number of commands allowed for the Go
 	// binary to execute at the same time.
 	//
-	// If the GoBinMaxWorkers is zero, there is no limitation.
+	// If the GoBinMaxWorkers is zero, there is no limit.
 	GoBinMaxWorkers int
 
 	// PathPrefix is the prefix of all request paths. It will be used to
@@ -90,7 +84,7 @@ type Goproxy struct {
 	// CacherMaxCacheBytes is the maximum number of bytes allowed for the
 	// [Goproxy.Cacher] to store a cache.
 	//
-	// If the CacherMaxCacheBytes is zero, there is no limitation.
+	// If the CacherMaxCacheBytes is zero, there is no limit.
 	CacherMaxCacheBytes int
 
 	// ProxiedSUMDBs is the list of proxied checksum databases. See
@@ -276,25 +270,17 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	switch req.Method {
 	case http.MethodGet, http.MethodHead:
 	default:
-		responseMethodNotAllowed(rw, 86400)
+		responseMethodNotAllowed(rw, req, 86400)
 		return
 	}
 
-	name, err := url.PathUnescape(req.URL.Path)
-	if err != nil ||
-		!strings.HasPrefix(name, "/") ||
-		strings.HasSuffix(name, "/") {
-		responseNotFound(rw, 86400)
+	name, _ := url.PathUnescape(req.URL.Path)
+	if name == "" ||
+		name[0] != '/' ||
+		name[len(name)-1] == '/' ||
+		strings.Contains(name, "..") {
+		responseNotFound(rw, req, 86400)
 		return
-	}
-
-	if strings.Contains(name, "..") {
-		for _, part := range strings.Split(name, "/") {
-			if part == ".." {
-				responseNotFound(rw, 86400)
-				return
-			}
-		}
 	}
 
 	name = path.Clean(name)
@@ -305,374 +291,228 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	if strings.HasPrefix(name, "sumdb/") {
-		name = strings.TrimPrefix(name, "sumdb/")
+		g.serveSUMDB(rw, req, name)
+		return
+	}
 
-		sumdbURL, err := parseRawURL(name)
-		if err != nil {
-			responseNotFound(rw, 86400)
-			return
-		}
+	g.serveFetch(rw, req, name)
+}
 
-		sumdbName, err := idna.Lookup.ToASCII(sumdbURL.Host)
-		if err != nil {
-			responseNotFound(rw, 86400)
-			return
-		}
+// serveFetch serves fetch requests.
+func (g *Goproxy) serveFetch(
+	rw http.ResponseWriter,
+	req *http.Request,
+	name string,
+) {
+	tempDir, err := ioutil.TempDir(g.TempDir, "goproxy")
+	if err != nil {
+		g.logErrorf("failed to create temporary directory: %v", err)
+		responseInternalServerError(rw, req)
+		return
+	}
+	defer os.RemoveAll(tempDir)
 
-		if g.proxiedSUMDBs[sumdbName] == nil {
-			responseNotFound(rw, 86400)
-			return
-		}
+	f, err := newFetch(g, name, tempDir)
+	if err != nil {
+		responseNotFound(rw, req, 86400, err)
+		return
+	}
 
-		var (
-			contentType        string
-			cacheControlMaxAge int
+	switch f.ops {
+	case fetchOpsDownloadInfo, fetchOpsDownloadMod, fetchOpsDownloadZip:
+		g.serveCache(rw, req, f.name, f.contentType, 604800, func() {
+			g.serveFetchDownload(rw, req, f)
+		})
+		return
+	}
+
+	fr, err := f.do(req.Context())
+	if err != nil {
+		g.serveCache(rw, req, f.name, f.contentType, 60, func() {
+			g.logErrorf(
+				"failed to %s module version: %s: %v",
+				f.ops,
+				f.name,
+				err,
+			)
+			responseError(rw, req, err, true)
+		})
+		return
+	}
+
+	content, err := fr.Open()
+	if err != nil {
+		g.logErrorf("failed to open fetch result: %s: %v", f.name, err)
+		responseInternalServerError(rw, req)
+		return
+	}
+	defer content.Close()
+
+	if err := g.setCache(req.Context(), f.name, content); err != nil {
+		g.logErrorf("failed to cache module file: %s: %v", f.name, err)
+		responseInternalServerError(rw, req)
+		return
+	} else if _, err := content.Seek(0, io.SeekStart); err != nil {
+		g.logErrorf(
+			"failed to seek fetch result content: %s: %v",
+			f.name,
+			err,
 		)
+		responseInternalServerError(rw, req)
+		return
+	}
 
-		if sumdbURL.Path == "/supported" {
-			setResponseCacheControlHeader(rw, 86400)
-			rw.Write(nil) // 200 OK
-			return
-		} else if sumdbURL.Path == "/latest" {
-			contentType = "text/plain; charset=utf-8"
-			cacheControlMaxAge = 3600
-		} else if strings.HasPrefix(sumdbURL.Path, "/lookup/") {
-			contentType = "text/plain; charset=utf-8"
-			cacheControlMaxAge = 86400
-		} else if strings.HasPrefix(sumdbURL.Path, "/tile/") {
-			contentType = "application/octet-stream"
-			cacheControlMaxAge = 86400
-		} else {
-			responseNotFound(rw, 86400)
-			return
+	responseSuccess(rw, req, content, f.contentType, 60)
+}
+
+// serveFetchDownload serves fetch download requests.
+func (g *Goproxy) serveFetchDownload(
+	rw http.ResponseWriter,
+	req *http.Request,
+	f *fetch,
+) {
+	fr, err := f.do(req.Context())
+	if err != nil {
+		g.logErrorf(
+			"failed to download module version: %s: %v",
+			f.name,
+			err,
+		)
+		responseError(rw, req, err, false)
+		return
+	}
+
+	nameWithoutExt := strings.TrimSuffix(f.name, path.Ext(f.name))
+	for _, cache := range []struct{ nameExt, localFile string }{
+		{".info", fr.Info},
+		{".mod", fr.GoMod},
+		{".zip", fr.Zip},
+	} {
+		if cache.localFile == "" {
+			continue
 		}
 
-		var buf bytes.Buffer
-		if err := httpGet(
+		if err := g.setCacheFile(
 			req.Context(),
-			g.httpClient,
-			appendURL(
-				g.proxiedSUMDBs[sumdbName],
-				sumdbURL.Path,
-			).String(),
-			&buf,
+			fmt.Sprint(nameWithoutExt, cache.nameExt),
+			cache.localFile,
 		); err != nil {
 			g.logErrorf(
-				"failed to proxy checksum database request: %s",
-				prefixToIfNotIn(err.Error(), name),
+				"failed to cache module file: %s: %v",
+				f.name,
+				err,
 			)
-			responseModError(rw, err, false)
+			responseInternalServerError(rw, req)
 			return
 		}
+	}
 
-		rw.Header().Set("Content-Type", contentType)
-		rw.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
-		setResponseCacheControlHeader(rw, cacheControlMaxAge)
-		buf.WriteTo(rw)
+	content, err := fr.Open()
+	if err != nil {
+		g.logErrorf("failed to open fetch result: %s: %v", f.name, err)
+		responseInternalServerError(rw, req)
+		return
+	}
+	defer content.Close()
 
+	responseSuccess(rw, req, content, f.contentType, 604800)
+}
+
+// serveSUMDB serves checksum database proxy requests.
+func (g *Goproxy) serveSUMDB(
+	rw http.ResponseWriter,
+	req *http.Request,
+	name string,
+) {
+	sumdbURL, err := parseRawURL(strings.TrimPrefix(name, "sumdb/"))
+	if err != nil {
+		responseNotFound(rw, req, 86400)
+		return
+	}
+
+	sumdbName, err := idna.Lookup.ToASCII(sumdbURL.Host)
+	if err != nil {
+		responseNotFound(rw, req, 86400)
+		return
+	}
+
+	proxiedSUMDBURL, ok := g.proxiedSUMDBs[sumdbName]
+	if !ok {
+		responseNotFound(rw, req, 86400)
 		return
 	}
 
 	var (
-		nameExt = path.Ext(name)
-
-		isLatest, isList                        bool
-		escapedModulePath, escapedModuleVersion string
+		contentType        string
+		cacheControlMaxAge int
 	)
 
-	if strings.HasSuffix(name, "/@latest") {
-		isLatest = true
-		escapedModulePath = strings.TrimSuffix(name, "/@latest")
-		escapedModuleVersion = "latest"
-	} else if strings.HasSuffix(name, "/@v/list") {
-		isList = true
-		escapedModulePath = strings.TrimSuffix(name, "/@v/list")
-		escapedModuleVersion = "latest"
-	} else {
-		switch nameExt {
-		case ".info", ".mod", ".zip":
-		default:
-			responseNotFound(rw, 86400)
-			return
-		}
-
-		nameParts := strings.Split(name, "/@v/")
-		if len(nameParts) != 2 {
-			responseNotFound(rw, 86400)
-			return
-		}
-
-		escapedModulePath = nameParts[0]
-		escapedModuleVersion = strings.TrimSuffix(nameParts[1], nameExt)
-	}
-
-	modulePath, err := module.UnescapePath(escapedModulePath)
-	if err != nil {
-		responseNotFound(rw, 86400)
+	if sumdbURL.Path == "/supported" {
+		setResponseCacheControlHeader(rw, 86400)
+		rw.Write(nil) // 200 OK
 		return
-	}
-
-	moduleVersion, err := module.UnescapeVersion(escapedModuleVersion)
-	if err != nil {
-		responseNotFound(rw, 86400)
-		return
-	}
-
-	modAtVer := fmt.Sprint(modulePath, "@", moduleVersion)
-
-	goproxyRoot, err := ioutil.TempDir(g.TempDir, "goproxy")
-	if err != nil {
-		g.logErrorf("failed to create temporary directory: %v", err)
-		responseInternalServerError(rw)
-		return
-	}
-	defer os.RemoveAll(goproxyRoot)
-
-	if isLatest || isList || !semver.IsValid(moduleVersion) {
-		var operation string
-		if isLatest {
-			operation = "latest"
-		} else if isList {
-			operation = "list"
-		} else if nameExt == ".info" {
-			operation = "lookup"
-		} else {
-			responseNotFound(rw, 86400)
-			return
-		}
-
-		mr, err := g.mod(
-			req.Context(),
-			operation,
-			goproxyRoot,
-			modulePath,
-			moduleVersion,
-		)
-		if err != nil {
-			if content, err := g.cache(
-				req.Context(),
-				name,
-			); err == nil {
-				b, err := ioutil.ReadAll(content)
-				content.Close()
-				if err != nil {
-					g.logErrorf(
-						"failed to get cached module "+
-							"file: %s",
-						prefixToIfNotIn(
-							err.Error(),
-							modAtVer,
-						),
-					)
-					responseInternalServerError(rw)
-					return
-				}
-
-				if isList {
-					responseString(
-						rw,
-						http.StatusOK,
-						60,
-						string(b),
-					)
-				} else {
-					responseJSON(rw, http.StatusOK, 60, b)
-				}
-
-				return
-			} else if !errors.Is(err, os.ErrNotExist) {
-				g.logErrorf(
-					"failed to get cached module file: %s",
-					prefixToIfNotIn(err.Error(), modAtVer),
-				)
-				responseInternalServerError(rw)
-				return
-			}
-
-			g.logErrorf(
-				"failed to %s module version: %s",
-				operation,
-				prefixToIfNotIn(err.Error(), modAtVer),
-			)
-			responseModError(rw, err, true)
-
-			return
-		}
-
-		var content []byte
-		if isList {
-			content = []byte(strings.Join(mr.Versions, "\n"))
-		} else if content, err = json.Marshal(struct {
-			Version string
-			Time    time.Time
-		}{
-			mr.Version,
-			mr.Time,
-		}); err != nil {
-			g.logErrorf(
-				"failed to marshal module version info: %s",
-				prefixToIfNotIn(err.Error(), modAtVer),
-			)
-			responseInternalServerError(rw)
-			return
-		}
-
-		if err := g.setCache(
-			req.Context(),
-			name,
-			bytes.NewReader(content),
-		); err != nil {
-			g.logErrorf(
-				"failed to cache module file: %s",
-				prefixToIfNotIn(err.Error(), modAtVer),
-			)
-			responseInternalServerError(rw)
-			return
-		}
-
-		if isList {
-			responseString(rw, http.StatusOK, 60, string(content))
-		} else {
-			responseJSON(rw, http.StatusOK, 60, content)
-		}
-
-		return
-	}
-
-	var content io.Reader
-	if rc, err := g.cache(req.Context(), name); err == nil {
-		defer rc.Close()
-		content = rc
-	} else if errors.Is(err, os.ErrNotExist) {
-		mr, err := g.mod(
-			req.Context(),
-			fmt.Sprint("download ", nameExt[1:]),
-			goproxyRoot,
-			modulePath,
-			moduleVersion,
-		)
-		if err != nil {
-			g.logErrorf(
-				"failed to download module file: %s",
-				prefixToIfNotIn(err.Error(), modAtVer),
-			)
-			responseModError(rw, err, false)
-			return
-		}
-
-		namePrefix := strings.TrimSuffix(name, nameExt)
-
-		if mr.Info != "" {
-			if err := g.setCacheFile(
-				req.Context(),
-				fmt.Sprint(namePrefix, ".info"),
-				mr.Info,
-			); err != nil {
-				g.logErrorf(
-					"failed to cache module file: %s",
-					prefixToIfNotIn(err.Error(), modAtVer),
-				)
-				responseInternalServerError(rw)
-				return
-			}
-		}
-
-		if mr.GoMod != "" {
-			if err := g.setCacheFile(
-				req.Context(),
-				fmt.Sprint(namePrefix, ".mod"),
-				mr.GoMod,
-			); err != nil {
-				g.logErrorf(
-					"failed to cache module file: %s",
-					prefixToIfNotIn(err.Error(), modAtVer),
-				)
-				responseInternalServerError(rw)
-				return
-			}
-		}
-
-		if mr.Zip != "" {
-			if err := g.setCacheFile(
-				req.Context(),
-				fmt.Sprint(namePrefix, ".zip"),
-				mr.Zip,
-			); err != nil {
-				g.logErrorf(
-					"failed to cache module file: %s",
-					prefixToIfNotIn(err.Error(), modAtVer),
-				)
-				responseInternalServerError(rw)
-				return
-			}
-		}
-
-		switch nameExt {
-		case ".info":
-			content, err = os.Open(mr.Info)
-		case ".mod":
-			content, err = os.Open(mr.GoMod)
-		case ".zip":
-			content, err = os.Open(mr.Zip)
-		}
-
-		if err != nil {
-			g.logErrorf(
-				"failed to open module file: %s",
-				prefixToIfNotIn(err.Error(), modAtVer),
-			)
-			responseInternalServerError(rw)
-			return
-		}
-		defer content.(*os.File).Close()
-	} else {
-		g.logErrorf(
-			"failed to get cached module file: %s",
-			prefixToIfNotIn(err.Error(), modAtVer),
-		)
-		responseInternalServerError(rw)
-		return
-	}
-
-	var contentType string
-	switch nameExt {
-	case ".info":
-		contentType = "application/json; charset=utf-8"
-	case ".mod":
+	} else if sumdbURL.Path == "/latest" {
 		contentType = "text/plain; charset=utf-8"
-	case ".zip":
-		contentType = "application/zip"
-	}
-
-	rw.Header().Set("Content-Type", contentType)
-
-	var modTime time.Time
-	if mt, ok := content.(interface{ ModTime() time.Time }); ok {
-		modTime = mt.ModTime()
-	}
-
-	if cs, ok := content.(interface{ Checksum() []byte }); ok {
-		rw.Header().Set("ETag", fmt.Sprintf(
-			"%q",
-			base64.StdEncoding.EncodeToString(cs.Checksum()),
-		))
-	}
-
-	setResponseCacheControlHeader(rw, 604800)
-
-	if content, ok := content.(io.ReadSeeker); ok {
-		http.ServeContent(rw, req, "", modTime, content)
+		cacheControlMaxAge = 3600
+	} else if strings.HasPrefix(sumdbURL.Path, "/lookup/") {
+		contentType = "text/plain; charset=utf-8"
+		cacheControlMaxAge = 86400
+	} else if strings.HasPrefix(sumdbURL.Path, "/tile/") {
+		contentType = "application/octet-stream"
+		cacheControlMaxAge = 86400
+	} else {
+		responseNotFound(rw, req, 86400)
 		return
 	}
 
-	if !modTime.IsZero() {
-		rw.Header().Set(
-			"Last-Modified",
-			modTime.UTC().Format(http.TimeFormat),
+	var buf bytes.Buffer
+	if err := httpGet(
+		req.Context(),
+		g.httpClient,
+		appendURL(proxiedSUMDBURL, sumdbURL.Path).String(),
+		&buf,
+	); err != nil {
+		g.logErrorf(
+			"failed to proxy checksum database: %s: %v",
+			name,
+			err,
 		)
+		responseError(rw, req, err, false)
+		return
 	}
 
-	io.Copy(rw, content)
+	content := bytes.NewReader(buf.Bytes())
+	responseSuccess(rw, req, content, contentType, cacheControlMaxAge)
+}
+
+// serveCache serves requests with cached module files.
+func (g *Goproxy) serveCache(
+	rw http.ResponseWriter,
+	req *http.Request,
+	name string,
+	contentType string,
+	cacheControlMaxAge int,
+	onNotFound func(),
+) {
+	content, err := g.cache(req.Context(), name)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) && onNotFound != nil {
+			onNotFound()
+			return
+		}
+
+		g.logErrorf(
+			"failed to get cached module file: %s: %v",
+			name,
+			err,
+		)
+		responseInternalServerError(rw, req)
+
+		return
+	}
+	defer content.Close()
+
+	responseSuccess(rw, req, content, contentType, cacheControlMaxAge)
 }
 
 // cache returns the matched cache for the name from the g.Cacher.
@@ -730,15 +570,6 @@ func (g *Goproxy) logErrorf(format string, v ...interface{}) {
 	} else {
 		log.Output(2, msg)
 	}
-}
-
-// prefixToIfNotIn adds the prefix to the s if it is not in the s.
-func prefixToIfNotIn(s, prefix string) string {
-	if strings.Contains(s, prefix) {
-		return s
-	}
-
-	return fmt.Sprint(prefix, ": ", s)
 }
 
 // stringSliceContains reports whether the ss contains the s.
