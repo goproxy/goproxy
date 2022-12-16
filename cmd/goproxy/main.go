@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -25,6 +26,7 @@ var (
 	proxiedSUMDBs       = flag.String("proxied-sumdbs", "", "comma-separated list of proxied checksum databases")
 	tempDir             = flag.String("temp-dir", os.TempDir(), "directory for storing temporary files")
 	insecure            = flag.Bool("insecure", false, "allow insecure TLS connections")
+	connectTimeout      = flag.Duration("connect-timeout", 0, "maximum amount of time (0 means no limit) will wait for an outgoing connection to establish")
 	fetchTimeout        = flag.Duration("fetch-timeout", 0, "maximum amount of time (0 means no limit) will wait for a fetch to complete")
 )
 
@@ -32,6 +34,9 @@ func main() {
 	flag.Parse()
 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = (&net.Dialer{
+		Timeout: *connectTimeout,
+	}).DialContext
 	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: *insecure}
 
 	g := &goproxy.Goproxy{
