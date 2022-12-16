@@ -445,7 +445,7 @@ type fetchResult struct {
 }
 
 // Open opens the content of the fr.
-func (fr *fetchResult) Open() (io.ReadSeekCloser, error) {
+func (fr *fetchResult) Open() (readSeekCloser, error) {
 	switch fr.f.ops {
 	case fetchOpsResolve:
 		info, err := json.Marshal(struct {
@@ -463,7 +463,7 @@ func (fr *fetchResult) Open() (io.ReadSeekCloser, error) {
 			io.ReadCloser
 			io.Seeker
 		}{
-			io.NopCloser(content),
+			nopCloser{content},
 			content,
 		}, nil
 	case fetchOpsList:
@@ -473,7 +473,7 @@ func (fr *fetchResult) Open() (io.ReadSeekCloser, error) {
 			io.ReadCloser
 			io.Seeker
 		}{
-			io.NopCloser(content),
+			nopCloser{content},
 			content,
 		}, nil
 	case fetchOpsDownloadInfo:

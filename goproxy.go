@@ -631,3 +631,26 @@ func globsMatchPath(globs, target string) bool {
 
 	return false
 }
+
+// readSeekCloser is the interface that groups the basic Read, Seek and Close
+// methods.
+//
+// TODO: Remove the readSeekCloser when the minimum supported Go version is
+// 1.16. See https://go.dev/doc/go1.16#io.
+type readSeekCloser interface {
+	io.Reader
+	io.Seeker
+	io.Closer
+}
+
+// nopCloser is an [io.ReadCloser] with a no-op Close method wrapping an
+// [io.Reader].
+//
+// TODO: Remove the nopCloser when the minimum supported Go version is 1.16. See
+// https://go.dev/doc/go1.16#io.
+type nopCloser struct {
+	io.Reader
+}
+
+// Close implements the [io.Closer].
+func (nopCloser) Close() error { return nil }
