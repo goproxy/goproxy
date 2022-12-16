@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -318,8 +319,41 @@ func (g *Goproxy) serveFetch(
 		return
 	}
 
+	var isDownload bool
 	switch f.ops {
 	case fetchOpsDownloadInfo, fetchOpsDownloadMod, fetchOpsDownloadZip:
+		isDownload = true
+	}
+
+	noFetch, _ := strconv.ParseBool(req.Header.Get("Disable-Module-Fetch"))
+	if noFetch {
+		var cacheControlMaxAge int
+		if isDownload {
+			cacheControlMaxAge = 604800
+		} else {
+			cacheControlMaxAge = 60
+		}
+
+		g.serveCache(
+			rw,
+			req,
+			f.name,
+			f.contentType,
+			cacheControlMaxAge,
+			func() {
+				responseNotFound(
+					rw,
+					req,
+					60,
+					"temporarily unavailable",
+				)
+			},
+		)
+
+		return
+	}
+
+	if isDownload {
 		g.serveCache(rw, req, f.name, f.contentType, 604800, func() {
 			g.serveFetchDownload(rw, req, f)
 		})
