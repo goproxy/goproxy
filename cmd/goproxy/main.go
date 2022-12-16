@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"flag"
@@ -24,26 +25,41 @@ var (
 	proxiedSUMDBs       = flag.String("proxied-sumdbs", "", "comma-separated list of proxied checksum databases")
 	tempDir             = flag.String("temp-dir", os.TempDir(), "directory for storing temporary files")
 	insecure            = flag.Bool("insecure", false, "allow insecure TLS connections")
+	fetchTimeout        = flag.Duration("fetch-timeout", 0, "maximum amount of time (0 means no limit) will wait for a fetch to complete")
 )
 
 func main() {
 	flag.Parse()
 
-	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{
-		InsecureSkipVerify: *insecure,
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: *insecure}
+
+	g := &goproxy.Goproxy{
+		GoBinName:           *goBinName,
+		GoBinMaxWorkers:     *goBinMaxWorkers,
+		PathPrefix:          *pathPrefix,
+		Cacher:              goproxy.DirCacher(*cacherDir),
+		CacherMaxCacheBytes: *cacherMaxCacheBytes,
+		ProxiedSUMDBs:       strings.Split(*proxiedSUMDBs, ","),
+		Transport:           transport,
+		TempDir:             *tempDir,
 	}
 
-	server := &http.Server{
-		Addr: *address,
-		Handler: &goproxy.Goproxy{
-			GoBinName:           *goBinName,
-			GoBinMaxWorkers:     *goBinMaxWorkers,
-			PathPrefix:          *pathPrefix,
-			Cacher:              goproxy.DirCacher(*cacherDir),
-			CacherMaxCacheBytes: *cacherMaxCacheBytes,
-			ProxiedSUMDBs:       strings.Split(*proxiedSUMDBs, ","),
-			TempDir:             *tempDir,
-		},
+	server := &http.Server{Addr: *address}
+	if *fetchTimeout == 0 {
+		server.Handler = g
+	} else {
+		server.Handler = http.HandlerFunc(func(
+			rw http.ResponseWriter,
+			req *http.Request,
+		) {
+			ctx, cancel := context.WithTimeout(
+				req.Context(),
+				*fetchTimeout,
+			)
+			g.ServeHTTP(rw, req.WithContext(ctx))
+			cancel()
+		})
 	}
 
 	var err error
