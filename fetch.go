@@ -218,8 +218,6 @@ func (f *fetch) doProxy(
 		if !semver.IsValid(r.Version) || r.Time.IsZero() {
 			return nil, notFoundError("invalid info response")
 		}
-
-		r.Time = r.Time.UTC()
 	case fetchOpsList:
 		b, err := ioutil.ReadFile(tempFile.Name())
 		if err != nil {
@@ -367,8 +365,6 @@ func (f *fetch) doDirect(ctx context.Context) (*fetchResult, error) {
 	}
 
 	switch f.ops {
-	case fetchOpsResolve:
-		r.Time = r.Time.UTC()
 	case fetchOpsList:
 		sort.Slice(r.Versions, func(i, j int) bool {
 			return semver.Compare(r.Versions[i], r.Versions[j]) < 0
@@ -450,17 +446,7 @@ type fetchResult struct {
 func (fr *fetchResult) Open() (readSeekCloser, error) {
 	switch fr.f.ops {
 	case fetchOpsResolve:
-		info, err := json.Marshal(struct {
-			Version string
-			Time    time.Time
-		}{
-			fr.Version,
-			fr.Time,
-		})
-		if err != nil {
-			return nil, err
-		}
-		content := bytes.NewReader(info)
+		content := strings.NewReader(marshalInfo(fr.Version, fr.Time))
 		return struct {
 			io.ReadCloser
 			io.Seeker
@@ -489,6 +475,15 @@ func (fr *fetchResult) Open() (readSeekCloser, error) {
 	return nil, errors.New("invalid fetch operation")
 }
 
+// marshalInfo marshals the version and t as info.
+func marshalInfo(version string, t time.Time) string {
+	return fmt.Sprintf(
+		`{"Version":%q,"Time":%q}`,
+		version,
+		t.UTC().Format(time.RFC3339Nano),
+	)
+}
+
 // checkAndFormatInfoFile checks and formats the info file targeted by the name.
 //
 // If the tempDir is not empty, a new temporary info file will be created in it.
@@ -501,7 +496,7 @@ func checkAndFormatInfoFile(name, tempDir string) (string, error) {
 
 	var info struct {
 		Version string
-		Time    string
+		Time    time.Time
 	}
 
 	if err := json.Unmarshal(b, &info); err != nil {
@@ -511,29 +506,11 @@ func checkAndFormatInfoFile(name, tempDir string) (string, error) {
 		))
 	}
 
-	if !semver.IsValid(info.Version) || info.Time == "" {
+	if !semver.IsValid(info.Version) || info.Time.IsZero() {
 		return "", notFoundError("invalid info file")
 	}
 
-	t, err := time.Parse(time.RFC3339Nano, info.Time)
-	if err != nil {
-		return "", notFoundError(fmt.Sprintf(
-			"invalid info file: %v",
-			err,
-		))
-	}
-
-	fb, err := json.Marshal(struct {
-		Version string
-		Time    time.Time
-	}{
-		Version: info.Version,
-		Time:    t.UTC(),
-	})
-	if err != nil {
-		return "", err
-	}
-
+	fb := []byte(marshalInfo(info.Version, info.Time))
 	if bytes.Equal(fb, b) {
 		return name, nil
 	}
