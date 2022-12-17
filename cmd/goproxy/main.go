@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/goproxy/goproxy"
 )
@@ -26,7 +27,7 @@ var (
 	proxiedSUMDBs       = flag.String("proxied-sumdbs", "", "comma-separated list of proxied checksum databases")
 	tempDir             = flag.String("temp-dir", os.TempDir(), "directory for storing temporary files")
 	insecure            = flag.Bool("insecure", false, "allow insecure TLS connections")
-	connectTimeout      = flag.Duration("connect-timeout", 0, "maximum amount of time (0 means no limit) will wait for an outgoing connection to establish")
+	connectTimeout      = flag.Duration("connect-timeout", 30*time.Second, "maximum amount of time (0 means no limit) will wait for an outgoing connection to establish")
 	fetchTimeout        = flag.Duration("fetch-timeout", 0, "maximum amount of time (0 means no limit) will wait for a fetch to complete")
 )
 
@@ -35,7 +36,8 @@ func main() {
 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.DialContext = (&net.Dialer{
-		Timeout: *connectTimeout,
+		Timeout:   *connectTimeout,
+		KeepAlive: 30 * time.Second,
 	}).DialContext
 	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: *insecure}
 
