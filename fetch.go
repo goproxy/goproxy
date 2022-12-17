@@ -455,8 +455,7 @@ func (fr *fetchResult) Open() (readSeekCloser, error) {
 			content,
 		}, nil
 	case fetchOpsList:
-		list := strings.Join(fr.Versions, "\n")
-		content := strings.NewReader(list)
+		content := strings.NewReader(strings.Join(fr.Versions, "\n"))
 		return struct {
 			io.ReadCloser
 			io.Seeker
