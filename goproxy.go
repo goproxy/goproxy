@@ -19,7 +19,6 @@ import (
 	"sync"
 
 	"golang.org/x/mod/sumdb"
-	"golang.org/x/net/idna"
 )
 
 // Goproxy is the top-level struct of this project.
@@ -234,10 +233,7 @@ func (g *Goproxy) load() {
 			continue
 		}
 
-		sumdbName, err := idna.Lookup.ToASCII(sumdbParts[0])
-		if err != nil {
-			continue
-		}
+		sumdbName := sumdbParts[0]
 
 		rawSUMDBURL := sumdbName
 		if len(sumdbParts) > 1 {
@@ -465,13 +461,7 @@ func (g *Goproxy) serveSUMDB(
 		return
 	}
 
-	sumdbName, err := idna.Lookup.ToASCII(sumdbURL.Host)
-	if err != nil {
-		responseNotFound(rw, req, 86400)
-		return
-	}
-
-	proxiedSUMDBURL, ok := g.proxiedSUMDBs[sumdbName]
+	proxiedSUMDBURL, ok := g.proxiedSUMDBs[sumdbURL.Host]
 	if !ok {
 		responseNotFound(rw, req, 86400)
 		return
