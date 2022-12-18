@@ -39,6 +39,8 @@ $ # Use it programmatically (RECOMMENDED).
 $ go get github.com/goproxy/goproxy
 $ # Or use our minimalist CLI implementation.
 $ go install github.com/goproxy/goproxy/cmd/goproxy@latest
+$ # Or use our minimalist Docker image.
+$ docker pull ghcr.io/goproxy/goproxy
 ```
 
 done.
