@@ -56,7 +56,7 @@ func newFetch(g *Goproxy, name, tempDir string) (*fetch, error) {
 		f.moduleVersion = "latest"
 		f.contentType = "text/plain; charset=utf-8"
 	} else {
-		nameParts := strings.Split(name, "/@v/")
+		nameParts := strings.SplitN(name, "/@v/", 2)
 		if len(nameParts) != 2 {
 			return nil, errors.New("missing /@v/")
 		}
@@ -64,6 +64,10 @@ func newFetch(g *Goproxy, name, tempDir string) (*fetch, error) {
 		escapedModulePath = nameParts[0]
 
 		nameExt := path.Ext(nameParts[1])
+		escapedModuleVersion := strings.TrimSuffix(
+			nameParts[1],
+			nameExt,
+		)
 		switch nameExt {
 		case ".info":
 			f.ops = fetchOpsDownloadInfo
@@ -74,6 +78,11 @@ func newFetch(g *Goproxy, name, tempDir string) (*fetch, error) {
 		case ".zip":
 			f.ops = fetchOpsDownloadZip
 			f.contentType = "application/zip"
+		case "":
+			return nil, fmt.Errorf(
+				"no file extension in filename %q",
+				escapedModuleVersion,
+			)
 		default:
 			return nil, fmt.Errorf(
 				"unexpected extension %q",
@@ -83,7 +92,7 @@ func newFetch(g *Goproxy, name, tempDir string) (*fetch, error) {
 
 		var err error
 		f.moduleVersion, err = module.UnescapeVersion(
-			strings.TrimSuffix(nameParts[1], nameExt),
+			escapedModuleVersion,
 		)
 		if err != nil {
 			return nil, err

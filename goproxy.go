@@ -125,9 +125,8 @@ type Goproxy struct {
 
 // load loads the stuff of the g up.
 func (g *Goproxy) load() {
-	if g.GoBinName != "" {
-		g.goBinName = g.GoBinName
-	} else {
+	g.goBinName = g.GoBinName
+	if g.goBinName == "" {
 		g.goBinName = "go"
 	}
 
@@ -138,12 +137,9 @@ func (g *Goproxy) load() {
 
 	g.goBinEnv = map[string]string{}
 	for _, env := range goBinEnv {
-		parts := strings.SplitN(env, "=", 2)
-		if len(parts) != 2 {
-			continue
+		if envParts := strings.SplitN(env, "=", 2); len(envParts) == 2 {
+			g.goBinEnv[envParts[0]] = envParts[1]
 		}
-
-		g.goBinEnv[parts[0]] = parts[1]
 	}
 
 	var envGOPROXY string
@@ -192,12 +188,9 @@ func (g *Goproxy) load() {
 
 	var noproxies []string
 	for _, noproxy := range strings.Split(g.goBinEnv["GONOPROXY"], ",") {
-		noproxy = strings.TrimSpace(noproxy)
-		if noproxy == "" {
-			continue
+		if noproxy = strings.TrimSpace(noproxy); noproxy != "" {
+			noproxies = append(noproxies, noproxy)
 		}
-
-		noproxies = append(noproxies, noproxy)
 	}
 
 	if len(noproxies) > 0 {
@@ -210,12 +203,9 @@ func (g *Goproxy) load() {
 
 	var nosumdbs []string
 	for _, nosumdb := range strings.Split(g.goBinEnv["GONOSUMDB"], ",") {
-		nosumdb = strings.TrimSpace(nosumdb)
-		if nosumdb == "" {
-			continue
+		if nosumdb = strings.TrimSpace(nosumdb); nosumdb != "" {
+			nosumdbs = append(nosumdbs, nosumdb)
 		}
-
-		nosumdbs = append(nosumdbs, nosumdb)
 	}
 
 	if len(nosumdbs) > 0 {
@@ -248,10 +238,7 @@ func (g *Goproxy) load() {
 		g.proxiedSUMDBs[sumdbName] = sumdbURL
 	}
 
-	g.httpClient = &http.Client{
-		Transport: g.Transport,
-	}
-
+	g.httpClient = &http.Client{Transport: g.Transport}
 	g.sumdbClient = sumdb.NewClient(&sumdbClientOps{
 		envGOPROXY: g.goBinEnv["GOPROXY"],
 		envGOSUMDB: g.goBinEnv["GOSUMDB"],
