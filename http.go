@@ -2,6 +2,7 @@ package goproxy
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -11,7 +12,6 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -68,18 +68,7 @@ func httpGet(
 
 		res, err := httpClient.Do(req)
 		if err != nil {
-			if errors.Is(err, context.DeadlineExceeded) {
-				return err
-			}
-
-			if t, ok := err.(interface {
-				Timeout() bool
-			}); ok && t.Timeout() {
-				lastError = err
-				continue
-			}
-
-			if errors.Is(err, syscall.ECONNRESET) {
+			if isRetryableHTTPClientDoError(err) {
 				lastError = err
 				continue
 			}
@@ -119,18 +108,40 @@ func httpGet(
 			continue
 		}
 
-		lastError = fmt.Errorf(
+		return fmt.Errorf(
 			"GET %s: %s: %s",
 			redactedURL(req.URL),
 			res.Status,
 			b,
 		)
-		if res.StatusCode != http.StatusInternalServerError {
-			return lastError
-		}
 	}
 
 	return lastError
+}
+
+// isRetryableHTTPClientDoError reports whether the err is a retryable error
+// returned by the [http.Client.Do].
+func isRetryableHTTPClientDoError(err error) bool {
+	if errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+
+	if ue, ok := err.(*url.Error); ok {
+		e := ue.Unwrap()
+
+		switch e.(type) {
+		case x509.UnknownAuthorityError:
+			return false
+		}
+
+		switch e.Error() {
+		case "http: server gave HTTP response to HTTPS client":
+			return false
+		}
+	}
+
+	return true
 }
 
 // parseRawURL parses the rawURL.
