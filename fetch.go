@@ -124,61 +124,29 @@ func newFetch(g *Goproxy, name, tempDir string) (*fetch, error) {
 
 // do executes the f.
 func (f *fetch) do(ctx context.Context) (*fetchResult, error) {
-	tryDirect := globsMatchPath(f.g.goBinEnv["GONOPROXY"], f.modulePath)
-
-	var proxyError error
-	for goproxy := f.g.goBinEnv["GOPROXY"]; goproxy != "" && !tryDirect; {
-		var (
-			proxy           string
-			fallBackOnError bool
-		)
-
-		if i := strings.IndexAny(goproxy, ",|"); i >= 0 {
-			proxy = goproxy[:i]
-			fallBackOnError = goproxy[i] == '|'
-			goproxy = goproxy[i+1:]
-		} else {
-			proxy = goproxy
-			goproxy = ""
-		}
-
-		switch proxy {
-		case "direct":
-			tryDirect = true
-			continue
-		case "off":
-			// go/src/cmd/go/internal/modfetch.errProxyOff
-			return nil, notFoundError(
-				"module lookup disabled by GOPROXY=off",
-			)
-		}
-
-		r, err := f.doProxy(ctx, proxy)
-		if err != nil {
-			if fallBackOnError || errors.Is(err, errNotFound) {
-				proxyError = err
-				continue
-			}
-
-			return nil, err
-		}
-
-		return r, nil
+	if globsMatchPath(f.g.goBinEnv["GONOPROXY"], f.modulePath) {
+		return f.doDirect(ctx)
 	}
 
-	if !tryDirect {
-		if proxyError != nil {
-			return nil, proxyError
-		}
-
-		return nil, notFoundError(fmt.Sprintf(
-			"%s: invalid version: unknown revision %s",
-			f.modAtVer,
-			f.moduleVersion,
-		))
+	var r *fetchResult
+	if err := walkGOPROXY(f.g.goBinEnv["GOPROXY"], func(
+		proxy string,
+	) error {
+		var err error
+		r, err = f.doProxy(ctx, proxy)
+		return err
+	}, func() error {
+		var err error
+		r, err = f.doDirect(ctx)
+		return err
+	}, func() error {
+		// go/src/cmd/go/internal/modfetch.errProxyOff
+		return notFoundError("module lookup disabled by GOPROXY=off")
+	}); err != nil {
+		return nil, err
 	}
 
-	return f.doDirect(ctx)
+	return r, nil
 }
 
 // doProxy executes the f via the proxy.
@@ -352,20 +320,18 @@ func (f *fetch) doDirect(ctx context.Context) (*fetchResult, error) {
 			return nil, err
 		}
 
-		var errorMessage string
+		var msg string
 		for _, line := range strings.Split(string(output), "\n") {
-			if strings.HasPrefix(line, "go: finding") ||
-				strings.HasPrefix(line, "\tserver response:") {
-				continue
+			if !strings.HasPrefix(line, "go: finding") {
+				msg = fmt.Sprint(msg, line, "\n")
 			}
-
-			errorMessage = fmt.Sprint(errorMessage, line, "\n")
 		}
 
-		errorMessage = strings.TrimPrefix(errorMessage, "go list -m: ")
-		errorMessage = strings.TrimRight(errorMessage, "\n")
+		msg = strings.TrimPrefix(msg, "go: ")
+		msg = strings.TrimPrefix(msg, "go list -m: ")
+		msg = strings.TrimRight(msg, "\n")
 
-		return nil, notFoundError(errorMessage)
+		return nil, notFoundError(msg)
 	}
 
 	r := &fetchResult{f: f}
@@ -459,19 +425,13 @@ func (fr *fetchResult) Open() (readSeekCloser, error) {
 		return struct {
 			io.ReadCloser
 			io.Seeker
-		}{
-			nopCloser{content},
-			content,
-		}, nil
+		}{nopCloser{content}, content}, nil
 	case fetchOpsList:
 		content := strings.NewReader(strings.Join(fr.Versions, "\n"))
 		return struct {
 			io.ReadCloser
 			io.Seeker
-		}{
-			nopCloser{content},
-			content,
-		}, nil
+		}{nopCloser{content}, content}, nil
 	case fetchOpsDownloadInfo:
 		return os.Open(fr.Info)
 	case fetchOpsDownloadMod:

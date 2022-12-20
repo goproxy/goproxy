@@ -461,7 +461,7 @@ func (g *Goproxy) serveSUMDB(
 
 	if sumdbURL.Path == "/supported" {
 		setResponseCacheControlHeader(rw, 86400)
-		rw.Write(nil) // 200 OK
+		rw.WriteHeader(http.StatusOK)
 		return
 	} else if sumdbURL.Path == "/latest" {
 		contentType = "text/plain; charset=utf-8"
@@ -547,7 +547,7 @@ func (g *Goproxy) serveCache(
 ) {
 	content, err := g.cache(req.Context(), name)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) && onNotFound != nil {
+		if errors.Is(err, os.ErrNotExist) {
 			onNotFound()
 			return
 		}
@@ -621,6 +621,55 @@ func (g *Goproxy) logErrorf(format string, v ...interface{}) {
 	} else {
 		log.Output(2, msg)
 	}
+}
+
+// walkGOPROXY walks the proxy list parsed from the goproxy.
+func walkGOPROXY(
+	goproxy string,
+	onProxy func(proxy string) error,
+	onDirect func() error,
+	onOff func() error,
+) error {
+	if goproxy == "" {
+		return errors.New("missing GOPROXY")
+	}
+
+	var proxyError error
+	for goproxy != "" {
+		var (
+			proxy           string
+			fallBackOnError bool
+		)
+
+		if i := strings.IndexAny(goproxy, ",|"); i >= 0 {
+			proxy = goproxy[:i]
+			fallBackOnError = goproxy[i] == '|'
+			goproxy = goproxy[i+1:]
+		} else {
+			proxy = goproxy
+			goproxy = ""
+		}
+
+		switch proxy {
+		case "direct":
+			return onDirect()
+		case "off":
+			return onOff()
+		}
+
+		if err := onProxy(proxy); err != nil {
+			if fallBackOnError || errors.Is(err, errNotFound) {
+				proxyError = err
+				continue
+			}
+
+			return err
+		}
+
+		return nil
+	}
+
+	return proxyError
 }
 
 // stringSliceContains reports whether the ss contains the s.

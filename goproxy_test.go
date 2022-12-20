@@ -1,6 +1,7 @@
 package goproxy
 
 import (
+	"errors"
 	"os"
 	"testing"
 )
@@ -14,7 +15,7 @@ func TestGoproxyLoad(t *testing.T) {
 		"GOPRIVATE",
 	} {
 		if err := os.Setenv(key, ""); err != nil {
-			t.Fatal("expected error")
+			t.Fatalf("unexpected error %v", err)
 		}
 	}
 
@@ -166,6 +167,232 @@ func TestGoproxyLoad(t *testing.T) {
 	}
 	if got := g.proxiedSUMDBs["example.com"]; got != nil {
 		t.Errorf("got %v, want nil", got)
+	}
+}
+
+func TestWalkGOPROXY(t *testing.T) {
+	if err := walkGOPROXY("", nil, nil, nil); err == nil {
+		t.Fatal("expected error")
+	} else if got, want := err.Error(), "missing GOPROXY"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+
+	var (
+		onProxy  string
+		onDirect bool
+		onOff    bool
+	)
+	if err := walkGOPROXY("direct", func(proxy string) error {
+		onProxy = proxy
+		return nil
+	}, func() error {
+		onDirect = true
+		return nil
+	}, func() error {
+		onOff = true
+		return nil
+	}); err != nil {
+		t.Fatalf("unexpected error %v", err)
+	} else if got, want := onProxy, ""; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	} else if got, want := onDirect, true; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	} else if got, want := onOff, false; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+
+	onProxy = ""
+	onDirect = false
+	onOff = false
+	if err := walkGOPROXY("off", func(proxy string) error {
+		onProxy = proxy
+		return nil
+	}, func() error {
+		onDirect = true
+		return nil
+	}, func() error {
+		onOff = true
+		return nil
+	}); err != nil {
+		t.Fatalf("unexpected error %v", err)
+	} else if got, want := onProxy, ""; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	} else if got, want := onDirect, false; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	} else if got, want := onOff, true; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+
+	onProxy = ""
+	onDirect = false
+	onOff = false
+	if err := walkGOPROXY("direct,off", func(proxy string) error {
+		onProxy = proxy
+		return nil
+	}, func() error {
+		onDirect = true
+		return nil
+	}, func() error {
+		onOff = true
+		return nil
+	}); err != nil {
+		t.Fatalf("unexpected error %v", err)
+	} else if got, want := onProxy, ""; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	} else if got, want := onDirect, true; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	} else if got, want := onOff, false; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+
+	onProxy = ""
+	onDirect = false
+	onOff = false
+	if err := walkGOPROXY("off,direct", func(proxy string) error {
+		onProxy = proxy
+		return nil
+	}, func() error {
+		onDirect = true
+		return nil
+	}, func() error {
+		onOff = true
+		return nil
+	}); err != nil {
+		t.Fatalf("unexpected error %v", err)
+	} else if got, want := onProxy, ""; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	} else if got, want := onDirect, false; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	} else if got, want := onOff, true; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+
+	onProxy = ""
+	onDirect = false
+	onOff = false
+	if err := walkGOPROXY("https://example.com,direct", func(
+		proxy string,
+	) error {
+		onProxy = proxy
+		return nil
+	}, func() error {
+		onDirect = true
+		return nil
+	}, func() error {
+		onOff = true
+		return nil
+	}); err != nil {
+		t.Fatalf("unexpected error %v", err)
+	} else if got, want := onProxy, "https://example.com"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	} else if got, want := onDirect, false; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	} else if got, want := onOff, false; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+
+	onProxy = ""
+	onDirect = false
+	onOff = false
+	if err := walkGOPROXY("https://example.com,direct", func(
+		proxy string,
+	) error {
+		onProxy = proxy
+		return notFoundError("not found")
+	}, func() error {
+		onDirect = true
+		return nil
+	}, func() error {
+		onOff = true
+		return nil
+	}); err != nil {
+		t.Fatalf("unexpected error %v", err)
+	} else if got, want := onProxy, "https://example.com"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	} else if got, want := onDirect, true; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	} else if got, want := onOff, false; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+
+	onProxy = ""
+	onDirect = false
+	onOff = false
+	if err := walkGOPROXY(
+		"https://example.com|https://alt.example.com",
+		func(proxy string) error {
+			onProxy = proxy
+			if proxy == "https://alt.example.com" {
+				return nil
+			}
+			return errors.New("foobar")
+		},
+		func() error {
+			onDirect = true
+			return nil
+		},
+		func() error {
+			onOff = true
+			return nil
+		},
+	); err != nil {
+		t.Fatalf("unexpected error %v", err)
+	} else if got, want := onProxy, "https://alt.example.com"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	} else if got, want := onDirect, false; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	} else if got, want := onOff, false; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+
+	onProxy = ""
+	onDirect = false
+	onOff = false
+	if err := walkGOPROXY("https://example.com,direct", func(
+		proxy string,
+	) error {
+		onProxy = proxy
+		return errors.New("foobar")
+	}, func() error {
+		onDirect = true
+		return nil
+	}, func() error {
+		onOff = true
+		return nil
+	}); err == nil {
+		t.Fatal("expected error")
+	} else if got, want := err.Error(), "foobar"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	} else if got, want := onProxy, "https://example.com"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	} else if got, want := onDirect, false; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	} else if got, want := onOff, false; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+
+	onProxy = ""
+	onDirect = false
+	onOff = false
+	if err := walkGOPROXY("https://example.com", func(proxy string) error {
+		onProxy = proxy
+		return notFoundError("not found")
+	}, func() error {
+		onDirect = true
+		return nil
+	}, func() error {
+		onOff = true
+		return nil
+	}); err == nil {
+		t.Fatal("expected error")
+	} else if got, want := err.Error(), "not found"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	} else if got, want := onProxy, "https://example.com"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	} else if got, want := onDirect, false; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	} else if got, want := onOff, false; got != want {
+		t.Errorf("got %v, want %v", got, want)
 	}
 }
 
