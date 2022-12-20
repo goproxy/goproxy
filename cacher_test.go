@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -49,5 +50,17 @@ func TestDirCacher(t *testing.T) {
 
 	if err := rc.Close(); err != nil {
 		t.Fatalf("unexpected error %q", err)
+	}
+
+	dirCacher = DirCacher(filepath.Join(
+		tempDir,
+		filepath.FromSlash("a/b/c"),
+	))
+	if err := dirCacher.Set(
+		nil,
+		"d/e/f",
+		strings.NewReader("foobar"),
+	); err == nil {
+		t.Fatal("expected error")
 	}
 }

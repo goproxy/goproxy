@@ -2,6 +2,7 @@ package goproxy
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -38,14 +39,12 @@ func (dc DirCacher) Get(
 	ctx context.Context,
 	name string,
 ) (io.ReadCloser, error) {
-	fileName := filepath.Join(string(dc), filepath.FromSlash(name))
-
-	fileInfo, err := os.Stat(fileName)
+	f, err := os.Open(filepath.Join(string(dc), filepath.FromSlash(name)))
 	if err != nil {
 		return nil, err
 	}
 
-	file, err := os.Open(fileName)
+	fi, err := f.Stat()
 	if err != nil {
 		return nil, err
 	}
@@ -53,10 +52,7 @@ func (dc DirCacher) Get(
 	return &struct {
 		*os.File
 		os.FileInfo
-	}{
-		File:     file,
-		FileInfo: fileInfo,
-	}, nil
+	}{f, fi}, nil
 }
 
 // Set implements the [Cacher].
@@ -65,26 +61,29 @@ func (dc DirCacher) Set(
 	name string,
 	content io.ReadSeeker,
 ) error {
-	fileName := filepath.Join(string(dc), filepath.FromSlash(name))
+	file := filepath.Join(string(dc), filepath.FromSlash(name))
 
-	dir := filepath.Dir(fileName)
+	dir := filepath.Dir(file)
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return err
 	}
 
-	file, err := ioutil.TempFile(dir, "")
+	f, err := ioutil.TempFile(dir, fmt.Sprintf(
+		".%s.tmp*",
+		filepath.Base(file),
+	))
 	if err != nil {
 		return err
 	}
-	defer os.Remove(file.Name())
+	defer os.Remove(f.Name())
 
-	if _, err := io.Copy(file, content); err != nil {
+	if _, err := io.Copy(f, content); err != nil {
 		return err
 	}
 
-	if err := file.Close(); err != nil {
+	if err := f.Close(); err != nil {
 		return err
 	}
 
-	return os.Rename(file.Name(), fileName)
+	return os.Rename(f.Name(), file)
 }
