@@ -504,7 +504,7 @@ func verifyModFile(
 	modulePath string,
 	moduleVersion string,
 ) error {
-	modLines, err := sumdbClient.Lookup(
+	gosumLines, err := sumdbClient.Lookup(
 		modulePath,
 		fmt.Sprint(moduleVersion, "/go.mod"),
 	)
@@ -512,7 +512,7 @@ func verifyModFile(
 		return err
 	}
 
-	modHash, err := dirhash.Hash1(
+	modHash, err := dirhash.DefaultHash(
 		[]string{"go.mod"},
 		func(string) (io.ReadCloser, error) {
 			return os.Open(name)
@@ -523,7 +523,7 @@ func verifyModFile(
 	}
 
 	if !stringSliceContains(
-		modLines,
+		gosumLines,
 		fmt.Sprintf(
 			"%s %s/go.mod %s",
 			modulePath,
@@ -566,7 +566,7 @@ func verifyZipFile(
 	modulePath string,
 	moduleVersion string,
 ) error {
-	zipLines, err := sumdbClient.Lookup(modulePath, moduleVersion)
+	gosumLines, err := sumdbClient.Lookup(modulePath, moduleVersion)
 	if err != nil {
 		return err
 	}
@@ -577,7 +577,7 @@ func verifyZipFile(
 	}
 
 	if !stringSliceContains(
-		zipLines,
+		gosumLines,
 		fmt.Sprintf("%s %s %s", modulePath, moduleVersion, zipHash),
 	) {
 		return notFoundError(fmt.Sprintf(

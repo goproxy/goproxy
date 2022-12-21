@@ -4,10 +4,19 @@ import (
 	"archive/zip"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"io/ioutil"
+	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/mod/sumdb"
+	"golang.org/x/mod/sumdb/dirhash"
+	"golang.org/x/mod/sumdb/note"
 )
 
 func TestNewFetch(t *testing.T) {
@@ -581,6 +590,124 @@ func TestCheckModFile(t *testing.T) {
 	}
 }
 
+func TestVerifyModFile(t *testing.T) {
+	tempDir, err := ioutil.TempDir("", "goproxy.TestVerifyModFile")
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	modFile := filepath.Join(tempDir, "go.mod")
+	if err := ioutil.WriteFile(
+		modFile,
+		[]byte("module example.com/foo/bar"),
+		0600,
+	); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+
+	modFileWrong := filepath.Join(tempDir, "go.mod.wrong")
+	if err := ioutil.WriteFile(
+		modFileWrong,
+		[]byte("module example.com/foo/bar/v2"),
+		0600,
+	); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+
+	dirHash, err := dirhash.HashDir(
+		tempDir,
+		"example.com/foo/bar@v1.0.0",
+		dirhash.DefaultHash,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+
+	modHash, err := dirhash.DefaultHash(
+		[]string{"go.mod"},
+		func(string) (io.ReadCloser, error) {
+			return os.Open(modFile)
+		},
+	)
+
+	skey, vkey, err := note.GenerateKey(nil, "example.com")
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+
+	server := httptest.NewServer(sumdb.NewServer(sumdb.NewTestServer(
+		skey,
+		func(modulePath, moduleVersion string) ([]byte, error) {
+			if modulePath == "example.com/foo/bar" &&
+				moduleVersion == "v1.0.0" {
+				return []byte(fmt.Sprintf(
+					"%s %s %s\n%s %s/go.mod %s\n",
+					modulePath,
+					moduleVersion,
+					dirHash,
+					modulePath,
+					moduleVersion,
+					modHash,
+				)), nil
+			}
+			return nil, errors.New("unknown module version")
+		},
+	)))
+	defer server.Close()
+
+	g := &Goproxy{GoBinEnv: []string{
+		"GOSUMDB=" + vkey + " " + server.URL,
+	}}
+	g.load()
+
+	if err := verifyModFile(
+		g.sumdbClient,
+		modFile,
+		"example.com/foo/bar",
+		"v1.0.0",
+	); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+
+	if err := verifyModFile(
+		g.sumdbClient,
+		modFile,
+		"example.com/foo/bar",
+		"v1.1.0",
+	); err == nil {
+		t.Fatal("expected error")
+	} else if got, want := err.Error(),
+		"example.com/foo/bar@v1.1.0/go.mod: bad upstream"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+
+	if err := verifyModFile(
+		g.sumdbClient,
+		"",
+		"example.com/foo/bar",
+		"v1.0.0",
+	); err == nil {
+		t.Fatal("expected error")
+	} else if got, want := errors.Is(err, os.ErrNotExist),
+		true; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+
+	if err := verifyModFile(
+		g.sumdbClient,
+		modFileWrong,
+		"example.com/foo/bar",
+		"v1.0.0",
+	); err == nil {
+		t.Fatal("expected error")
+	} else if got, want := err.Error(),
+		"example.com/foo/bar@v1.0.0: invalid version: "+
+			"untrusted revision v1.0.0"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
 func TestCheckZipFile(t *testing.T) {
 	tempFile, err := ioutil.TempFile("", "goproxy.TestCheckZipFile")
 	if err != nil {
@@ -602,11 +729,11 @@ func TestCheckZipFile(t *testing.T) {
 		t.Fatalf("unexpected error %q", err)
 	}
 	zipWriter := zip.NewWriter(tempFile)
-	if zipFileWriter, err := zipWriter.Create(
+	if zfw, err := zipWriter.Create(
 		"example.com@v1.0.0/go.mod",
 	); err != nil {
 		t.Fatalf("unexpected error %q", err)
-	} else if _, err := zipFileWriter.Write(
+	} else if _, err := zfw.Write(
 		[]byte("module example.com"),
 	); err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -620,5 +747,137 @@ func TestCheckZipFile(t *testing.T) {
 		"v1.0.0",
 	); err != nil {
 		t.Fatalf("unexpected error %q", err)
+	}
+}
+
+func TestVerifyZipFile(t *testing.T) {
+	zipFile, err := ioutil.TempFile("", "goproxy.TestVerifyZipFile")
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	defer os.Remove(zipFile.Name())
+	zipWriter := zip.NewWriter(zipFile)
+	if zfw, err := zipWriter.Create(
+		"example.com/foo/bar@v1.0.0/go.mod",
+	); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if _, err := zfw.Write(
+		[]byte("module example.com/foo/bar"),
+	); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if err := zipWriter.Close(); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if err := zipFile.Close(); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+
+	zipFileWrong, err := ioutil.TempFile("", "goproxy.TestVerifyZipFile")
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	defer os.Remove(zipFileWrong.Name())
+	zipWrongWriter := zip.NewWriter(zipFileWrong)
+	if zfw, err := zipWrongWriter.Create(
+		"example.com/foo/bar/v2@v2.0.0/go.mod",
+	); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if _, err := zfw.Write(
+		[]byte("module example.com/foo/bar/v2"),
+	); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if err := zipWrongWriter.Close(); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if err := zipFileWrong.Close(); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+
+	zipHash, err := dirhash.HashZip(zipFile.Name(), dirhash.DefaultHash)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+
+	modHash, err := dirhash.DefaultHash(
+		[]string{"go.mod"},
+		func(string) (io.ReadCloser, error) {
+			return nopCloser{strings.NewReader(
+				"example.com/foo/bar@v1.0.0/go.mod",
+			)}, nil
+		},
+	)
+
+	skey, vkey, err := note.GenerateKey(nil, "example.com")
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+
+	server := httptest.NewServer(sumdb.NewServer(sumdb.NewTestServer(
+		skey,
+		func(modulePath, moduleVersion string) ([]byte, error) {
+			if modulePath == "example.com/foo/bar" &&
+				moduleVersion == "v1.0.0" {
+				return []byte(fmt.Sprintf(
+					"%s %s %s\n%s %s/go.mod %s\n",
+					modulePath,
+					moduleVersion,
+					zipHash,
+					modulePath,
+					moduleVersion,
+					modHash,
+				)), nil
+			}
+			return nil, errors.New("unknown module version")
+		},
+	)))
+	defer server.Close()
+
+	g := &Goproxy{GoBinEnv: []string{
+		"GOSUMDB=" + vkey + " " + server.URL,
+	}}
+	g.load()
+
+	if err := verifyZipFile(
+		g.sumdbClient,
+		zipFile.Name(),
+		"example.com/foo/bar",
+		"v1.0.0",
+	); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+
+	if err := verifyZipFile(
+		g.sumdbClient,
+		zipFile.Name(),
+		"example.com/foo/bar",
+		"v1.1.0",
+	); err == nil {
+		t.Fatal("expected error")
+	} else if got, want := err.Error(),
+		"example.com/foo/bar@v1.1.0: bad upstream"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+
+	if err := verifyZipFile(
+		g.sumdbClient,
+		"",
+		"example.com/foo/bar",
+		"v1.0.0",
+	); err == nil {
+		t.Fatal("expected error")
+	} else if got, want := errors.Is(err, os.ErrNotExist),
+		true; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+
+	if err := verifyZipFile(
+		g.sumdbClient,
+		zipFileWrong.Name(),
+		"example.com/foo/bar",
+		"v1.0.0",
+	); err == nil {
+		t.Fatal("expected error")
+	} else if got, want := err.Error(),
+		"example.com/foo/bar@v1.0.0: invalid version: "+
+			"untrusted revision v1.0.0"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }
