@@ -1,7 +1,9 @@
 package goproxy
 
 import (
+	"archive/zip"
 	"encoding/json"
+	"errors"
 	"io/ioutil"
 	"os"
 	"testing"
@@ -440,5 +442,183 @@ func TestMarshalInfo(t *testing.T) {
 
 	if got != string(want) {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestUnmarshalInfo(t *testing.T) {
+	if _, _, err := unmarshalInfo(""); err == nil {
+		t.Fatal("expected error")
+	}
+
+	if _, _, err := unmarshalInfo("{}"); err == nil {
+		t.Fatal("expected error")
+	} else if got, want := err.Error(), "empty version"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+
+	if _, _, err := unmarshalInfo(`{"Version":"v1.0.0"}`); err == nil {
+		t.Fatal("expected error")
+	} else if got, want := err.Error(), "zero time"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+
+	infoVersion, infoTime, err := unmarshalInfo(
+		`{"Version":"v1.0.0","Time":"2000-01-01T00:00:00Z"}`,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if got, want := infoVersion, "v1.0.0"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	wantInfoTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	if !infoTime.Equal(wantInfoTime) {
+		t.Errorf("got %q, want %q", infoTime, wantInfoTime)
+	}
+}
+
+func TestCheckAndFormatInfoFile(t *testing.T) {
+	tempFile, err := ioutil.TempFile(
+		"",
+		"goproxy.TestCheckAndFormatInfoFile",
+	)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	defer os.Remove(tempFile.Name())
+	if _, err := tempFile.WriteString("{}"); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if err := tempFile.Close(); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if err := checkAndFormatInfoFile(tempFile.Name()); err == nil {
+		t.Fatal("expected error")
+	} else if got, want := err.Error(),
+		"invalid info file: empty version"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+
+	wantInfo := `{"Version":"v1.0.0","Time":"2000-01-01T00:00:00Z"}`
+	if err := ioutil.WriteFile(
+		tempFile.Name(),
+		[]byte(wantInfo),
+		0600,
+	); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if err := checkAndFormatInfoFile(tempFile.Name()); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if b, err := ioutil.ReadFile(tempFile.Name()); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if got, want := string(b), wantInfo; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+
+	if err := ioutil.WriteFile(
+		tempFile.Name(),
+		[]byte(`{"Version":"v1.0.0",`+
+			`"Time":"2000-01-01T01:00:00+01:00"}`),
+		0600,
+	); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if err := checkAndFormatInfoFile(tempFile.Name()); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if b, err := ioutil.ReadFile(tempFile.Name()); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if got, want := string(b), wantInfo; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+
+	if err := os.Remove(tempFile.Name()); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if err := checkAndFormatInfoFile(tempFile.Name()); err == nil {
+		t.Fatal("expected error")
+	} else if got, want := errors.Is(err, os.ErrNotExist),
+		true; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestCheckModFile(t *testing.T) {
+	tempFile, err := ioutil.TempFile("", "goproxy.TestCheckModFile")
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	defer os.Remove(tempFile.Name())
+	if err := tempFile.Close(); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if err := checkModFile(tempFile.Name()); err == nil {
+		t.Fatal("expected error")
+	} else if got, want := err.Error(),
+		"invalid mod file: missing module directive"; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+
+	if err := ioutil.WriteFile(
+		tempFile.Name(),
+		[]byte("module"),
+		0600,
+	); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if err := checkModFile(tempFile.Name()); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+
+	if err := ioutil.WriteFile(
+		tempFile.Name(),
+		[]byte("// foobar\nmodule foobar"),
+		0600,
+	); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if err := checkModFile(tempFile.Name()); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+
+	if err := os.Remove(tempFile.Name()); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if err := checkModFile(tempFile.Name()); err == nil {
+		t.Fatal("expected error")
+	} else if got, want := errors.Is(err, os.ErrNotExist),
+		true; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestCheckZipFile(t *testing.T) {
+	tempFile, err := ioutil.TempFile("", "goproxy.TestCheckZipFile")
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	defer os.Remove(tempFile.Name())
+	if err := tempFile.Close(); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if err := checkZipFile(tempFile.Name(), "", ""); err == nil {
+		t.Fatal("expected error")
+	}
+
+	tempFile, err = os.OpenFile(
+		tempFile.Name(),
+		os.O_WRONLY|os.O_TRUNC,
+		0600,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	zipWriter := zip.NewWriter(tempFile)
+	if zipFileWriter, err := zipWriter.Create(
+		"example.com@v1.0.0/go.mod",
+	); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if _, err := zipFileWriter.Write(
+		[]byte("module example.com"),
+	); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if err := zipWriter.Close(); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if err := tempFile.Close(); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if err := checkZipFile(
+		tempFile.Name(),
+		"example.com",
+		"v1.0.0",
+	); err != nil {
+		t.Fatalf("unexpected error %q", err)
 	}
 }

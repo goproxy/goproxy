@@ -2,7 +2,6 @@ package goproxy
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -185,15 +184,12 @@ func (f *fetch) doProxy(
 			return nil, err
 		}
 
-		if err := json.Unmarshal(b, r); err != nil {
+		r.Version, r.Time, err = unmarshalInfo(string(b))
+		if err != nil {
 			return nil, notFoundError(fmt.Sprintf(
 				"invalid info response: %v",
 				err,
 			))
-		}
-
-		if !semver.IsValid(r.Version) || r.Time.IsZero() {
-			return nil, notFoundError("invalid info response")
 		}
 	case fetchOpsList:
 		b, err := ioutil.ReadFile(tempFile.Name())
@@ -201,9 +197,15 @@ func (f *fetch) doProxy(
 			return nil, err
 		}
 
-		for _, version := range strings.Split(string(b), "\n") {
-			if semver.IsValid(version) {
-				r.Versions = append(r.Versions, version)
+		lines := strings.Split(string(b), "\n")
+		r.Versions = make([]string, 0, len(lines))
+		for _, line := range lines {
+			// go/src/cmd/go/internal/modfetch.proxyRepo.Versions
+			lineParts := strings.Fields(line)
+			if len(lineParts) > 0 &&
+				semver.IsValid(lineParts[0]) &&
+				!module.IsPseudoVersion(lineParts[0]) {
+				r.Versions = append(r.Versions, lineParts[0])
 			}
 		}
 
@@ -211,10 +213,7 @@ func (f *fetch) doProxy(
 			return semver.Compare(r.Versions[i], r.Versions[j]) < 0
 		})
 	case fetchOpsDownloadInfo:
-		if _, err := checkAndFormatInfoFile(
-			tempFile.Name(),
-			"",
-		); err != nil {
+		if err := checkAndFormatInfoFile(tempFile.Name()); err != nil {
 			return nil, err
 		}
 
@@ -345,8 +344,7 @@ func (f *fetch) doDirect(ctx context.Context) (*fetchResult, error) {
 			return semver.Compare(r.Versions[i], r.Versions[j]) < 0
 		})
 	case fetchOpsDownloadInfo, fetchOpsDownloadMod, fetchOpsDownloadZip:
-		r.Info, err = checkAndFormatInfoFile(r.Info, f.tempDir)
-		if err != nil {
+		if err := checkAndFormatInfoFile(r.Info); err != nil {
 			return nil, err
 		}
 
@@ -452,64 +450,41 @@ func marshalInfo(version string, t time.Time) string {
 	)
 }
 
-// checkAndFormatInfoFile checks and formats the info file targeted by the name.
-//
-// If the tempDir is not empty, a new temporary info file will be created in it.
-// Otherwise, the info file targeted by the name will be replaced.
-func checkAndFormatInfoFile(name, tempDir string) (string, error) {
-	b, err := ioutil.ReadFile(name)
-	if err != nil {
-		return "", err
-	}
-
+// unmarshalInfo unmarshals the s as info and returns version and time.
+func unmarshalInfo(s string) (string, time.Time, error) {
 	var info struct {
 		Version string
 		Time    time.Time
 	}
 
-	if err := json.Unmarshal(b, &info); err != nil {
-		return "", notFoundError(fmt.Sprintf(
-			"invalid info file: %v",
-			err,
-		))
+	if err := json.Unmarshal([]byte(s), &info); err != nil {
+		return "", time.Time{}, err
+	} else if !semver.IsValid(info.Version) {
+		return "", time.Time{}, errors.New("empty version")
+	} else if info.Time.IsZero() {
+		return "", time.Time{}, errors.New("zero time")
 	}
 
-	if !semver.IsValid(info.Version) || info.Time.IsZero() {
-		return "", notFoundError("invalid info file")
-	}
+	return info.Version, info.Time, nil
+}
 
-	fb := []byte(marshalInfo(info.Version, info.Time))
-	if bytes.Equal(fb, b) {
-		return name, nil
-	}
-
-	if tempDir != "" {
-		f, err := ioutil.TempFile(tempDir, "")
-		if err != nil {
-			return "", err
-		}
-
-		if _, err := f.Write(fb); err != nil {
-			return "", err
-		}
-
-		if err := f.Close(); err != nil {
-			return "", err
-		}
-
-		return f.Name(), nil
-	}
-
-	fi, err := os.Stat(name)
+// checkAndFormatInfoFile checks and formats the info file targeted by the name.
+func checkAndFormatInfoFile(name string) error {
+	b, err := ioutil.ReadFile(name)
 	if err != nil {
-		return "", err
+		return err
 	}
 
-	if err := ioutil.WriteFile(name, fb, fi.Mode()); err != nil {
-		return "", err
+	infoVersion, infoTime, err := unmarshalInfo(string(b))
+	if err != nil {
+		return notFoundError(fmt.Sprintf("invalid info file: %v", err))
 	}
 
-	return name, nil
+	if info := marshalInfo(infoVersion, infoTime); info != string(b) {
+		return ioutil.WriteFile(name, []byte(info), 0600)
+	}
+
+	return nil
 }
 
 // checkModFile checks the mod file targeted by the name.
@@ -522,16 +497,19 @@ func checkModFile(name string) error {
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		if strings.Contains(scanner.Text(), "module") {
+		if strings.HasPrefix(
+			strings.TrimSpace(scanner.Text()),
+			"module",
+		) {
 			return nil
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		return notFoundError(fmt.Sprintf("invalid mod file: %v", err))
+		return err
 	}
 
-	return notFoundError("invalid mod file")
+	return notFoundError("invalid mod file: missing module directive")
 }
 
 // verifyModFile uses the sumdbClient to verify the mod file targeted by the
