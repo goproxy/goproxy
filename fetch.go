@@ -115,22 +115,20 @@ func newFetch(g *Goproxy, name, tempDir string) (*fetch, error) {
 	}
 
 	f.modAtVer = fmt.Sprint(f.modulePath, "@", f.moduleVersion)
-	f.requiredToVerify = g.goBinEnv["GOSUMDB"] != "off" &&
-		!globsMatchPath(g.goBinEnv["GONOSUMDB"], f.modulePath)
+	f.requiredToVerify = g.goBinEnvGOSUMDB != "off" &&
+		!globsMatchPath(g.goBinEnvGONOSUMDB, f.modulePath)
 
 	return f, nil
 }
 
 // do executes the f.
 func (f *fetch) do(ctx context.Context) (*fetchResult, error) {
-	if globsMatchPath(f.g.goBinEnv["GONOPROXY"], f.modulePath) {
+	if globsMatchPath(f.g.goBinEnvGONOPROXY, f.modulePath) {
 		return f.doDirect(ctx)
 	}
 
 	var r *fetchResult
-	if err := walkGOPROXY(f.g.goBinEnv["GOPROXY"], func(
-		proxy string,
-	) error {
+	if err := walkGOPROXY(f.g.goBinEnvGOPROXY, func(proxy string) error {
 		var err error
 		r, err = f.doProxy(ctx, proxy)
 		return err
@@ -281,21 +279,7 @@ func (f *fetch) doDirect(ctx context.Context) (*fetchResult, error) {
 	}
 
 	cmd := exec.CommandContext(ctx, f.g.goBinName, args...)
-	cmd.Env = make([]string, 0, len(f.g.goBinEnv)+6)
-	for k, v := range f.g.goBinEnv {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
-	}
-
-	cmd.Env = append(
-		cmd.Env,
-		"GO111MODULE=on",
-		"GOPROXY=direct",
-		"GONOPROXY=",
-		"GOSUMDB=off",
-		"GONOSUMDB=",
-		"GOPRIVATE=",
-	)
-
+	cmd.Env = f.g.goBinEnv
 	cmd.Dir = f.tempDir
 	stdout, err := cmd.Output()
 	if err != nil {

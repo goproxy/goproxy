@@ -3,11 +3,13 @@ package goproxy
 import (
 	"errors"
 	"os"
+	"strings"
 	"testing"
 )
 
 func TestGoproxyLoad(t *testing.T) {
 	for _, key := range []string{
+		"GO111MODULE",
 		"GOPROXY",
 		"GONOPROXY",
 		"GOSUMDB",
@@ -15,7 +17,7 @@ func TestGoproxyLoad(t *testing.T) {
 		"GOPRIVATE",
 	} {
 		if err := os.Setenv(key, ""); err != nil {
-			t.Fatalf("unexpected error %v", err)
+			t.Fatalf("unexpected error %q", err)
 		}
 	}
 
@@ -24,26 +26,42 @@ func TestGoproxyLoad(t *testing.T) {
 	if got, want := g.goBinName, "go"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	if got, want := g.goBinEnv["PATH"], os.Getenv("PATH"); got != want {
+	var goBinEnvPATH string
+	for _, env := range g.goBinEnv {
+		if envParts := strings.SplitN(env, "=", 2); len(envParts) == 2 {
+			if strings.TrimSpace(envParts[0]) == "PATH" {
+				goBinEnvPATH = envParts[1]
+			}
+		}
+	}
+	if got, want := goBinEnvPATH, os.Getenv("PATH"); got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	gotEnvGOPROXY := g.goBinEnv["GOPROXY"]
+	gotEnvGOPROXY := g.goBinEnvGOPROXY
 	wantEnvGOPROXY := "https://proxy.golang.org,direct"
 	if gotEnvGOPROXY != wantEnvGOPROXY {
 		t.Errorf("got %q, want %q", gotEnvGOPROXY, wantEnvGOPROXY)
 	}
-	if got, want := g.goBinEnv["GONOPROXY"], ""; got != want {
+	if got, want := g.goBinEnvGONOPROXY, ""; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	gotEnvGOSUMDB := g.goBinEnv["GOSUMDB"]
+	gotEnvGOSUMDB := g.goBinEnvGOSUMDB
 	wantEnvGOSUMDB := "sum.golang.org"
 	if gotEnvGOSUMDB != wantEnvGOSUMDB {
 		t.Errorf("got %q, want %q", gotEnvGOSUMDB, wantEnvGOSUMDB)
 	}
-	if got, want := g.goBinEnv["GONOSUMDB"], ""; got != want {
+	if got, want := g.goBinEnvGONOSUMDB, ""; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	if got, want := g.goBinEnv["GOPRIVATE"], ""; got != want {
+	var goBinEnvGOPRIVATE string
+	for _, env := range g.goBinEnv {
+		if envParts := strings.SplitN(env, "=", 2); len(envParts) == 2 {
+			if strings.TrimSpace(envParts[0]) == "GOPRIVATE" {
+				goBinEnvPATH = envParts[1]
+			}
+		}
+	}
+	if got, want := goBinEnvGOPRIVATE, ""; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
@@ -51,7 +69,7 @@ func TestGoproxyLoad(t *testing.T) {
 	wantEnvGOPROXY = "https://example.com|https://backup.example.com,direct"
 	g.GoBinEnv = []string{"GOPROXY=" + wantEnvGOPROXY}
 	g.load()
-	gotEnvGOPROXY = g.goBinEnv["GOPROXY"]
+	gotEnvGOPROXY = g.goBinEnvGOPROXY
 	if gotEnvGOPROXY != wantEnvGOPROXY {
 		t.Errorf("got %q, want %q", gotEnvGOPROXY, wantEnvGOPROXY)
 	}
@@ -61,7 +79,7 @@ func TestGoproxyLoad(t *testing.T) {
 		"GOPROXY=https://example.com,direct,https://backup.example.com",
 	}
 	g.load()
-	gotEnvGOPROXY = g.goBinEnv["GOPROXY"]
+	gotEnvGOPROXY = g.goBinEnvGOPROXY
 	wantEnvGOPROXY = "https://example.com,direct"
 	if gotEnvGOPROXY != wantEnvGOPROXY {
 		t.Errorf("got %q, want %q", gotEnvGOPROXY, wantEnvGOPROXY)
@@ -72,7 +90,7 @@ func TestGoproxyLoad(t *testing.T) {
 		"GOPROXY=https://example.com,off,https://backup.example.com",
 	}
 	g.load()
-	gotEnvGOPROXY = g.goBinEnv["GOPROXY"]
+	gotEnvGOPROXY = g.goBinEnvGOPROXY
 	wantEnvGOPROXY = "https://example.com,off"
 	if gotEnvGOPROXY != wantEnvGOPROXY {
 		t.Errorf("got %q, want %q", gotEnvGOPROXY, wantEnvGOPROXY)
@@ -81,7 +99,7 @@ func TestGoproxyLoad(t *testing.T) {
 	g = &Goproxy{}
 	g.GoBinEnv = []string{"GOPROXY=https://example.com|"}
 	g.load()
-	gotEnvGOPROXY = g.goBinEnv["GOPROXY"]
+	gotEnvGOPROXY = g.goBinEnvGOPROXY
 	wantEnvGOPROXY = "https://example.com"
 	if gotEnvGOPROXY != wantEnvGOPROXY {
 		t.Errorf("got %q, want %q", gotEnvGOPROXY, wantEnvGOPROXY)
@@ -90,7 +108,7 @@ func TestGoproxyLoad(t *testing.T) {
 	g = &Goproxy{}
 	g.GoBinEnv = []string{"GOPROXY=,"}
 	g.load()
-	gotEnvGOPROXY = g.goBinEnv["GOPROXY"]
+	gotEnvGOPROXY = g.goBinEnvGOPROXY
 	wantEnvGOPROXY = "off"
 	if gotEnvGOPROXY != wantEnvGOPROXY {
 		t.Errorf("got %q, want %q", gotEnvGOPROXY, wantEnvGOPROXY)
@@ -99,7 +117,7 @@ func TestGoproxyLoad(t *testing.T) {
 	g = &Goproxy{}
 	g.GoBinEnv = []string{"GOSUMDB=example.com"}
 	g.load()
-	gotEnvGOSUMDB = g.goBinEnv["GOSUMDB"]
+	gotEnvGOSUMDB = g.goBinEnvGOSUMDB
 	wantEnvGOSUMDB = "example.com"
 	if gotEnvGOSUMDB != wantEnvGOSUMDB {
 		t.Errorf("got %q, want %q", gotEnvGOSUMDB, wantEnvGOSUMDB)
@@ -108,12 +126,12 @@ func TestGoproxyLoad(t *testing.T) {
 	g = &Goproxy{}
 	g.GoBinEnv = []string{"GOPRIVATE=example.com"}
 	g.load()
-	gotEnvGONOPROXY := g.goBinEnv["GONOPROXY"]
+	gotEnvGONOPROXY := g.goBinEnvGONOPROXY
 	wantEnvGONOPROXY := "example.com"
 	if gotEnvGONOPROXY != wantEnvGONOPROXY {
 		t.Errorf("got %q, want %q", gotEnvGONOPROXY, wantEnvGONOPROXY)
 	}
-	gotEnvGONOSUMDB := g.goBinEnv["GONOSUMDB"]
+	gotEnvGONOSUMDB := g.goBinEnvGONOSUMDB
 	wantEnvGONOSUMDB := "example.com"
 	if gotEnvGONOSUMDB != wantEnvGONOSUMDB {
 		t.Errorf("got %q, want %q", gotEnvGONOSUMDB, wantEnvGONOSUMDB)
@@ -126,12 +144,12 @@ func TestGoproxyLoad(t *testing.T) {
 		"GONOSUMDB=alt2.example.com",
 	}
 	g.load()
-	gotEnvGONOPROXY = g.goBinEnv["GONOPROXY"]
+	gotEnvGONOPROXY = g.goBinEnvGONOPROXY
 	wantEnvGONOPROXY = "alt1.example.com"
 	if gotEnvGONOPROXY != wantEnvGONOPROXY {
 		t.Errorf("got %q, want %q", gotEnvGONOPROXY, wantEnvGONOPROXY)
 	}
-	gotEnvGONOSUMDB = g.goBinEnv["GONOSUMDB"]
+	gotEnvGONOSUMDB = g.goBinEnvGONOSUMDB
 	wantEnvGONOSUMDB = "alt2.example.com"
 	if gotEnvGONOSUMDB != wantEnvGONOSUMDB {
 		t.Errorf("got %q, want %q", gotEnvGONOSUMDB, wantEnvGONOSUMDB)
@@ -192,7 +210,7 @@ func TestWalkGOPROXY(t *testing.T) {
 		onOff = true
 		return nil
 	}); err != nil {
-		t.Fatalf("unexpected error %v", err)
+		t.Fatalf("unexpected error %q", err)
 	} else if got, want := onProxy, ""; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := onDirect, true; got != want {
@@ -214,7 +232,7 @@ func TestWalkGOPROXY(t *testing.T) {
 		onOff = true
 		return nil
 	}); err != nil {
-		t.Fatalf("unexpected error %v", err)
+		t.Fatalf("unexpected error %q", err)
 	} else if got, want := onProxy, ""; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := onDirect, false; got != want {
@@ -236,7 +254,7 @@ func TestWalkGOPROXY(t *testing.T) {
 		onOff = true
 		return nil
 	}); err != nil {
-		t.Fatalf("unexpected error %v", err)
+		t.Fatalf("unexpected error %q", err)
 	} else if got, want := onProxy, ""; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := onDirect, true; got != want {
@@ -258,7 +276,7 @@ func TestWalkGOPROXY(t *testing.T) {
 		onOff = true
 		return nil
 	}); err != nil {
-		t.Fatalf("unexpected error %v", err)
+		t.Fatalf("unexpected error %q", err)
 	} else if got, want := onProxy, ""; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := onDirect, false; got != want {
@@ -282,7 +300,7 @@ func TestWalkGOPROXY(t *testing.T) {
 		onOff = true
 		return nil
 	}); err != nil {
-		t.Fatalf("unexpected error %v", err)
+		t.Fatalf("unexpected error %q", err)
 	} else if got, want := onProxy, "https://example.com"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := onDirect, false; got != want {
@@ -306,7 +324,7 @@ func TestWalkGOPROXY(t *testing.T) {
 		onOff = true
 		return nil
 	}); err != nil {
-		t.Fatalf("unexpected error %v", err)
+		t.Fatalf("unexpected error %q", err)
 	} else if got, want := onProxy, "https://example.com"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := onDirect, true; got != want {
@@ -336,7 +354,7 @@ func TestWalkGOPROXY(t *testing.T) {
 			return nil
 		},
 	); err != nil {
-		t.Fatalf("unexpected error %v", err)
+		t.Fatalf("unexpected error %q", err)
 	} else if got, want := onProxy, "https://alt.example.com"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := onDirect, false; got != want {
