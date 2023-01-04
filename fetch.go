@@ -289,13 +289,13 @@ func (f *fetch) doDirect(ctx context.Context) (*fetchResult, error) {
 
 		output := stdout
 		if len(output) > 0 {
-			m := map[string]interface{}{}
-			if err := json.Unmarshal(output, &m); err != nil {
+			var goError struct{ Error string }
+			if err := json.Unmarshal(output, &goError); err != nil {
 				return nil, err
 			}
 
-			if es, ok := m["Error"].(string); ok {
-				output = []byte(es)
+			if goError.Error != "" {
+				output = []byte(goError.Error)
 			}
 		} else if ee, ok := err.(*exec.ExitError); ok {
 			output = ee.Stderr
