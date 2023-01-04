@@ -291,6 +291,106 @@ func TestNewFetch(t *testing.T) {
 	}
 }
 
+func TestFetchDo(t *testing.T) {
+	tempDir, err := ioutil.TempDir("", "goproxy.TestFetchDo")
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	infoTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	goproxyHandlerFunc := func(rw http.ResponseWriter, req *http.Request) {
+		responseSuccess(
+			rw,
+			req,
+			strings.NewReader(marshalInfo("v1.0.0", infoTime)),
+			"application/json; charset=utf-8",
+			60,
+		)
+	}
+	goproxyServer := httptest.NewServer(http.HandlerFunc(func(
+		rw http.ResponseWriter,
+		req *http.Request,
+	) {
+		goproxyHandlerFunc(rw, req)
+	}))
+	defer goproxyServer.Close()
+
+	g := &Goproxy{
+		GoBinEnv: []string{
+			"GOPROXY=" + goproxyServer.URL,
+			"GOSUMDB=off",
+		},
+	}
+	g.load()
+	f, err := newFetch(g, "example.com/@latest", tempDir)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	fr, err := f.do(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if got, want := fr.Version, "v1.0.0"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	} else if got, want := fr.Time.String(),
+		infoTime.String(); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+
+	g = &Goproxy{
+		GoBinEnv: []string{
+			"GOPATH=" + tempDir,
+			"GOPROXY=off",
+			"GONOPROXY=example.com",
+			"GOSUMDB=off",
+		},
+	}
+	g.load()
+	g.goBinEnv = append(g.goBinEnv, "GOPROXY=off")
+	f, err = newFetch(g, "example.com/@latest", tempDir)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	if _, err := f.do(context.Background()); err == nil {
+		t.Fatal("expected error")
+	}
+
+	goproxyHandlerFunc = func(rw http.ResponseWriter, req *http.Request) {
+		responseNotFound(rw, req, 60)
+	}
+	g = &Goproxy{
+		GoBinEnv: []string{
+			"GOPATH=" + tempDir,
+			"GOPROXY=" + goproxyServer.URL + ",direct",
+			"GOSUMDB=off",
+		},
+	}
+	g.load()
+	g.goBinEnv = append(g.goBinEnv, "GOPROXY=off")
+	f, err = newFetch(g, "example.com/@latest", tempDir)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	if _, err := f.do(context.Background()); err == nil {
+		t.Fatal("expected error")
+	}
+
+	g = &Goproxy{
+		GoBinEnv: []string{
+			"GOPROXY=off",
+			"GOSUMDB=off",
+		},
+	}
+	g.load()
+	f, err = newFetch(g, "example.com/@latest", tempDir)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	if _, err := f.do(context.Background()); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestFetchDoProxy(t *testing.T) {
 	tempDir, err := ioutil.TempDir("", "goproxy.TestFetchDoProxy")
 	if err != nil {
@@ -333,6 +433,30 @@ func TestFetchDoProxy(t *testing.T) {
 		t.Errorf("got %q, want %q", got, want)
 	}
 	if got, want := fr.Time, now; !got.Equal(want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+
+	handlerFunc = func(rw http.ResponseWriter, req *http.Request) {
+		responseSuccess(
+			rw,
+			req,
+			strings.NewReader(marshalInfo("v1.0.0", time.Time{})),
+			"application/json; charset=utf-8",
+			60,
+		)
+	}
+	g = &Goproxy{
+		GoBinEnv: []string{"GOSUMDB=off"},
+	}
+	g.load()
+	f, err = newFetch(g, "example.com/@latest", tempDir)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	if _, err := f.doProxy(context.Background(), server.URL); err == nil {
+		t.Fatal("expected error")
+	} else if got, want := err.Error(),
+		"invalid info response: zero time"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
@@ -498,6 +622,7 @@ invalid
 	defer sumdbServer.Close()
 
 	g = &Goproxy{GoBinEnv: []string{
+		"GOPROXY=off",
 		"GOSUMDB=" + vkey + " " + sumdbServer.URL,
 	}}
 	g.load()
@@ -619,6 +744,7 @@ invalid
 		)), nil
 	}
 	g = &Goproxy{GoBinEnv: []string{
+		"GOPROXY=off",
 		"GOSUMDB=" + vkey + " " + sumdbServer.URL,
 	}}
 	g.load()
@@ -741,6 +867,372 @@ invalid
 		t.Fatal("expected error")
 	} else if got, want := err.Error(), "not found"; got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestFetchDoDirect(t *testing.T) {
+	tempDir, err := ioutil.TempDir("", "goproxy.TestFetchDoDirect")
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	gopathDir := filepath.Join(tempDir, "gopath")
+
+	staticGOPROXYDir := filepath.Join(tempDir, "static-goproxy")
+	if err := os.MkdirAll(
+		filepath.Join(staticGOPROXYDir, "example.com", "@v"),
+		0700,
+	); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+
+	infoTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := ioutil.WriteFile(
+		filepath.Join(staticGOPROXYDir, "example.com", "@latest"),
+		[]byte(marshalInfo("v1.1.0", infoTime)),
+		0600,
+	); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	if err := ioutil.WriteFile(
+		filepath.Join(staticGOPROXYDir, "example.com", "@v", "list"),
+		[]byte("v1.1.0\nv1.0.0"),
+		0600,
+	); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	if err := ioutil.WriteFile(
+		filepath.Join(
+			staticGOPROXYDir,
+			"example.com",
+			"@v",
+			"v1.0.0.info",
+		),
+		[]byte(marshalInfo("v1.0.0", infoTime)),
+		0600,
+	); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	if err := ioutil.WriteFile(
+		filepath.Join(
+			staticGOPROXYDir,
+			"example.com",
+			"@v",
+			"v1.1.0.info",
+		),
+		[]byte(marshalInfo("v1.1.0", infoTime.Add(time.Hour))),
+		0600,
+	); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	mod := "module example.com"
+	if err := ioutil.WriteFile(
+		filepath.Join(
+			staticGOPROXYDir,
+			"example.com",
+			"@v",
+			"v1.0.0.mod",
+		),
+		[]byte(mod),
+		0600,
+	); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	if err := ioutil.WriteFile(
+		filepath.Join(
+			staticGOPROXYDir,
+			"example.com",
+			"@v",
+			"v1.1.0.mod",
+		),
+		[]byte(mod),
+		0600,
+	); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	zipFile, err := os.Create(filepath.Join(
+		staticGOPROXYDir,
+		"example.com",
+		"@v",
+		"v1.0.0.zip",
+	))
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	zipWriter := zip.NewWriter(zipFile)
+	if zfw, err := zipWriter.Create(
+		"example.com@v1.0.0/go.mod",
+	); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if _, err := zfw.Write([]byte(mod)); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if err := zipWriter.Close(); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if err := zipFile.Close(); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	zipFileBytes, err := ioutil.ReadFile(zipFile.Name())
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	if err := ioutil.WriteFile(
+		filepath.Join(
+			staticGOPROXYDir,
+			"example.com",
+			"@v",
+			"v1.1.0.zip",
+		),
+		zipFileBytes,
+		0600,
+	); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+
+	goproxyHandlerFunc := func(rw http.ResponseWriter, req *http.Request) {
+		http.FileServer(http.Dir(staticGOPROXYDir)).ServeHTTP(rw, req)
+	}
+	goproxyServer := httptest.NewServer(http.HandlerFunc(func(
+		rw http.ResponseWriter,
+		req *http.Request,
+	) {
+		goproxyHandlerFunc(rw, req)
+	}))
+	defer goproxyServer.Close()
+
+	g := &Goproxy{
+		GoBinMaxWorkers: 1,
+		GoBinEnv: append(
+			os.Environ(),
+			"GOPATH="+gopathDir,
+			"GOSUMDB=off",
+		),
+	}
+	g.load()
+	g.goBinEnv = append(g.goBinEnv, "GOPROXY="+goproxyServer.URL)
+	f, err := newFetch(g, "example.com/@latest", tempDir)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	fr, err := f.doDirect(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if got, want := fr.Version, "v1.1.0"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	} else if got, want := fr.Time.String(),
+		infoTime.Add(time.Hour).String(); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	f, err = newFetch(g, "example.com/@v/list", tempDir)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	fr, err = f.doDirect(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if got, want := strings.Join(fr.Versions, "\n"),
+		"v1.0.0\nv1.1.0"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	f, err = newFetch(g, "example.com/@v/v1.0.0.info", tempDir)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	fr, err = f.doDirect(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if fr.Info == "" {
+		t.Fatal("unexpected empty")
+	}
+	f, err = newFetch(g, "example.com/@v/v1.0.0.mod", tempDir)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	fr, err = f.doDirect(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if fr.GoMod == "" {
+		t.Fatal("unexpected empty")
+	}
+	f, err = newFetch(g, "example.com/@v/v1.0.0.zip", tempDir)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	fr, err = f.doDirect(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if fr.Zip == "" {
+		t.Fatal("unexpected empty")
+	}
+	f, err = newFetch(g, "example.com/@v/v1.1.0.info", tempDir)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	if _, err := f.doDirect(context.Background()); err == nil {
+		t.Fatal("expected error")
+	}
+	f, err = newFetch(g, "example.com/@v/v1.0.0.info", tempDir)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := f.doDirect(canceledCtx); err == nil {
+		t.Fatal("expected error")
+	}
+	f, err = newFetch(g, "example.com/@v/v1.0.0.info", tempDir)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	timedOutCtx, cancel := context.WithDeadline(
+		context.Background(),
+		time.Time{},
+	)
+	defer cancel()
+	if _, err := f.doDirect(timedOutCtx); err == nil {
+		t.Fatal("expected error")
+	}
+	f, err = newFetch(g, "example.com/@v/v1.2.0.info", tempDir)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	if _, err := f.doDirect(context.Background()); err == nil {
+		t.Fatal("expected error")
+	}
+	f, err = newFetch(g, "example.com/@v/v1.0.0.info", tempDir)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	f.modAtVer = "invalid"
+	if _, err := f.doDirect(context.Background()); err == nil {
+		t.Fatal("expected error")
+	}
+
+	dirHash, err := dirhash.HashZip(zipFile.Name(), dirhash.DefaultHash)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+
+	modHash, err := dirhash.DefaultHash(
+		[]string{"go.mod"},
+		func(string) (io.ReadCloser, error) {
+			return &nopCloser{strings.NewReader(mod)}, nil
+		},
+	)
+
+	skey, vkey, err := note.GenerateKey(nil, "sumdb.example.com")
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+
+	sumdbHandler := sumdb.NewServer(sumdb.NewTestServer(
+		skey,
+		func(modulePath, moduleVersion string) ([]byte, error) {
+			return []byte(fmt.Sprintf(
+				"%s %s %s\n%s %s/go.mod %s\n",
+				modulePath,
+				moduleVersion,
+				dirHash,
+				modulePath,
+				moduleVersion,
+				modHash,
+			)), nil
+		},
+	))
+	sumdbServer := httptest.NewServer(http.HandlerFunc(func(
+		rw http.ResponseWriter,
+		req *http.Request,
+	) {
+		sumdbHandler.ServeHTTP(rw, req)
+	}))
+	defer sumdbServer.Close()
+
+	g = &Goproxy{
+		GoBinMaxWorkers: 1,
+		GoBinEnv: append(
+			os.Environ(),
+			"GOPATH="+gopathDir,
+			"GOPROXY=off",
+			"GOSUMDB="+vkey+" "+sumdbServer.URL,
+		),
+	}
+	g.load()
+	g.goBinEnv = append(g.goBinEnv, "GOPROXY="+goproxyServer.URL)
+	f, err = newFetch(g, "example.com/@v/v1.0.0.info", tempDir)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	fr, err = f.doDirect(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if fr.Info == "" {
+		t.Fatal("unexpected empty")
+	}
+
+	sumdbHandler = sumdb.NewServer(sumdb.NewTestServer(
+		skey,
+		func(modulePath, moduleVersion string) ([]byte, error) {
+			return []byte(fmt.Sprintf(
+				"%s %s %s\n%s %s/go.mod %s\n",
+				modulePath,
+				moduleVersion,
+				modHash,
+				modulePath,
+				moduleVersion,
+				dirHash,
+			)), nil
+		},
+	))
+	g = &Goproxy{
+		GoBinMaxWorkers: 1,
+		GoBinEnv: append(
+			os.Environ(),
+			"GOPATH="+gopathDir,
+			"GOPROXY=off",
+			"GOSUMDB="+vkey+" "+sumdbServer.URL,
+		),
+	}
+	g.load()
+	g.goBinEnv = append(g.goBinEnv, "GOPROXY="+goproxyServer.URL)
+	f, err = newFetch(g, "example.com/@v/v1.0.0.info", tempDir)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	if _, err := f.doDirect(context.Background()); err == nil {
+		t.Fatal("expected error")
+	}
+
+	sumdbHandler = sumdb.NewServer(sumdb.NewTestServer(
+		skey,
+		func(modulePath, moduleVersion string) ([]byte, error) {
+			return []byte(fmt.Sprintf(
+				"%s %s %s\n%s %s/go.mod %s\n",
+				modulePath,
+				moduleVersion,
+				modHash,
+				modulePath,
+				moduleVersion,
+				modHash,
+			)), nil
+		},
+	))
+	g = &Goproxy{
+		GoBinMaxWorkers: 1,
+		GoBinEnv: append(
+			os.Environ(),
+			"GOPATH="+gopathDir,
+			"GOPROXY=off",
+			"GOSUMDB="+vkey+" "+sumdbServer.URL,
+		),
+	}
+	g.load()
+	g.goBinEnv = append(g.goBinEnv, "GOPROXY="+goproxyServer.URL)
+	f, err = newFetch(g, "example.com/@v/v1.0.0.info", tempDir)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	if _, err := f.doDirect(context.Background()); err == nil {
+		t.Fatal("expected error")
 	}
 }
 
@@ -1112,6 +1604,7 @@ func TestVerifyModFile(t *testing.T) {
 	defer server.Close()
 
 	g := &Goproxy{GoBinEnv: []string{
+		"GOPROXY=off",
 		"GOSUMDB=" + vkey + " " + server.URL,
 	}}
 	g.load()
@@ -1286,6 +1779,7 @@ func TestVerifyZipFile(t *testing.T) {
 	defer server.Close()
 
 	g := &Goproxy{GoBinEnv: []string{
+		"GOPROXY=off",
 		"GOSUMDB=" + vkey + " " + server.URL,
 	}}
 	g.load()
