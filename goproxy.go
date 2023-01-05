@@ -114,7 +114,7 @@ type Goproxy struct {
 	// standard logger.
 	ErrorLogger *log.Logger
 
-	loadOnce          sync.Once
+	initOnce          sync.Once
 	goBinName         string
 	goBinEnv          []string
 	goBinEnvGOPROXY   string
@@ -127,8 +127,8 @@ type Goproxy struct {
 	sumdbClient       *sumdb.Client
 }
 
-// load loads the stuff of the g up.
-func (g *Goproxy) load() {
+// init initializes the g.
+func (g *Goproxy) init() {
 	g.goBinName = g.GoBinName
 	if g.goBinName == "" {
 		g.goBinName = "go"
@@ -286,7 +286,7 @@ func (g *Goproxy) load() {
 
 // ServeHTTP implements the [http.Handler].
 func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	g.loadOnce.Do(g.load)
+	g.initOnce.Do(g.init)
 
 	switch req.Method {
 	case http.MethodGet, http.MethodHead:

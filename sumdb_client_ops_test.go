@@ -10,32 +10,32 @@ import (
 
 func TestSUMDBClientOps(t *testing.T) {
 	sco := &sumdbClientOps{}
-	sco.load()
-	if sco.loadError == nil {
+	sco.init()
+	if sco.initError == nil {
 		t.Fatal("expected error")
 	}
-	wantLoadError := "missing GOSUMDB"
-	if got := sco.loadError.Error(); got != wantLoadError {
-		t.Errorf("got %q, want %q", got, wantLoadError)
+	wantInitError := "missing GOSUMDB"
+	if got := sco.initError.Error(); got != wantInitError {
+		t.Errorf("got %q, want %q", got, wantInitError)
 	}
 
 	sco = &sumdbClientOps{envGOSUMDB: "example.com foo bar"}
-	sco.load()
-	if sco.loadError == nil {
+	sco.init()
+	if sco.initError == nil {
 		t.Fatal("expected error")
 	}
-	wantLoadError = "invalid GOSUMDB: too many fields"
-	if got := sco.loadError.Error(); got != wantLoadError {
-		t.Errorf("got %q, want %q", got, wantLoadError)
+	wantInitError = "invalid GOSUMDB: too many fields"
+	if got := sco.initError.Error(); got != wantInitError {
+		t.Errorf("got %q, want %q", got, wantInitError)
 	}
 
 	sco = &sumdbClientOps{
 		envGOPROXY: "direct",
 		envGOSUMDB: "sum.golang.org",
 	}
-	sco.load()
-	if sco.loadError != nil {
-		t.Fatalf("unexpected error %q", sco.loadError)
+	sco.init()
+	if sco.initError != nil {
+		t.Fatalf("unexpected error %q", sco.initError)
 	}
 	wantKey := "sum.golang.org" +
 		"+033de0ae+Ac4zctda0e5eza+HJyk9SxEdh+s3Ux18htTTAD8OuAn8"
@@ -47,17 +47,17 @@ func TestSUMDBClientOps(t *testing.T) {
 		envGOPROXY: "direct",
 		envGOSUMDB: "sum.golang.google.cn",
 	}
-	sco.load()
-	if sco.loadError != nil {
-		t.Fatalf("unexpected error %q", sco.loadError)
+	sco.init()
+	if sco.initError != nil {
+		t.Fatalf("unexpected error %q", sco.initError)
 	}
 	if got := string(sco.key); got != wantKey {
 		t.Errorf("got %q, want %q", got, wantKey)
 	}
 
 	sco = &sumdbClientOps{envGOSUMDB: "example.com foobar"}
-	sco.load()
-	if sco.loadError == nil {
+	sco.init()
+	if sco.initError == nil {
 		t.Fatal("expected error")
 	}
 
@@ -76,9 +76,9 @@ func TestSUMDBClientOps(t *testing.T) {
 		envGOPROXY: server.URL,
 		envGOSUMDB: "example.com",
 	}
-	sco.load()
-	if sco.loadError != nil {
-		t.Fatalf("unexpected error %q", sco.loadError)
+	sco.init()
+	if sco.initError != nil {
+		t.Fatalf("unexpected error %q", sco.initError)
 	}
 	wantEndpointURL := server.URL + "/sumdb/example.com"
 	if got := sco.endpointURL.String(); got != wantEndpointURL {
@@ -93,9 +93,9 @@ func TestSUMDBClientOps(t *testing.T) {
 		envGOPROXY: server.URL,
 		envGOSUMDB: "example.com",
 	}
-	sco.load()
-	if sco.loadError != nil {
-		t.Fatalf("unexpected error %q", sco.loadError)
+	sco.init()
+	if sco.initError != nil {
+		t.Fatalf("unexpected error %q", sco.initError)
 	}
 	wantEndpointURL = "https://example.com"
 	if got := sco.endpointURL.String(); got != wantEndpointURL {
@@ -110,9 +110,9 @@ func TestSUMDBClientOps(t *testing.T) {
 		envGOPROXY: server.URL + ",direct",
 		envGOSUMDB: "example.com",
 	}
-	sco.load()
-	if sco.loadError != nil {
-		t.Fatalf("unexpected error %q", sco.loadError)
+	sco.init()
+	if sco.initError != nil {
+		t.Fatalf("unexpected error %q", sco.initError)
 	}
 	wantEndpointURL = "https://example.com"
 	if got := sco.endpointURL.String(); got != wantEndpointURL {
@@ -127,9 +127,9 @@ func TestSUMDBClientOps(t *testing.T) {
 		envGOPROXY: server.URL + ",off",
 		envGOSUMDB: "example.com",
 	}
-	sco.load()
-	if sco.loadError != nil {
-		t.Fatalf("unexpected error %q", sco.loadError)
+	sco.init()
+	if sco.initError != nil {
+		t.Fatalf("unexpected error %q", sco.initError)
 	}
 	wantEndpointURL = "https://example.com"
 	if got := sco.endpointURL.String(); got != wantEndpointURL {
@@ -144,13 +144,13 @@ func TestSUMDBClientOps(t *testing.T) {
 		envGOPROXY: server.URL,
 		envGOSUMDB: "example.com",
 	}
-	sco.load()
-	if sco.loadError == nil {
+	sco.init()
+	if sco.initError == nil {
 		t.Fatal("expected error")
 	}
-	wantLoadError = "bad upstream"
-	if got := sco.loadError.Error(); got != wantLoadError {
-		t.Errorf("got %q, want %q", got, wantLoadError)
+	wantInitError = "bad upstream"
+	if got := sco.initError.Error(); got != wantInitError {
+		t.Errorf("got %q, want %q", got, wantInitError)
 	}
 
 	sco = &sumdbClientOps{
@@ -158,19 +158,19 @@ func TestSUMDBClientOps(t *testing.T) {
 		envGOPROXY: "foobar",
 		envGOSUMDB: "example.com",
 	}
-	sco.load()
-	if sco.loadError == nil {
+	sco.init()
+	if sco.initError == nil {
 		t.Fatal("expected error")
 	}
 
 	sco = &sumdbClientOps{}
 	sco.ReadRemote("")
-	if sco.loadError == nil {
+	if sco.initError == nil {
 		t.Fatal("expected error")
 	}
-	wantLoadError = "missing GOSUMDB"
-	if got := sco.loadError.Error(); got != wantLoadError {
-		t.Errorf("got %q, want %q", got, wantLoadError)
+	wantInitError = "missing GOSUMDB"
+	if got := sco.initError.Error(); got != wantInitError {
+		t.Errorf("got %q, want %q", got, wantInitError)
 	}
 
 	sco = &sumdbClientOps{
@@ -178,71 +178,71 @@ func TestSUMDBClientOps(t *testing.T) {
 		envGOPROXY: "foobar",
 		envGOSUMDB: "example.com",
 	}
-	sco.load()
-	if sco.loadError == nil {
+	sco.init()
+	if sco.initError == nil {
 		t.Fatal("expected error")
 	}
 
 	sco = &sumdbClientOps{}
 	sco.ReadConfig("")
-	if sco.loadError == nil {
+	if sco.initError == nil {
 		t.Fatal("expected error")
 	}
-	if got := sco.loadError.Error(); got != wantLoadError {
-		t.Errorf("got %q, want %q", got, wantLoadError)
+	if got := sco.initError.Error(); got != wantInitError {
+		t.Errorf("got %q, want %q", got, wantInitError)
 	}
 
 	sco = &sumdbClientOps{}
 	if err := sco.WriteConfig("", nil, nil); err == nil {
 		t.Fatal("expected error")
-	} else if got := err.Error(); got != wantLoadError {
-		t.Errorf("got %q, want %q", got, wantLoadError)
+	} else if got := err.Error(); got != wantInitError {
+		t.Errorf("got %q, want %q", got, wantInitError)
 	}
-	if sco.loadError == nil {
+	if sco.initError == nil {
 		t.Fatal("expected error")
 	}
-	if got := sco.loadError.Error(); got != wantLoadError {
-		t.Errorf("got %q, want %q", got, wantLoadError)
+	if got := sco.initError.Error(); got != wantInitError {
+		t.Errorf("got %q, want %q", got, wantInitError)
 	}
 
 	sco = &sumdbClientOps{}
 	if _, err := sco.ReadCache(""); err == nil {
 		t.Fatal("expected error")
-	} else if got := err.Error(); got != wantLoadError {
-		t.Errorf("got %q, want %q", got, wantLoadError)
+	} else if got := err.Error(); got != wantInitError {
+		t.Errorf("got %q, want %q", got, wantInitError)
 	}
-	if sco.loadError == nil {
+	if sco.initError == nil {
 		t.Fatal("expected error")
 	}
-	if got := sco.loadError.Error(); got != wantLoadError {
-		t.Errorf("got %q, want %q", got, wantLoadError)
+	if got := sco.initError.Error(); got != wantInitError {
+		t.Errorf("got %q, want %q", got, wantInitError)
 	}
 
 	sco = &sumdbClientOps{}
 	sco.WriteCache("", nil)
-	if sco.loadError == nil {
+	if sco.initError == nil {
 		t.Fatal("expected error")
 	}
-	if got := sco.loadError.Error(); got != wantLoadError {
-		t.Errorf("got %q, want %q", got, wantLoadError)
+	if got := sco.initError.Error(); got != wantInitError {
+		t.Errorf("got %q, want %q", got, wantInitError)
 	}
 
 	sco = &sumdbClientOps{}
 	sco.Log("")
-	if sco.loadError == nil {
+	if sco.initError == nil {
 		t.Fatal("expected error")
 	}
-	if got := sco.loadError.Error(); got != wantLoadError {
-		t.Errorf("got %q, want %q", got, wantLoadError)
+	if got := sco.initError.Error(); got != wantInitError {
+		t.Errorf("got %q, want %q", got, wantInitError)
 	}
 
 	sco = &sumdbClientOps{}
 	sco.SecurityError("")
-	if sco.loadError == nil {
+	if sco.initError == nil {
 		t.Fatal("expected error")
 	}
-	if got := sco.loadError.Error(); got != wantLoadError {
-		t.Errorf("got %q, want %q", got, wantLoadError)
+	if got := sco.initError.Error(); got != wantInitError {
+		t.Errorf("got %q, want %q", got, wantInitError)
 	}
 
 	handlerFunc = func(rw http.ResponseWriter, req *http.Request) {
@@ -253,12 +253,12 @@ func TestSUMDBClientOps(t *testing.T) {
 		envGOPROXY: server.URL,
 		envGOSUMDB: "sum.golang.org",
 	}
-	sco.load()
-	if sco.loadError != nil {
-		t.Fatalf("unexpected error %q", sco.loadError)
+	sco.init()
+	if sco.initError != nil {
+		t.Fatalf("unexpected error %q", sco.initError)
 	}
 	if b, err := sco.ReadRemote(""); err != nil {
-		t.Fatalf("unexpected error %q", sco.loadError)
+		t.Fatalf("unexpected error %q", sco.initError)
 	} else if got, want := string(b), "foobar"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -275,9 +275,9 @@ func TestSUMDBClientOps(t *testing.T) {
 		envGOPROXY: server.URL,
 		envGOSUMDB: "sum.golang.org",
 	}
-	sco.load()
-	if sco.loadError != nil {
-		t.Fatalf("unexpected error %q", sco.loadError)
+	sco.init()
+	if sco.initError != nil {
+		t.Fatalf("unexpected error %q", sco.initError)
 	}
 	if _, err := sco.ReadRemote(""); err == nil {
 		t.Fatal("expected error")
@@ -290,12 +290,12 @@ func TestSUMDBClientOps(t *testing.T) {
 		envGOPROXY: "direct",
 		envGOSUMDB: "sum.golang.org",
 	}
-	sco.load()
-	if sco.loadError != nil {
-		t.Fatalf("unexpected error %q", sco.loadError)
+	sco.init()
+	if sco.initError != nil {
+		t.Fatalf("unexpected error %q", sco.initError)
 	}
 	if b, err := sco.ReadConfig("key"); err != nil {
-		t.Fatalf("unexpected error %q", sco.loadError)
+		t.Fatalf("unexpected error %q", sco.initError)
 	} else if got := string(b); got != wantKey {
 		t.Errorf("got %q, want %q", got, wantKey)
 	}
@@ -305,12 +305,12 @@ func TestSUMDBClientOps(t *testing.T) {
 		envGOPROXY: "direct",
 		envGOSUMDB: "sum.golang.org",
 	}
-	sco.load()
-	if sco.loadError != nil {
-		t.Fatalf("unexpected error %q", sco.loadError)
+	sco.init()
+	if sco.initError != nil {
+		t.Fatalf("unexpected error %q", sco.initError)
 	}
 	if b, err := sco.ReadConfig("/latest"); err != nil {
-		t.Fatalf("unexpected error %q", sco.loadError)
+		t.Fatalf("unexpected error %q", sco.initError)
 	} else if got, want := string(b), ""; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -320,9 +320,9 @@ func TestSUMDBClientOps(t *testing.T) {
 		envGOPROXY: "direct",
 		envGOSUMDB: "sum.golang.org",
 	}
-	sco.load()
-	if sco.loadError != nil {
-		t.Fatalf("unexpected error %q", sco.loadError)
+	sco.init()
+	if sco.initError != nil {
+		t.Fatalf("unexpected error %q", sco.initError)
 	}
 	if _, err := sco.ReadConfig("/"); err == nil {
 		t.Fatal("expected error")
@@ -335,9 +335,9 @@ func TestSUMDBClientOps(t *testing.T) {
 		envGOPROXY: "direct",
 		envGOSUMDB: "sum.golang.org",
 	}
-	sco.load()
-	if sco.loadError != nil {
-		t.Fatalf("unexpected error %q", sco.loadError)
+	sco.init()
+	if sco.initError != nil {
+		t.Fatalf("unexpected error %q", sco.initError)
 	}
 	if _, err := sco.ReadCache(""); err == nil {
 		t.Fatal("expected error")

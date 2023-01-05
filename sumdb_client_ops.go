@@ -14,8 +14,8 @@ import (
 
 // sumdbClientOps implements the [golang.org/x/mod/sumdb.ClientOps].
 type sumdbClientOps struct {
-	loadOnce    sync.Once
-	loadError   error
+	initOnce    sync.Once
+	initError   error
 	key         []byte
 	endpointURL *url.URL
 	envGOPROXY  string
@@ -23,14 +23,14 @@ type sumdbClientOps struct {
 	httpClient  *http.Client
 }
 
-// load loads the stuff of the sco up.
-func (sco *sumdbClientOps) load() {
+// init initializes the sco.
+func (sco *sumdbClientOps) init() {
 	sumdbParts := strings.Fields(sco.envGOSUMDB)
 	if l := len(sumdbParts); l == 0 {
-		sco.loadError = errors.New("missing GOSUMDB")
+		sco.initError = errors.New("missing GOSUMDB")
 		return
 	} else if l > 2 {
-		sco.loadError = errors.New("invalid GOSUMDB: too many fields")
+		sco.initError = errors.New("invalid GOSUMDB: too many fields")
 		return
 	}
 
@@ -60,8 +60,8 @@ func (sco *sumdbClientOps) load() {
 		sumdbParts = append(sumdbParts, sumdbName)
 	}
 
-	sco.endpointURL, sco.loadError = parseRawURL(sumdbParts[1])
-	if sco.loadError != nil {
+	sco.endpointURL, sco.initError = parseRawURL(sumdbParts[1])
+	if sco.initError != nil {
 		return
 	}
 
@@ -90,15 +90,15 @@ func (sco *sumdbClientOps) load() {
 	}, func() error {
 		return nil
 	}); err != nil && !errors.Is(err, errNotFound) {
-		sco.loadError = err
+		sco.initError = err
 		return
 	}
 }
 
 // ReadRemote implements the [golang.org/x/mod/sumdb.ClientOps].
 func (sco *sumdbClientOps) ReadRemote(path string) ([]byte, error) {
-	if sco.loadOnce.Do(sco.load); sco.loadError != nil {
-		return nil, sco.loadError
+	if sco.initOnce.Do(sco.init); sco.initError != nil {
+		return nil, sco.initError
 	}
 
 	var buf bytes.Buffer
@@ -116,8 +116,8 @@ func (sco *sumdbClientOps) ReadRemote(path string) ([]byte, error) {
 
 // ReadConfig implements the [golang.org/x/mod/sumdb.ClientOps].
 func (sco *sumdbClientOps) ReadConfig(file string) ([]byte, error) {
-	if sco.loadOnce.Do(sco.load); sco.loadError != nil {
-		return nil, sco.loadError
+	if sco.initOnce.Do(sco.init); sco.initError != nil {
+		return nil, sco.initError
 	}
 
 	if file == "key" {
@@ -131,14 +131,14 @@ func (sco *sumdbClientOps) ReadConfig(file string) ([]byte, error) {
 
 // WriteConfig implements the [golang.org/x/mod/sumdb.ClientOps].
 func (sco *sumdbClientOps) WriteConfig(file string, old, new []byte) error {
-	sco.loadOnce.Do(sco.load)
-	return sco.loadError
+	sco.initOnce.Do(sco.init)
+	return sco.initError
 }
 
 // ReadCache implements the [golang.org/x/mod/sumdb.ClientOps].
 func (sco *sumdbClientOps) ReadCache(file string) ([]byte, error) {
-	if sco.loadOnce.Do(sco.load); sco.loadError != nil {
-		return nil, sco.loadError
+	if sco.initOnce.Do(sco.init); sco.initError != nil {
+		return nil, sco.initError
 	}
 
 	return nil, os.ErrNotExist
@@ -146,15 +146,15 @@ func (sco *sumdbClientOps) ReadCache(file string) ([]byte, error) {
 
 // WriteCache implements the [golang.org/x/mod/sumdb.ClientOps].
 func (sco *sumdbClientOps) WriteCache(file string, data []byte) {
-	sco.loadOnce.Do(sco.load)
+	sco.initOnce.Do(sco.init)
 }
 
 // Log implements the [golang.org/x/mod/sumdb.ClientOps].
 func (sco *sumdbClientOps) Log(msg string) {
-	sco.loadOnce.Do(sco.load)
+	sco.initOnce.Do(sco.init)
 }
 
 // SecurityError implements the [golang.org/x/mod/sumdb.ClientOps].
 func (sco *sumdbClientOps) SecurityError(msg string) {
-	sco.loadOnce.Do(sco.load)
+	sco.initOnce.Do(sco.init)
 }

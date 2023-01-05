@@ -23,7 +23,7 @@ import (
 
 func TestNewFetch(t *testing.T) {
 	g := &Goproxy{}
-	g.load()
+	g.init()
 	name := "example.com/foo/bar/@latest"
 	tempDir := "tempDir"
 	f, err := newFetch(g, name, tempDir)
@@ -58,7 +58,7 @@ func TestNewFetch(t *testing.T) {
 
 	g = &Goproxy{}
 	g.GoBinEnv = []string{"GOSUMDB=off"}
-	g.load()
+	g.init()
 	name = "example.com/foo/bar/@latest"
 	f, err = newFetch(g, name, tempDir)
 	if err != nil {
@@ -70,7 +70,7 @@ func TestNewFetch(t *testing.T) {
 
 	g = &Goproxy{}
 	g.GoBinEnv = []string{"GONOSUMDB=example.com"}
-	g.load()
+	g.init()
 	name = "example.com/foo/bar/@latest"
 	f, err = newFetch(g, name, tempDir)
 	if err != nil {
@@ -82,7 +82,7 @@ func TestNewFetch(t *testing.T) {
 
 	g = &Goproxy{}
 	g.GoBinEnv = []string{"GOPRIVATE=example.com"}
-	g.load()
+	g.init()
 	name = "example.com/foo/bar/@latest"
 	f, err = newFetch(g, name, tempDir)
 	if err != nil {
@@ -322,7 +322,7 @@ func TestFetchDo(t *testing.T) {
 			"GOSUMDB=off",
 		},
 	}
-	g.load()
+	g.init()
 	f, err := newFetch(g, "example.com/@latest", tempDir)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -345,7 +345,7 @@ func TestFetchDo(t *testing.T) {
 			"GOSUMDB=off",
 		},
 	}
-	g.load()
+	g.init()
 	g.goBinEnv = append(g.goBinEnv, "GOPROXY=off")
 	f, err = newFetch(g, "example.com/@latest", tempDir)
 	if err != nil {
@@ -365,7 +365,7 @@ func TestFetchDo(t *testing.T) {
 			"GOSUMDB=off",
 		},
 	}
-	g.load()
+	g.init()
 	g.goBinEnv = append(g.goBinEnv, "GOPROXY=off")
 	f, err = newFetch(g, "example.com/@latest", tempDir)
 	if err != nil {
@@ -381,7 +381,7 @@ func TestFetchDo(t *testing.T) {
 			"GOSUMDB=off",
 		},
 	}
-	g.load()
+	g.init()
 	f, err = newFetch(g, "example.com/@latest", tempDir)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -420,7 +420,7 @@ func TestFetchDoProxy(t *testing.T) {
 	g := &Goproxy{
 		GoBinEnv: []string{"GOSUMDB=off"},
 	}
-	g.load()
+	g.init()
 	f, err := newFetch(g, "example.com/@latest", tempDir)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -448,7 +448,7 @@ func TestFetchDoProxy(t *testing.T) {
 	g = &Goproxy{
 		GoBinEnv: []string{"GOSUMDB=off"},
 	}
-	g.load()
+	g.init()
 	f, err = newFetch(g, "example.com/@latest", tempDir)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -477,7 +477,7 @@ invalid
 	g = &Goproxy{
 		GoBinEnv: []string{"GOSUMDB=off"},
 	}
-	g.load()
+	g.init()
 	f, err = newFetch(g, "example.com/@v/list", tempDir)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -503,7 +503,7 @@ invalid
 	g = &Goproxy{
 		GoBinEnv: []string{"GOSUMDB=off"},
 	}
-	g.load()
+	g.init()
 	f, err = newFetch(g, "example.com/@v/v1.0.0.info", tempDir)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -533,7 +533,7 @@ invalid
 	g = &Goproxy{
 		GoBinEnv: []string{"GOSUMDB=off"},
 	}
-	g.load()
+	g.init()
 	f, err = newFetch(g, "example.com/@v/v1.0.0.info", tempDir)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -557,7 +557,7 @@ invalid
 	g = &Goproxy{
 		GoBinEnv: []string{"GOSUMDB=off"},
 	}
-	g.load()
+	g.init()
 	f, err = newFetch(g, "example.com/@v/v1.0.0.mod", tempDir)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -625,7 +625,7 @@ invalid
 		"GOPROXY=off",
 		"GOSUMDB=" + vkey + " " + sumdbServer.URL,
 	}}
-	g.load()
+	g.init()
 	f, err = newFetch(g, "example.com/@v/v1.0.0.mod", tempDir)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -674,7 +674,7 @@ invalid
 	g = &Goproxy{
 		GoBinEnv: []string{"GOSUMDB=off"},
 	}
-	g.load()
+	g.init()
 	f, err = newFetch(g, "example.com/@v/v1.0.0.mod", tempDir)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -715,7 +715,7 @@ invalid
 	g = &Goproxy{
 		GoBinEnv: []string{"GOSUMDB=off"},
 	}
-	g.load()
+	g.init()
 	f, err = newFetch(g, "example.com/@v/v1.2.0.zip", tempDir)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -747,7 +747,7 @@ invalid
 		"GOPROXY=off",
 		"GOSUMDB=" + vkey + " " + sumdbServer.URL,
 	}}
-	g.load()
+	g.init()
 	f, err = newFetch(g, "example.com/@v/v1.2.0.zip", tempDir)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -816,7 +816,7 @@ invalid
 	g = &Goproxy{
 		GoBinEnv: []string{"GOSUMDB=off"},
 	}
-	g.load()
+	g.init()
 	f, err = newFetch(g, "example.com/@v/v1.0.0.zip", tempDir)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -831,7 +831,7 @@ invalid
 	g = &Goproxy{
 		GoBinEnv: []string{"GOSUMDB=off"},
 	}
-	g.load()
+	g.init()
 	f, err = newFetch(g, "example.com/@latest", tempDir)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -843,7 +843,7 @@ invalid
 	g = &Goproxy{
 		GoBinEnv: []string{"GOSUMDB=off"},
 	}
-	g.load()
+	g.init()
 	f, err = newFetch(g, "example.com/@latest", filepath.Join(tempDir, "_"))
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -858,7 +858,7 @@ invalid
 	g = &Goproxy{
 		GoBinEnv: []string{"GOSUMDB=off"},
 	}
-	g.load()
+	g.init()
 	f, err = newFetch(g, "example.com/@latest", tempDir)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -1008,7 +1008,7 @@ func TestFetchDoDirect(t *testing.T) {
 			"GOSUMDB=off",
 		),
 	}
-	g.load()
+	g.init()
 	g.goBinEnv = append(g.goBinEnv, "GOPROXY="+goproxyServer.URL)
 	f, err := newFetch(g, "example.com/@latest", tempDir)
 	if err != nil {
@@ -1156,7 +1156,7 @@ func TestFetchDoDirect(t *testing.T) {
 			"GOSUMDB="+vkey+" "+sumdbServer.URL,
 		),
 	}
-	g.load()
+	g.init()
 	g.goBinEnv = append(g.goBinEnv, "GOPROXY="+goproxyServer.URL)
 	f, err = newFetch(g, "example.com/@v/v1.0.0.info", tempDir)
 	if err != nil {
@@ -1192,7 +1192,7 @@ func TestFetchDoDirect(t *testing.T) {
 			"GOSUMDB="+vkey+" "+sumdbServer.URL,
 		),
 	}
-	g.load()
+	g.init()
 	g.goBinEnv = append(g.goBinEnv, "GOPROXY="+goproxyServer.URL)
 	f, err = newFetch(g, "example.com/@v/v1.0.0.info", tempDir)
 	if err != nil {
@@ -1225,7 +1225,7 @@ func TestFetchDoDirect(t *testing.T) {
 			"GOSUMDB="+vkey+" "+sumdbServer.URL,
 		),
 	}
-	g.load()
+	g.init()
 	g.goBinEnv = append(g.goBinEnv, "GOPROXY="+goproxyServer.URL)
 	f, err = newFetch(g, "example.com/@v/v1.0.0.info", tempDir)
 	if err != nil {
@@ -1607,7 +1607,7 @@ func TestVerifyModFile(t *testing.T) {
 		"GOPROXY=off",
 		"GOSUMDB=" + vkey + " " + server.URL,
 	}}
-	g.load()
+	g.init()
 
 	if err := verifyModFile(
 		g.sumdbClient,
@@ -1782,7 +1782,7 @@ func TestVerifyZipFile(t *testing.T) {
 		"GOPROXY=off",
 		"GOSUMDB=" + vkey + " " + server.URL,
 	}}
-	g.load()
+	g.init()
 
 	if err := verifyZipFile(
 		g.sumdbClient,

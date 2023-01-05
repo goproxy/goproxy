@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-func TestGoproxyLoad(t *testing.T) {
+func TestGoproxyInit(t *testing.T) {
 	for _, key := range []string{
 		"GO111MODULE",
 		"GOPROXY",
@@ -32,7 +32,7 @@ func TestGoproxyLoad(t *testing.T) {
 	}
 
 	g := &Goproxy{}
-	g.load()
+	g.init()
 	if got, want := g.goBinName, "go"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -78,7 +78,7 @@ func TestGoproxyLoad(t *testing.T) {
 	g = &Goproxy{}
 	wantEnvGOPROXY = "https://example.com|https://backup.example.com,direct"
 	g.GoBinEnv = []string{"GOPROXY=" + wantEnvGOPROXY}
-	g.load()
+	g.init()
 	gotEnvGOPROXY = g.goBinEnvGOPROXY
 	if gotEnvGOPROXY != wantEnvGOPROXY {
 		t.Errorf("got %q, want %q", gotEnvGOPROXY, wantEnvGOPROXY)
@@ -88,7 +88,7 @@ func TestGoproxyLoad(t *testing.T) {
 	g.GoBinEnv = []string{
 		"GOPROXY=https://example.com,direct,https://backup.example.com",
 	}
-	g.load()
+	g.init()
 	gotEnvGOPROXY = g.goBinEnvGOPROXY
 	wantEnvGOPROXY = "https://example.com,direct"
 	if gotEnvGOPROXY != wantEnvGOPROXY {
@@ -99,7 +99,7 @@ func TestGoproxyLoad(t *testing.T) {
 	g.GoBinEnv = []string{
 		"GOPROXY=https://example.com,off,https://backup.example.com",
 	}
-	g.load()
+	g.init()
 	gotEnvGOPROXY = g.goBinEnvGOPROXY
 	wantEnvGOPROXY = "https://example.com,off"
 	if gotEnvGOPROXY != wantEnvGOPROXY {
@@ -108,7 +108,7 @@ func TestGoproxyLoad(t *testing.T) {
 
 	g = &Goproxy{}
 	g.GoBinEnv = []string{"GOPROXY=https://example.com|"}
-	g.load()
+	g.init()
 	gotEnvGOPROXY = g.goBinEnvGOPROXY
 	wantEnvGOPROXY = "https://example.com"
 	if gotEnvGOPROXY != wantEnvGOPROXY {
@@ -117,7 +117,7 @@ func TestGoproxyLoad(t *testing.T) {
 
 	g = &Goproxy{}
 	g.GoBinEnv = []string{"GOPROXY=,"}
-	g.load()
+	g.init()
 	gotEnvGOPROXY = g.goBinEnvGOPROXY
 	wantEnvGOPROXY = "off"
 	if gotEnvGOPROXY != wantEnvGOPROXY {
@@ -126,7 +126,7 @@ func TestGoproxyLoad(t *testing.T) {
 
 	g = &Goproxy{}
 	g.GoBinEnv = []string{"GOSUMDB=example.com"}
-	g.load()
+	g.init()
 	gotEnvGOSUMDB = g.goBinEnvGOSUMDB
 	wantEnvGOSUMDB = "example.com"
 	if gotEnvGOSUMDB != wantEnvGOSUMDB {
@@ -135,7 +135,7 @@ func TestGoproxyLoad(t *testing.T) {
 
 	g = &Goproxy{}
 	g.GoBinEnv = []string{"GOPRIVATE=example.com"}
-	g.load()
+	g.init()
 	gotEnvGONOPROXY := g.goBinEnvGONOPROXY
 	wantEnvGONOPROXY := "example.com"
 	if gotEnvGONOPROXY != wantEnvGONOPROXY {
@@ -153,7 +153,7 @@ func TestGoproxyLoad(t *testing.T) {
 		"GONOPROXY=alt1.example.com",
 		"GONOSUMDB=alt2.example.com",
 	}
-	g.load()
+	g.init()
 	gotEnvGONOPROXY = g.goBinEnvGONOPROXY
 	wantEnvGONOPROXY = "alt1.example.com"
 	if gotEnvGONOPROXY != wantEnvGONOPROXY {
@@ -167,7 +167,7 @@ func TestGoproxyLoad(t *testing.T) {
 
 	g = &Goproxy{}
 	g.GoBinMaxWorkers = 1
-	g.load()
+	g.init()
 	if g.goBinWorkerChan == nil {
 		t.Fatal("unexpected nil")
 	}
@@ -179,7 +179,7 @@ func TestGoproxyLoad(t *testing.T) {
 		"",
 		"example.com wrongurl",
 	}
-	g.load()
+	g.init()
 	if got, want := len(g.proxiedSUMDBs), 2; got != want {
 		t.Errorf("got %d, want %d", got, want)
 	}
@@ -243,7 +243,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 		TempDir:     tempDir,
 		ErrorLogger: log.New(&discardWriter{}, "", 0),
 	}
-	g.load()
+	g.init()
 
 	req := httptest.NewRequest("", "/example.com/@latest", nil)
 	rec := httptest.NewRecorder()
@@ -344,7 +344,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 		TempDir:     filepath.Join(tempDir, "404"),
 		ErrorLogger: log.New(&discardWriter{}, "", 0),
 	}
-	g.load()
+	g.init()
 
 	req = httptest.NewRequest("", "/prefix/example.com/@latest", nil)
 	rec = httptest.NewRecorder()
@@ -409,7 +409,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 		GoBinEnv:    []string{"GOPROXY=" + server.URL, "GOSUMDB=off"},
 		ErrorLogger: log.New(&discardWriter{}, "", 0),
 	}
-	g.load()
+	g.init()
 
 	req := httptest.NewRequest("", "/", nil)
 	rec := httptest.NewRecorder()
@@ -545,7 +545,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 		GoBinEnv:    []string{"GOPROXY=" + server.URL, "GOSUMDB=off"},
 		ErrorLogger: log.New(&discardWriter{}, "", 0),
 	}
-	g.load()
+	g.init()
 
 	req = httptest.NewRequest("", "/", nil)
 	rec = httptest.NewRecorder()
@@ -613,7 +613,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 		GoBinEnv:    []string{"GOPROXY=" + server.URL, "GOSUMDB=off"},
 		ErrorLogger: log.New(&discardWriter{}, "", 0),
 	}
-	g.load()
+	g.init()
 
 	req := httptest.NewRequest("", "/", nil)
 	rec := httptest.NewRecorder()
@@ -659,7 +659,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 		GoBinEnv:    []string{"GOPROXY=" + server.URL, "GOSUMDB=off"},
 		ErrorLogger: log.New(&discardWriter{}, "", 0),
 	}
-	g.load()
+	g.init()
 
 	req = httptest.NewRequest("", "/", nil)
 	rec = httptest.NewRecorder()
@@ -705,7 +705,7 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 		ProxiedSUMDBs: []string{"sumdb.example.com " + server.URL},
 		ErrorLogger:   log.New(&discardWriter{}, "", 0),
 	}
-	g.load()
+	g.init()
 
 	req := httptest.NewRequest("", "/", nil)
 	rec := httptest.NewRecorder()
@@ -868,7 +868,7 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 		ProxiedSUMDBs: []string{"sumdb.example.com " + server.URL},
 		ErrorLogger:   log.New(&discardWriter{}, "", 0),
 	}
-	g.load()
+	g.init()
 
 	handlerFunc = func(rw http.ResponseWriter, req *http.Request) {
 		fmt.Fprint(rw, req.URL.Path)
@@ -909,7 +909,7 @@ func TestGoproxyServeCache(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	g := &Goproxy{Cacher: DirCacher(tempDir)}
-	g.load()
+	g.init()
 	if err := g.setCache(
 		context.Background(),
 		"foo",
@@ -944,7 +944,7 @@ func TestGoproxyServeCache(t *testing.T) {
 		Cacher:      &errorCacher{},
 		ErrorLogger: log.New(&discardWriter{}, "", 0),
 	}
-	g.load()
+	g.init()
 	g.serveCache(rec, req, "foo", "", 60, func() {})
 	if got, want := rec.Code, http.StatusInternalServerError; got != want {
 		t.Errorf("got %d, want %d", got, want)
@@ -970,7 +970,7 @@ func TestGoproxyCache(t *testing.T) {
 	}
 
 	g := &Goproxy{Cacher: DirCacher(tempDir)}
-	g.load()
+	g.init()
 	if rc, err := g.cache(context.Background(), "foo"); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if b, err := ioutil.ReadAll(rc); err != nil {
@@ -987,7 +987,7 @@ func TestGoproxyCache(t *testing.T) {
 	}
 
 	g = &Goproxy{}
-	g.load()
+	g.init()
 	if _, err := g.cache(context.Background(), ""); err == nil {
 		t.Fatal("expected error")
 	} else if got, want := errors.Is(err, os.ErrNotExist),
@@ -1029,7 +1029,7 @@ func TestGoproxySetCache(t *testing.T) {
 		Cacher:              DirCacher(tempDir),
 		CacherMaxCacheBytes: 5,
 	}
-	g.load()
+	g.init()
 	if err := g.setCache(
 		context.Background(),
 		"foo",
@@ -1083,7 +1083,7 @@ func TestGoproxySetCache(t *testing.T) {
 	}
 
 	g = &Goproxy{}
-	g.load()
+	g.init()
 	if err := g.setCache(
 		context.Background(),
 		"foo",
@@ -1110,7 +1110,7 @@ func TestGoproxySetCacheFile(t *testing.T) {
 	}
 
 	g := &Goproxy{Cacher: DirCacher(tempDir)}
-	g.load()
+	g.init()
 	if err := g.setCacheFile(
 		context.Background(),
 		"foo",
@@ -1142,7 +1142,7 @@ func TestGoproxyLogErrorf(t *testing.T) {
 	g := &Goproxy{
 		ErrorLogger: log.New(&errorLoggerBuffer, "", log.Ldate),
 	}
-	g.load()
+	g.init()
 	g.logErrorf("not found: %s", "invalid version")
 	if got, want := errorLoggerBuffer.String(), fmt.Sprintf(
 		"%s goproxy: not found: invalid version\n",
@@ -1153,7 +1153,7 @@ func TestGoproxyLogErrorf(t *testing.T) {
 
 	errorLoggerBuffer.Reset()
 	g = &Goproxy{}
-	g.load()
+	g.init()
 	log.SetFlags(log.Ldate)
 	defer log.SetFlags(log.LstdFlags)
 	log.SetOutput(&errorLoggerBuffer)
