@@ -9,6 +9,16 @@ import (
 	"testing"
 )
 
+type errorReadSeeker struct{}
+
+func (errorReadSeeker) Read([]byte) (int, error) {
+	return 0, errors.New("cannot read")
+}
+
+func (errorReadSeeker) Seek(int64, int) (int64, error) {
+	return 0, errors.New("cannot seek")
+}
+
 func TestDirCacher(t *testing.T) {
 	tempDir, err := ioutil.TempDir("", "goproxy.TestDirCacher")
 	if err != nil {
@@ -50,6 +60,12 @@ func TestDirCacher(t *testing.T) {
 
 	if err := rc.Close(); err != nil {
 		t.Fatalf("unexpected error %q", err)
+	}
+
+	if err := dirCacher.Set(nil, "d/e/f", &errorReadSeeker{}); err == nil {
+		t.Fatal("expected error")
+	} else if got, want := err.Error(), "cannot read"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	dirCacher = DirCacher(filepath.Join(
