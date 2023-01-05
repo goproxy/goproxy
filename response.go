@@ -57,7 +57,9 @@ func responseNotFound(
 	if len(msgs) > 0 {
 		msg = strings.TrimPrefix(fmt.Sprint(msgs...), "bad request: ")
 		msg = strings.TrimPrefix(msg, "gone: ")
-		if msg != "" && !strings.HasPrefix(msg, "not found: ") {
+		if msg != "" &&
+			msg != "not found" &&
+			!strings.HasPrefix(msg, "not found: ") {
 			msg = fmt.Sprint("not found: ", msg)
 		}
 	}

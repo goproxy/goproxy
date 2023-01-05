@@ -188,6 +188,29 @@ func TestResponseNotFound(t *testing.T) {
 	} else if want := "not found: foobar"; string(b) != want {
 		t.Errorf("got %q, want %q", b, want)
 	}
+
+	rec = httptest.NewRecorder()
+	responseNotFound(rec, req, 60, "not found")
+	recr = rec.Result()
+	if want := http.StatusNotFound; recr.StatusCode != want {
+		t.Errorf("got %d, want %d", recr.StatusCode, want)
+	}
+
+	recrCT = recr.Header.Get("Content-Type")
+	if want := "text/plain; charset=utf-8"; recrCT != want {
+		t.Errorf("got %q, want %q", recrCT, want)
+	}
+
+	recrCC = recr.Header.Get("Cache-Control")
+	if want := "public, max-age=60"; recrCC != want {
+		t.Errorf("got %q, want %q", recrCC, want)
+	}
+
+	if b, err := ioutil.ReadAll(recr.Body); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if want := "not found"; string(b) != want {
+		t.Errorf("got %q, want %q", b, want)
+	}
 }
 
 func TestResponseMethodNotAllowed(t *testing.T) {
