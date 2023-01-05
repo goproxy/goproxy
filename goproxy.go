@@ -36,6 +36,10 @@ import (
 // built-in support for them. Now, you can set them even the version of the Go
 // binary targeted by the [Goproxy.GoBinName] is before v1.13.
 //
+// For requests downloading large numbers of modules (e.g. for bulk static
+// analysis), the Goproxy supports a non-standard header, "Disable-Module-Fetch:
+// true" that instructs it to return only cached content.
+//
 // Make sure that all fields of the Goproxy have been finalized before calling
 // any of its methods.
 type Goproxy struct {

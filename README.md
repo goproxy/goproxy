@@ -29,6 +29,7 @@ implements the [`http.Handler`](https://pkg.go.dev/net/http#Handler).
 * Built-in [`GOPRIVATE`](https://go.dev/ref/mod#environment-variables) support
 * Supports serving under other Go module proxies by setting [`GOPROXY`](https://go.dev/ref/mod#environment-variables)
 * Supports [proxying checksum databases](http://golang.org/design/25530-sumdb#proxying-a-checksum-database)
+* Supports `Disable-Module-Fetch` header
 
 ## Installation
 
