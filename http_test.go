@@ -176,7 +176,12 @@ func TestHTTPGet(t *testing.T) {
 		t.Errorf("got %d, want %d", got, want)
 	}
 
-	if err := httpGet(nil, nil, "", nil); err == nil {
+	if err := httpGet(
+		context.Background(),
+		http.DefaultClient,
+		"::",
+		nil,
+	); err == nil {
 		t.Fatal("expected error")
 	}
 

@@ -1,6 +1,7 @@
 package goproxy
 
 import (
+	"context"
 	"errors"
 	"io/ioutil"
 	"os"
@@ -29,7 +30,7 @@ func TestDirCacher(t *testing.T) {
 	dirCacher := DirCacher(tempDir)
 
 	if rc, err := dirCacher.Get(
-		nil,
+		context.Background(),
 		"a/b/c",
 	); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("got error %q, want error %q", err, os.ErrNotExist)
@@ -38,14 +39,14 @@ func TestDirCacher(t *testing.T) {
 	}
 
 	if err := dirCacher.Set(
-		nil,
+		context.Background(),
 		"a/b/c",
 		strings.NewReader("foobar"),
 	); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 
-	rc, err := dirCacher.Get(nil, "a/b/c")
+	rc, err := dirCacher.Get(context.Background(), "a/b/c")
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if rc == nil {
@@ -62,7 +63,11 @@ func TestDirCacher(t *testing.T) {
 		t.Fatalf("unexpected error %q", err)
 	}
 
-	if err := dirCacher.Set(nil, "d/e/f", &errorReadSeeker{}); err == nil {
+	if err := dirCacher.Set(
+		context.Background(),
+		"d/e/f",
+		&errorReadSeeker{},
+	); err == nil {
 		t.Fatal("expected error")
 	} else if got, want := err.Error(), "cannot read"; got != want {
 		t.Errorf("got %q, want %q", got, want)
@@ -73,7 +78,7 @@ func TestDirCacher(t *testing.T) {
 		filepath.FromSlash("a/b/c"),
 	))
 	if err := dirCacher.Set(
-		nil,
+		context.Background(),
 		"d/e/f",
 		strings.NewReader("foobar"),
 	); err == nil {
