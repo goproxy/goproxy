@@ -67,7 +67,7 @@ func TestGoproxyInit(t *testing.T) {
 	for _, env := range g.goBinEnv {
 		if envParts := strings.SplitN(env, "=", 2); len(envParts) == 2 {
 			if strings.TrimSpace(envParts[0]) == "GOPRIVATE" {
-				goBinEnvPATH = envParts[1]
+				goBinEnvGOPRIVATE = envParts[1]
 			}
 		}
 	}

@@ -596,6 +596,9 @@ invalid
 			return os.Open(modFile)
 		},
 	)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
 
 	skey, vkey, err := note.GenerateKey(nil, "sumdb.example.com")
 	if err != nil {
@@ -1119,6 +1122,9 @@ func TestFetchDoDirect(t *testing.T) {
 			return &nopCloser{strings.NewReader(mod)}, nil
 		},
 	)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
 
 	skey, vkey, err := note.GenerateKey(nil, "sumdb.example.com")
 	if err != nil {
@@ -1577,6 +1583,9 @@ func TestVerifyModFile(t *testing.T) {
 			return os.Open(modFile)
 		},
 	)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
 
 	skey, vkey, err := note.GenerateKey(nil, "example.com")
 	if err != nil {
@@ -1739,7 +1748,7 @@ func TestVerifyZipFile(t *testing.T) {
 		t.Fatalf("unexpected error %q", err)
 	}
 
-	zipHash, err := dirhash.HashZip(zipFile.Name(), dirhash.DefaultHash)
+	dirHash, err := dirhash.HashZip(zipFile.Name(), dirhash.DefaultHash)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -1752,6 +1761,9 @@ func TestVerifyZipFile(t *testing.T) {
 			)}, nil
 		},
 	)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
 
 	skey, vkey, err := note.GenerateKey(nil, "example.com")
 	if err != nil {
@@ -1767,7 +1779,7 @@ func TestVerifyZipFile(t *testing.T) {
 					"%s %s %s\n%s %s/go.mod %s\n",
 					modulePath,
 					moduleVersion,
-					zipHash,
+					dirHash,
 					modulePath,
 					moduleVersion,
 					modHash,
