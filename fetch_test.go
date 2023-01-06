@@ -169,23 +169,17 @@ func TestNewFetch(t *testing.T) {
 	}
 
 	name = "example.com/foo/bar/@v/v1.0.0.ext"
-	f, err = newFetch(g, name, tempDir)
-	if err == nil {
+	if _, err := newFetch(g, name, tempDir); err == nil {
 		t.Fatal("expected error")
 	} else if want := `unexpected extension ".ext"`; err.Error() != want {
 		t.Errorf("got %q, want %q", err, want)
-	} else if f != nil {
-		t.Errorf("got %v, want nil", f)
 	}
 
 	name = "example.com/foo/bar/@v/latest.info"
-	f, err = newFetch(g, name, tempDir)
-	if err == nil {
+	if _, err := newFetch(g, name, tempDir); err == nil {
 		t.Fatal("expected error")
 	} else if want := "invalid version"; err.Error() != want {
 		t.Errorf("got %q, want %q", err, want)
-	} else if f != nil {
-		t.Errorf("got %v, want nil", f)
 	}
 
 	name = "example.com/foo/bar/@v/master.info"
@@ -208,55 +202,40 @@ func TestNewFetch(t *testing.T) {
 	}
 
 	name = "example.com/foo/bar/@v/master.mod"
-	f, err = newFetch(g, name, tempDir)
-	if err == nil {
+	if _, err := newFetch(g, name, tempDir); err == nil {
 		t.Fatal("expected error")
 	} else if want := "unrecognized version"; err.Error() != want {
 		t.Errorf("got %q, want %q", err, want)
-	} else if f != nil {
-		t.Errorf("got %v, want nil", f)
 	}
 
 	name = "example.com/foo/bar/@v/master.zip"
-	f, err = newFetch(g, name, tempDir)
-	if err == nil {
+	if _, err := newFetch(g, name, tempDir); err == nil {
 		t.Fatal("expected error")
 	} else if want := "unrecognized version"; err.Error() != want {
 		t.Errorf("got %q, want %q", err, want)
-	} else if f != nil {
-		t.Errorf("got %v, want nil", f)
 	}
 
 	name = "example.com/foo/bar"
-	f, err = newFetch(g, name, tempDir)
-	if err == nil {
+	if _, err := newFetch(g, name, tempDir); err == nil {
 		t.Fatal("expected error")
 	} else if want := "missing /@v/"; err.Error() != want {
 		t.Errorf("got %q, want %q", err, want)
-	} else if f != nil {
-		t.Errorf("got %v, want nil", f)
 	}
 
 	name = "example.com/foo/bar/@v/"
-	f, err = newFetch(g, name, tempDir)
-	if err == nil {
+	if _, err := newFetch(g, name, tempDir); err == nil {
 		t.Fatal("expected error")
-	}
-	if want := `no file extension in filename ""`; err.Error() != want {
-		t.Errorf("got %q, want %q", err, want)
-	} else if f != nil {
-		t.Errorf("got %v, want nil", f)
+	} else if got, want := err.Error(),
+		`no file extension in filename ""`; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	name = "example.com/foo/bar/@v/main"
-	f, err = newFetch(g, name, tempDir)
-	if err == nil {
+	if _, err := newFetch(g, name, tempDir); err == nil {
 		t.Fatal("expected error")
-	}
-	if want := `no file extension in filename "main"`; err.Error() != want {
-		t.Errorf("got %q, want %q", err, want)
-	} else if f != nil {
-		t.Errorf("got %v, want nil", f)
+	} else if got, want := err.Error(),
+		`no file extension in filename "main"`; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	name = "example.com/!foo/bar/@v/!v1.0.0.info"
@@ -279,14 +258,12 @@ func TestNewFetch(t *testing.T) {
 	}
 
 	name = "example.com/!!foo/bar/@latest"
-	f, err = newFetch(g, name, tempDir)
-	if err == nil {
+	if _, err := newFetch(g, name, tempDir); err == nil {
 		t.Fatal("expected error")
 	}
 
 	name = "example.com/foo/bar/@v/!!v1.0.0.info"
-	f, err = newFetch(g, name, tempDir)
-	if err == nil {
+	if _, err := newFetch(g, name, tempDir); err == nil {
 		t.Fatal("expected error")
 	}
 }

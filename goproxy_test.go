@@ -248,12 +248,13 @@ func TestGoproxyServeHTTP(t *testing.T) {
 	req := httptest.NewRequest("", "/example.com/@latest", nil)
 	rec := httptest.NewRecorder()
 	g.ServeHTTP(rec, req)
+	recr := rec.Result()
 	if got, want := rec.Code, http.StatusOK; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"application/json; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		"public, max-age=60"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(),
@@ -264,12 +265,13 @@ func TestGoproxyServeHTTP(t *testing.T) {
 	req = httptest.NewRequest(http.MethodHead, "/example.com/@latest", nil)
 	rec = httptest.NewRecorder()
 	g.ServeHTTP(rec, req)
+	recr = rec.Result()
 	if got, want := rec.Code, http.StatusOK; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"application/json; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		"public, max-age=60"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), ""; got != want {
@@ -279,12 +281,13 @@ func TestGoproxyServeHTTP(t *testing.T) {
 	req = httptest.NewRequest(http.MethodPost, "/example.com/@latest", nil)
 	rec = httptest.NewRecorder()
 	g.ServeHTTP(rec, req)
+	recr = rec.Result()
 	if got, want := rec.Code, http.StatusMethodNotAllowed; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		"public, max-age=86400"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(),
@@ -295,12 +298,13 @@ func TestGoproxyServeHTTP(t *testing.T) {
 	req = httptest.NewRequest("", "/", nil)
 	rec = httptest.NewRecorder()
 	g.ServeHTTP(rec, req)
+	recr = rec.Result()
 	if got, want := rec.Code, http.StatusNotFound; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		"public, max-age=86400"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), "not found"; got != want {
@@ -310,12 +314,13 @@ func TestGoproxyServeHTTP(t *testing.T) {
 	req = httptest.NewRequest("", "/../example.com/@latest", nil)
 	rec = httptest.NewRecorder()
 	g.ServeHTTP(rec, req)
+	recr = rec.Result()
 	if got, want := rec.Code, http.StatusNotFound; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		"public, max-age=86400"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), "not found"; got != want {
@@ -325,12 +330,13 @@ func TestGoproxyServeHTTP(t *testing.T) {
 	req = httptest.NewRequest("", "/sumdb/sumdb.example.com/supported", nil)
 	rec = httptest.NewRecorder()
 	g.ServeHTTP(rec, req)
+	recr = rec.Result()
 	if got, want := rec.Code, http.StatusNotFound; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		"public, max-age=86400"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), "not found"; got != want {
@@ -349,12 +355,13 @@ func TestGoproxyServeHTTP(t *testing.T) {
 	req = httptest.NewRequest("", "/prefix/example.com/@latest", nil)
 	rec = httptest.NewRecorder()
 	g.ServeHTTP(rec, req)
+	recr = rec.Result()
 	if got, want := rec.Code, http.StatusInternalServerError; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		""; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(),
@@ -414,12 +421,13 @@ func TestGoproxyServeFetch(t *testing.T) {
 	req := httptest.NewRequest("", "/", nil)
 	rec := httptest.NewRecorder()
 	g.serveFetch(rec, req, "example.com/@latest", tempDir)
+	recr := rec.Result()
 	if got, want := rec.Code, http.StatusOK; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"application/json; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		"public, max-age=60"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(),
@@ -430,12 +438,13 @@ func TestGoproxyServeFetch(t *testing.T) {
 	req = httptest.NewRequest("", "/", nil)
 	rec = httptest.NewRecorder()
 	g.serveFetch(rec, req, "example.com/v2/@latest", tempDir)
+	recr = rec.Result()
 	if got, want := rec.Code, http.StatusNotFound; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		"public, max-age=60"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), "not found"; got != want {
@@ -445,12 +454,13 @@ func TestGoproxyServeFetch(t *testing.T) {
 	req = httptest.NewRequest("", "/", nil)
 	rec = httptest.NewRecorder()
 	g.serveFetch(rec, req, "example.com/@v/v1.0.0.info", tempDir)
+	recr = rec.Result()
 	if got, want := rec.Code, http.StatusOK; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"application/json; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		"public, max-age=604800"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(),
@@ -461,12 +471,13 @@ func TestGoproxyServeFetch(t *testing.T) {
 	req = httptest.NewRequest("", "/", nil)
 	rec = httptest.NewRecorder()
 	g.serveFetch(rec, req, "example.com/@v/v1.1.0.info", tempDir)
+	recr = rec.Result()
 	if got, want := rec.Code, http.StatusNotFound; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		"public, max-age=600"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), "not found"; got != want {
@@ -477,12 +488,13 @@ func TestGoproxyServeFetch(t *testing.T) {
 	req.Header.Set("Disable-Module-Fetch", "true")
 	rec = httptest.NewRecorder()
 	g.serveFetch(rec, req, "example.com/@latest", tempDir)
+	recr = rec.Result()
 	if got, want := rec.Code, http.StatusOK; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"application/json; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		"public, max-age=60"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(),
@@ -494,12 +506,13 @@ func TestGoproxyServeFetch(t *testing.T) {
 	req.Header.Set("Disable-Module-Fetch", "true")
 	rec = httptest.NewRecorder()
 	g.serveFetch(rec, req, "example.com/v2/@latest", tempDir)
+	recr = rec.Result()
 	if got, want := rec.Code, http.StatusNotFound; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		"public, max-age=60"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(),
@@ -511,12 +524,13 @@ func TestGoproxyServeFetch(t *testing.T) {
 	req.Header.Set("Disable-Module-Fetch", "true")
 	rec = httptest.NewRecorder()
 	g.serveFetch(rec, req, "example.com/@v/v1.0.0.info", tempDir)
+	recr = rec.Result()
 	if got, want := rec.Code, http.StatusOK; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"application/json; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		"public, max-age=604800"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(),
@@ -527,12 +541,13 @@ func TestGoproxyServeFetch(t *testing.T) {
 	req = httptest.NewRequest("", "/", nil)
 	rec = httptest.NewRecorder()
 	g.serveFetch(rec, req, "invalid", tempDir)
+	recr = rec.Result()
 	if got, want := rec.Code, http.StatusNotFound; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		"public, max-age=86400"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(),
@@ -550,12 +565,13 @@ func TestGoproxyServeFetch(t *testing.T) {
 	req = httptest.NewRequest("", "/", nil)
 	rec = httptest.NewRecorder()
 	g.serveFetch(rec, req, "example.com/@v/list", tempDir)
+	recr = rec.Result()
 	if got, want := rec.Code, http.StatusInternalServerError; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		""; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(),
@@ -622,12 +638,13 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 		t.Fatalf("unexpected error %q", err)
 	}
 	g.serveFetchDownload(rec, req, f)
+	recr := rec.Result()
 	if got, want := rec.Code, http.StatusOK; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"application/json; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		"public, max-age=604800"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(),
@@ -642,12 +659,13 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 		t.Fatalf("unexpected error %q", err)
 	}
 	g.serveFetchDownload(rec, req, f)
+	recr = rec.Result()
 	if got, want := rec.Code, http.StatusNotFound; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		"public, max-age=600"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), "not found"; got != want {
@@ -668,12 +686,13 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 		t.Fatalf("unexpected error %q", err)
 	}
 	g.serveFetchDownload(rec, req, f)
+	recr = rec.Result()
 	if got, want := rec.Code, http.StatusInternalServerError; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		""; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(),
@@ -710,12 +729,13 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 	req := httptest.NewRequest("", "/", nil)
 	rec := httptest.NewRecorder()
 	g.serveSUMDB(rec, req, "sumdb/sumdb.example.com/supported", tempDir)
+	recr := rec.Result()
 	if got, want := rec.Code, http.StatusOK; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		""; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		"public, max-age=86400"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), ""; got != want {
@@ -725,12 +745,13 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 	req = httptest.NewRequest("", "/", nil)
 	rec = httptest.NewRecorder()
 	g.serveSUMDB(rec, req, "sumdb/sumdb.example.com/latest", tempDir)
+	recr = rec.Result()
 	if got, want := rec.Code, http.StatusOK; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		"public, max-age=3600"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), "/latest"; got != want {
@@ -745,12 +766,13 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 		"sumdb/sumdb.example.com/lookup/example.com@v1.0.0",
 		tempDir,
 	)
+	recr = rec.Result()
 	if got, want := rec.Code, http.StatusOK; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		"public, max-age=86400"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(),
@@ -761,12 +783,13 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 	req = httptest.NewRequest("", "/", nil)
 	rec = httptest.NewRecorder()
 	g.serveSUMDB(rec, req, "sumdb/sumdb.example.com/tile/2/0/0", tempDir)
+	recr = rec.Result()
 	if got, want := rec.Code, http.StatusOK; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"application/octet-stream"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		"public, max-age=86400"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), "/tile/2/0/0"; got != want {
@@ -776,12 +799,13 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 	req = httptest.NewRequest("", "/", nil)
 	rec = httptest.NewRecorder()
 	g.serveSUMDB(rec, req, "sumdb/sumdb.example.com/404", tempDir)
+	recr = rec.Result()
 	if got, want := rec.Code, http.StatusNotFound; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		"public, max-age=86400"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), "not found"; got != want {
@@ -791,12 +815,13 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 	req = httptest.NewRequest("", "/", nil)
 	rec = httptest.NewRecorder()
 	g.serveSUMDB(rec, req, "404", tempDir)
+	recr = rec.Result()
 	if got, want := rec.Code, http.StatusNotFound; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		"public, max-age=86400"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), "not found"; got != want {
@@ -806,12 +831,13 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 	req = httptest.NewRequest("", "/", nil)
 	rec = httptest.NewRecorder()
 	g.serveSUMDB(rec, req, "sumdb/sumdb2.example.com/supported", tempDir)
+	recr = rec.Result()
 	if got, want := rec.Code, http.StatusNotFound; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		"public, max-age=86400"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), "not found"; got != want {
@@ -826,12 +852,13 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 		"sumdb/sumdb.example.com/latest",
 		filepath.Join(tempDir, "404"),
 	)
+	recr = rec.Result()
 	if got, want := rec.Code, http.StatusInternalServerError; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		""; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(),
@@ -851,12 +878,13 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 		"sumdb/sumdb.example.com/lookup/example.com/v2@v2.0.0",
 		tempDir,
 	)
+	recr = rec.Result()
 	if got, want := rec.Code, http.StatusNotFound; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		"public, max-age=60"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), "not found"; got != want {
@@ -877,12 +905,13 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 	req = httptest.NewRequest("", "/", nil)
 	rec = httptest.NewRecorder()
 	g.serveSUMDB(rec, req, "sumdb/sumdb.example.com/latest", tempDir)
+	recr = rec.Result()
 	if got, want := rec.Code, http.StatusInternalServerError; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.HeaderMap.Get("Content-Type"),
+	} else if got, want := recr.Header.Get("Content-Type"),
 		"text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.HeaderMap.Get("Cache-Control"),
+	} else if got, want := recr.Header.Get("Cache-Control"),
 		""; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(),
