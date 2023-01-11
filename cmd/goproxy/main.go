@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -31,6 +32,25 @@ var (
 	fetchTimeout        = flag.Duration("fetch-timeout", 0, "maximum amount of time (0 means no limit) will wait for a fetch to complete")
 )
 
+type httpDirFS struct{}
+
+func (fs httpDirFS) Open(name string) (http.File, error) {
+	name = filepath.FromSlash(name)
+	if filepath.Separator == '\\' {
+		name = name[1:]
+		volumeName := filepath.VolumeName(name)
+		if volumeName == "" || strings.HasPrefix(volumeName, `\\`) {
+			return nil, errors.New("file URL missing drive letter")
+		}
+	}
+
+	if !filepath.IsAbs(name) {
+		return nil, errors.New("path is not absolute")
+	}
+
+	return os.Open(name)
+}
+
 func main() {
 	flag.Parse()
 
@@ -40,6 +60,7 @@ func main() {
 		KeepAlive: 30 * time.Second,
 	}).DialContext
 	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: *insecure}
+	transport.RegisterProtocol("file", http.NewFileTransport(httpDirFS{}))
 
 	g := &goproxy.Goproxy{
 		GoBinName:           *goBinName,
