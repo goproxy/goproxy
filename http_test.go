@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -33,6 +34,10 @@ func TestNotFoundError(t *testing.T) {
 }
 
 func TestHTTPGet(t *testing.T) {
+	savedExponentialBackoffRand := exponentialBackoffRand
+	exponentialBackoffRand = rand.New(rand.NewSource(1))
+	defer func() { exponentialBackoffRand = savedExponentialBackoffRand }()
+
 	handlerFunc := func(rw http.ResponseWriter, req *http.Request) {
 		fmt.Fprint(rw, "foobar")
 	}
@@ -304,13 +309,23 @@ func TestParseRawURL(t *testing.T) {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
-	if u, err := parseRawURL("\n"); err == nil {
-		t.Fatal("expected error")
-	} else if u != nil {
-		t.Errorf("got %v, want nil", u)
+	if u, err := parseRawURL("file:///passwd"); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if u == nil {
+		t.Fatal("unexpected nil")
+	} else if got, want := u.String(), "file:///passwd"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
-	if u, err := parseRawURL("scheme://example.com"); err == nil {
+	if u, err := parseRawURL("scheme://example.com"); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if u == nil {
+		t.Fatal("unexpected nil")
+	} else if got, want := u.String(), "scheme://example.com"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+
+	if u, err := parseRawURL("\n"); err == nil {
 		t.Fatal("expected error")
 	} else if u != nil {
 		t.Errorf("got %v, want nil", u)

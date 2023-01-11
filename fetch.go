@@ -263,9 +263,7 @@ func (f *fetch) doProxy(
 func (f *fetch) doDirect(ctx context.Context) (*fetchResult, error) {
 	if f.g.goBinWorkerChan != nil {
 		f.g.goBinWorkerChan <- struct{}{}
-		defer func() {
-			<-f.g.goBinWorkerChan
-		}()
+		defer func() { <-f.g.goBinWorkerChan }()
 	}
 
 	var args []string

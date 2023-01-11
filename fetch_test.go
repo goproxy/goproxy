@@ -816,7 +816,7 @@ invalid
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	if _, err := f.doProxy(context.Background(), "direct"); err == nil {
+	if _, err := f.doProxy(context.Background(), "://invalid"); err == nil {
 		t.Fatal("expected error")
 	}
 

@@ -55,7 +55,7 @@ func TestSUMDBClientOps(t *testing.T) {
 		t.Errorf("got %q, want %q", got, wantKey)
 	}
 
-	sco = &sumdbClientOps{envGOSUMDB: "example.com foobar"}
+	sco = &sumdbClientOps{envGOSUMDB: "example.com ://invalid"}
 	sco.init()
 	if sco.initError == nil {
 		t.Fatal("expected error")
@@ -155,7 +155,7 @@ func TestSUMDBClientOps(t *testing.T) {
 
 	sco = &sumdbClientOps{
 		httpClient: http.DefaultClient,
-		envGOPROXY: "foobar",
+		envGOPROXY: "://invalid",
 		envGOSUMDB: "example.com",
 	}
 	sco.init()
@@ -171,16 +171,6 @@ func TestSUMDBClientOps(t *testing.T) {
 	wantInitError = "missing GOSUMDB"
 	if got := sco.initError.Error(); got != wantInitError {
 		t.Errorf("got %q, want %q", got, wantInitError)
-	}
-
-	sco = &sumdbClientOps{
-		httpClient: http.DefaultClient,
-		envGOPROXY: "foobar",
-		envGOSUMDB: "example.com",
-	}
-	sco.init()
-	if sco.initError == nil {
-		t.Fatal("expected error")
 	}
 
 	sco = &sumdbClientOps{}

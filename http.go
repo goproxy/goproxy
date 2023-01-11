@@ -158,15 +158,6 @@ func parseRawURL(rawURL string) (*url.URL, error) {
 		return nil, err
 	}
 
-	switch u.Scheme {
-	case "http", "https":
-	default:
-		return nil, fmt.Errorf(
-			"invalid URL scheme (must be http or https): %s",
-			redactedURL(u),
-		)
-	}
-
 	return u, nil
 }
 

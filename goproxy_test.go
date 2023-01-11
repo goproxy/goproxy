@@ -177,7 +177,7 @@ func TestGoproxyInit(t *testing.T) {
 		"sum.golang.google.cn",
 		"sum.golang.org https://sum.golang.google.cn",
 		"",
-		"example.com wrongurl",
+		"example.com ://invalid",
 	}
 	g.init()
 	if got, want := len(g.proxiedSUMDBs), 2; got != want {
@@ -814,7 +814,7 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 
 	req = httptest.NewRequest("", "/", nil)
 	rec = httptest.NewRecorder()
-	g.serveSUMDB(rec, req, "404", tempDir)
+	g.serveSUMDB(rec, req, "://invalid", tempDir)
 	recr = rec.Result()
 	if got, want := rec.Code, http.StatusNotFound; got != want {
 		t.Errorf("got %d, want %d", got, want)
