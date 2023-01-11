@@ -1422,6 +1422,23 @@ func TestWalkGOPROXY(t *testing.T) {
 	}
 }
 
+func TestExponentialBackoffSleep(t *testing.T) {
+	if got, want := exponentialBackoffSleep(
+		100*time.Millisecond,
+		time.Second,
+		0,
+	) <= time.Second, true; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+	if got, want := exponentialBackoffSleep(
+		time.Minute,
+		time.Hour,
+		100,
+	) <= time.Hour, true; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
 func TestStringSliceContains(t *testing.T) {
 	if !stringSliceContains([]string{"foo", "bar"}, "foo") {
 		t.Error("want true")

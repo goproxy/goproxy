@@ -10,6 +10,8 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"math"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -17,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/mod/sumdb"
 )
@@ -712,6 +715,37 @@ func walkGOPROXY(
 	}
 
 	return proxyError
+}
+
+var (
+	exponentialBackoffRand  = rand.New(rand.NewSource(time.Now().UnixNano()))
+	exponentialBackoffMutex sync.Mutex
+)
+
+// exponentialBackoffSleep computes the exponential backoff sleep according to
+// https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/.
+func exponentialBackoffSleep(
+	base time.Duration,
+	cap time.Duration,
+	attempt int,
+) time.Duration {
+	var pow time.Duration
+	if attempt < 63 {
+		pow = 1 << attempt
+	} else {
+		pow = math.MaxInt64
+	}
+
+	sleep := base * pow
+	if sleep > cap || sleep/pow != base {
+		sleep = cap
+	}
+
+	exponentialBackoffMutex.Lock()
+	sleep = time.Duration(exponentialBackoffRand.Int63n(int64(sleep)))
+	exponentialBackoffMutex.Unlock()
+
+	return sleep
 }
 
 // stringSliceContains reports whether the ss contains the s.

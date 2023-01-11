@@ -47,15 +47,7 @@ func httpGet(
 	dst io.Writer,
 ) error {
 	var lastError error
-	for i := 0; i < 10; i++ {
-		if i > 0 {
-			select {
-			case <-ctx.Done():
-				return lastError
-			case <-time.After(100 * time.Millisecond):
-			}
-		}
-
+	for attempt := 0; attempt < 10; attempt++ {
 		req, err := http.NewRequestWithContext(
 			ctx,
 			http.MethodGet,
@@ -102,18 +94,26 @@ func httpGet(
 			http.StatusBadGateway,
 			http.StatusServiceUnavailable:
 			lastError = errBadUpstream
-			continue
 		case http.StatusGatewayTimeout:
 			lastError = errFetchTimedOut
-			continue
+		default:
+			return fmt.Errorf(
+				"GET %s: %s: %s",
+				redactedURL(req.URL),
+				res.Status,
+				b,
+			)
 		}
 
-		return fmt.Errorf(
-			"GET %s: %s: %s",
-			redactedURL(req.URL),
-			res.Status,
-			b,
-		)
+		select {
+		case <-ctx.Done():
+			return lastError
+		case <-time.After(exponentialBackoffSleep(
+			100*time.Millisecond,
+			time.Second,
+			attempt,
+		)):
+		}
 	}
 
 	return lastError
