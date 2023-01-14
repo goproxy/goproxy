@@ -15,23 +15,27 @@ type Cacher interface {
 	// Get gets the matched cache for the name. It returns the
 	// [os.ErrNotExist] if not found.
 	//
-	// It is the caller's responsibility to close the returned
-	// [io.ReadCloser].
-	//
 	// Note that the returned [io.ReadCloser] can optionally implement the
 	// following interfaces:
-	//   - [io.Seeker], for the Range request header.
-	//   - interface{ ModTime() time.Time }, for the Last-Modified response
-	//     header.
-	//   - interface{ Checksum() []byte }, for the ETag response header.
+	//  1. [io.Seeker], mostly for the Range request header.
+	//  2. interface{ LastModified() time.Time }, mostly for the
+	//     Last-Modified response header. Also for the If-Unmodified-Since,
+	//     If-Modified-Since and If-Range request headers when 1 is
+	//     implemented.
+	//  3. interface{ ModTime() time.Time }, same as 2, but with lower
+	//     priority.
+	//  4. interface{ ETag() string }, mostly for the ETag response header.
+	//     Also for the If-Match, If-None-Match and If-Range request headers
+	//     when 1 is implemented. Note that the return value will be set
+	//     directly without further processing.
 	Get(ctx context.Context, name string) (io.ReadCloser, error)
 
 	// Set sets the content as a cache with the name.
 	Set(ctx context.Context, name string, content io.ReadSeeker) error
 }
 
-// DirCacher implements the [Cacher] using a directory on the local filesystem.
-// If the directory does not exist, it will be created with 0750 permissions.
+// DirCacher implements the [Cacher] using a directory on the local disk. If the
+// directory does not exist, it will be created with 0750 permissions.
 type DirCacher string
 
 // Get implements the [Cacher].

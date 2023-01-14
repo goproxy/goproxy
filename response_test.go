@@ -265,19 +265,34 @@ func TestResponseInternalServerError(t *testing.T) {
 	}
 }
 
-type successResponseBody struct {
+type successResponseBody_LastModified struct {
 	io.Reader
 
-	checksum []byte
-	modTime  time.Time
+	lastModified time.Time
 }
 
-func (srb successResponseBody) Checksum() []byte {
-	return srb.checksum
+func (srb successResponseBody_LastModified) LastModified() time.Time {
+	return srb.lastModified
 }
 
-func (srb successResponseBody) ModTime() time.Time {
+type successResponseBody_ModTime struct {
+	io.Reader
+
+	modTime time.Time
+}
+
+func (srb successResponseBody_ModTime) ModTime() time.Time {
 	return srb.modTime
+}
+
+type successResponseBody_ETag struct {
+	io.Reader
+
+	etag string
+}
+
+func (srb successResponseBody_ETag) ETag() string {
+	return srb.etag
 }
 
 func TestResponseSuccess(t *testing.T) {
@@ -366,10 +381,12 @@ func TestResponseSuccess(t *testing.T) {
 	responseSuccess(
 		rec,
 		req,
-		successResponseBody{
-			Reader:   strings.NewReader("foobar"),
-			checksum: []byte{0, 1, 2, 3},
-			modTime:  time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
+		successResponseBody_LastModified{
+			Reader: strings.NewReader("foobar"),
+			lastModified: time.Date(
+				2000, 1, 1, 0, 0, 0, 0,
+				time.UTC,
+			),
 		},
 		"text/plain; charset=utf-8",
 		60,
@@ -395,7 +412,155 @@ func TestResponseSuccess(t *testing.T) {
 	}
 
 	recrET = recr.Header.Get("ETag")
-	if want := `"AAECAw=="`; recrET != want {
+	if want := ""; recrET != want {
+		t.Errorf("got %q, want %q", recrET, want)
+	}
+
+	if b, err := ioutil.ReadAll(recr.Body); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if want := "foobar"; string(b) != want {
+		t.Errorf("got %q, want %q", b, want)
+	}
+
+	req = httptest.NewRequest("", "/", nil)
+	rec = httptest.NewRecorder()
+	responseSuccess(
+		rec,
+		req,
+		successResponseBody_ModTime{
+			Reader:  strings.NewReader("foobar"),
+			modTime: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
+		},
+		"text/plain; charset=utf-8",
+		60,
+	)
+	recr = rec.Result()
+	if want := http.StatusOK; recr.StatusCode != want {
+		t.Errorf("got %d, want %d", recr.StatusCode, want)
+	}
+
+	recrCT = recr.Header.Get("Content-Type")
+	if want := "text/plain; charset=utf-8"; recrCT != want {
+		t.Errorf("got %q, want %q", recrCT, want)
+	}
+
+	recrCC = recr.Header.Get("Cache-Control")
+	if want := "public, max-age=60"; recrCC != want {
+		t.Errorf("got %q, want %q", recrCC, want)
+	}
+
+	recrLM = recr.Header.Get("Last-Modified")
+	if want := "Sat, 01 Jan 2000 00:00:00 GMT"; recrLM != want {
+		t.Errorf("got %q, want %q", recrLM, want)
+	}
+
+	recrET = recr.Header.Get("ETag")
+	if want := ""; recrET != want {
+		t.Errorf("got %q, want %q", recrET, want)
+	}
+
+	if b, err := ioutil.ReadAll(recr.Body); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if want := "foobar"; string(b) != want {
+		t.Errorf("got %q, want %q", b, want)
+	}
+
+	req = httptest.NewRequest("", "/", nil)
+	rec = httptest.NewRecorder()
+	responseSuccess(
+		rec,
+		req,
+		successResponseBody_ETag{
+			Reader: strings.NewReader("foobar"),
+			etag:   `"foobar"`,
+		},
+		"text/plain; charset=utf-8",
+		60,
+	)
+	recr = rec.Result()
+	if want := http.StatusOK; recr.StatusCode != want {
+		t.Errorf("got %d, want %d", recr.StatusCode, want)
+	}
+
+	recrCT = recr.Header.Get("Content-Type")
+	if want := "text/plain; charset=utf-8"; recrCT != want {
+		t.Errorf("got %q, want %q", recrCT, want)
+	}
+
+	recrCC = recr.Header.Get("Cache-Control")
+	if want := "public, max-age=60"; recrCC != want {
+		t.Errorf("got %q, want %q", recrCC, want)
+	}
+
+	recrLM = recr.Header.Get("Last-Modified")
+	if want := ""; recrLM != want {
+		t.Errorf("got %q, want %q", recrLM, want)
+	}
+
+	recrET = recr.Header.Get("ETag")
+	if want := `"foobar"`; recrET != want {
+		t.Errorf("got %q, want %q", recrET, want)
+	}
+
+	if b, err := ioutil.ReadAll(recr.Body); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if want := "foobar"; string(b) != want {
+		t.Errorf("got %q, want %q", b, want)
+	}
+
+	req = httptest.NewRequest("", "/", nil)
+	rec = httptest.NewRecorder()
+	responseSuccess(
+		rec,
+		req,
+		struct {
+			io.Reader
+			successResponseBody_LastModified
+			successResponseBody_ModTime
+			successResponseBody_ETag
+		}{
+			strings.NewReader("foobar"),
+			successResponseBody_LastModified{
+				lastModified: time.Date(
+					2000, 1, 1, 0, 0, 0, 0,
+					time.UTC,
+				),
+			},
+			successResponseBody_ModTime{
+				modTime: time.Date(
+					2000, 1, 2, 0, 0, 0, 0,
+					time.UTC,
+				),
+			},
+			successResponseBody_ETag{
+				etag: `"foobar"`,
+			},
+		},
+		"text/plain; charset=utf-8",
+		60,
+	)
+	recr = rec.Result()
+	if want := http.StatusOK; recr.StatusCode != want {
+		t.Errorf("got %d, want %d", recr.StatusCode, want)
+	}
+
+	recrCT = recr.Header.Get("Content-Type")
+	if want := "text/plain; charset=utf-8"; recrCT != want {
+		t.Errorf("got %q, want %q", recrCT, want)
+	}
+
+	recrCC = recr.Header.Get("Cache-Control")
+	if want := "public, max-age=60"; recrCC != want {
+		t.Errorf("got %q, want %q", recrCC, want)
+	}
+
+	recrLM = recr.Header.Get("Last-Modified")
+	if want := "Sat, 01 Jan 2000 00:00:00 GMT"; recrLM != want {
+		t.Errorf("got %q, want %q", recrLM, want)
+	}
+
+	recrET = recr.Header.Get("ETag")
+	if want := `"foobar"`; recrET != want {
 		t.Errorf("got %q, want %q", recrET, want)
 	}
 

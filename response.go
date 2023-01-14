@@ -2,7 +2,6 @@ package goproxy
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -110,27 +109,28 @@ func responseSuccess(
 	rw.Header().Set("Content-Type", contentType)
 	setResponseCacheControlHeader(rw, cacheControlMaxAge)
 
-	if cs, ok := content.(interface{ Checksum() []byte }); ok {
-		rw.Header().Set("ETag", fmt.Sprintf(
-			"%q",
-			base64.StdEncoding.EncodeToString(cs.Checksum()),
-		))
+	var lastModified time.Time
+	if lm, ok := content.(interface{ LastModified() time.Time }); ok {
+		lastModified = lm.LastModified()
+	} else if mt, ok := content.(interface{ ModTime() time.Time }); ok {
+		lastModified = mt.ModTime()
 	}
 
-	var modTime time.Time
-	if mt, ok := content.(interface{ ModTime() time.Time }); ok {
-		modTime = mt.ModTime()
+	if et, ok := content.(interface{ ETag() string }); ok {
+		if etag := et.ETag(); etag != "" {
+			rw.Header().Set("ETag", etag)
+		}
 	}
 
 	if content, ok := content.(io.ReadSeeker); ok {
-		http.ServeContent(rw, req, "", modTime, content)
+		http.ServeContent(rw, req, "", lastModified, content)
 		return
 	}
 
-	if !modTime.IsZero() {
+	if !lastModified.IsZero() {
 		rw.Header().Set(
 			"Last-Modified",
-			modTime.UTC().Format(http.TimeFormat),
+			lastModified.UTC().Format(http.TimeFormat),
 		)
 	}
 
