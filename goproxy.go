@@ -26,18 +26,14 @@ import (
 
 // Goproxy is the top-level struct of this project.
 //
-// Note that the Goproxy will not mess with your environment variables, it will
-// still follow your GOPROXY, GONOPROXY, GOSUMDB, GONOSUMDB and GOPRIVATE. It
-// means that you can set GOPROXY to serve the Goproxy itself under other
-// proxies, and by setting GONOPROXY and GOPRIVATE to indicate which modules the
-// Goproxy should download directly instead of using those proxies. And of
-// course, you can also set GOSUMDB, GONOSUMDB and GOPRIVATE to indicate how
-// the Goproxy should verify the modules.
-//
-// Since GOPROXY with comma-separated list support, GONOPROXY, GOSUMDB,
-// GONOSUMDB and GOPRIVATE were first introduced in Go 1.13, so we implemented a
-// built-in support for them. Now, you can set them even the version of the Go
-// binary targeted by the [Goproxy.GoBinName] is before v1.13.
+// Note that the Goproxy will still follow your environment variables. Which
+// means you can set GOPROXY to serve the Goproxy itself under other proxies,
+// and by setting GONOPROXY and GOPRIVATE to instruct which modules the Goproxy
+// should fetch directly instead of using those proxies. And you can also set
+// GOSUMDB, GONOSUMDB and GOPRIVATE to instruct how the Goproxy should verify
+// the modules it just fetched. All of the above environment variables have been
+// built-in support, which means less external command calls and a significant
+// performance boost.
 //
 // For requests downloading large numbers of modules (e.g. for bulk static
 // analysis), the Goproxy supports a non-standard header, "Disable-Module-Fetch:
@@ -62,10 +58,9 @@ type Goproxy struct {
 	// If the GoBinEnv contains duplicate environment keys, only the last
 	// value in the slice for each duplicate key is used.
 	//
-	// Note that GOPROXY (with comma-separated list support), GONOPROXY,
-	// GOSUMDB, GONOSUMDB and GOPRIVATE are built-in supported. It means
-	// that they can be set even the version of the Go binary targeted by
-	// the [Goproxy.GoBinName] is before v1.13.
+	// Note that GOPROXY, GONOPROXY, GOSUMDB, GONOSUMDB and GOPRIVATE have
+	// been built-in support. Which means they can be set even the version
+	// of the Go binary targeted by the [Goproxy.GoBinName] is before v1.13.
 	GoBinEnv []string
 
 	// GoBinMaxWorkers is the maximum number of commands allowed for the Go
@@ -83,8 +78,8 @@ type Goproxy struct {
 
 	// Cacher is the [Cacher] that used to cache module files.
 	//
-	// If the Cacher is nil, the module files will be temporarily stored
-	// in the local disk and discarded as the request ends.
+	// If the Cacher is nil, the module files will be temporarily stored on
+	// the local disk and discarded as the request ends.
 	Cacher Cacher
 
 	// CacherMaxCacheBytes is the maximum number of bytes allowed for the
@@ -93,14 +88,16 @@ type Goproxy struct {
 	// If the CacherMaxCacheBytes is zero, there is no limit.
 	CacherMaxCacheBytes int
 
-	// ProxiedSUMDBs is the list of proxied checksum databases. See
-	// https://go.dev/design/25530-sumdb#proxying-a-checksum-database.
+	// ProxiedSUMDBs is the list of proxied checksum databases (see
+	// https://go.dev/design/25530-sumdb#proxying-a-checksum-database). Each
+	// entry is of the form "<sumdb-name>" or "<sumdb-name> <sumdb-URL>".
+	// The first form is a shorthand for the second form, in which case the
+	// corresponding <sumdb-URL> will be the <sumdb-name> itself as a host
+	// with an "https" scheme.
 	//
-	// If the ProxiedSUMDBs is not nil, each value should be given the
-	// format of "<sumdb-name>" or "<sumdb-name> <sumdb-URL>". The first
-	// format can be seen as a shorthand for the second format. In the case
-	// of the first format, the corresponding checksum database URL will be
-	// the checksum database name itself as a host with an "https" scheme.
+	// If the ProxiedSUMDBs contains duplicate checksum database names, only
+	// the last value in the slice for each duplicate checksum database name
+	// is used.
 	ProxiedSUMDBs []string
 
 	// Transport is used to perform all requests except those started by
