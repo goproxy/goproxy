@@ -30,8 +30,8 @@ type Cacher interface {
 	//     directly without further processing.
 	Get(ctx context.Context, name string) (io.ReadCloser, error)
 
-	// Set sets the content as a cache with the name.
-	Set(ctx context.Context, name string, content io.ReadSeeker) error
+	// Put puts a cache for the name with the content.
+	Put(ctx context.Context, name string, content io.ReadSeeker) error
 }
 
 // DirCacher implements the [Cacher] using a directory on the local disk. If the
@@ -59,8 +59,8 @@ func (dc DirCacher) Get(
 	}{f, fi}, nil
 }
 
-// Set implements the [Cacher].
-func (dc DirCacher) Set(
+// Put implements the [Cacher].
+func (dc DirCacher) Put(
 	ctx context.Context,
 	name string,
 	content io.ReadSeeker,

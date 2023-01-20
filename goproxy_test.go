@@ -926,7 +926,7 @@ func (errorCacher) Get(context.Context, string) (io.ReadCloser, error) {
 	return nil, errors.New("error cacher")
 }
 
-func (errorCacher) Set(context.Context, string, io.ReadSeeker) error {
+func (errorCacher) Put(context.Context, string, io.ReadSeeker) error {
 	return errors.New("error cacher")
 }
 
@@ -939,7 +939,7 @@ func TestGoproxyServeCache(t *testing.T) {
 
 	g := &Goproxy{Cacher: DirCacher(tempDir)}
 	g.init()
-	if err := g.setCache(
+	if err := g.putCache(
 		context.Background(),
 		"foo",
 		strings.NewReader("bar"),
@@ -1047,8 +1047,8 @@ func (trs *testReaderSeeker) Seek(offset int64, whence int) (int64, error) {
 	return trs.ReadSeeker.Seek(offset, whence)
 }
 
-func TestGoproxySetCache(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "goproxy.TestGoproxySetCache")
+func TestGoproxyPutCache(t *testing.T) {
+	tempDir, err := ioutil.TempDir("", "goproxy.TestGoproxyPutCache")
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -1059,7 +1059,7 @@ func TestGoproxySetCache(t *testing.T) {
 		CacherMaxCacheBytes: 5,
 	}
 	g.init()
-	if err := g.setCache(
+	if err := g.putCache(
 		context.Background(),
 		"foo",
 		strings.NewReader("bar"),
@@ -1072,7 +1072,7 @@ func TestGoproxySetCache(t *testing.T) {
 	} else if got, want := string(b), "bar"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	if err := g.setCache(
+	if err := g.putCache(
 		context.Background(),
 		"foo",
 		&testReaderSeeker{
@@ -1084,7 +1084,7 @@ func TestGoproxySetCache(t *testing.T) {
 	} else if got, want := err.Error(), "cannot seek start"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	if err := g.setCache(
+	if err := g.putCache(
 		context.Background(),
 		"foo",
 		&testReaderSeeker{
@@ -1096,7 +1096,7 @@ func TestGoproxySetCache(t *testing.T) {
 	} else if got, want := err.Error(), "cannot seek end"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	if err := g.setCache(
+	if err := g.putCache(
 		context.Background(),
 		"foobar",
 		strings.NewReader("foobar"),
@@ -1113,7 +1113,7 @@ func TestGoproxySetCache(t *testing.T) {
 
 	g = &Goproxy{}
 	g.init()
-	if err := g.setCache(
+	if err := g.putCache(
 		context.Background(),
 		"foo",
 		strings.NewReader("bar"),
@@ -1122,8 +1122,8 @@ func TestGoproxySetCache(t *testing.T) {
 	}
 }
 
-func TestGoproxySetCacheFile(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "goproxy.TestGoproxySetCacheFile")
+func TestGoproxyPutCacheFile(t *testing.T) {
+	tempDir, err := ioutil.TempDir("", "goproxy.TestGoproxyPutCacheFile")
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -1140,7 +1140,7 @@ func TestGoproxySetCacheFile(t *testing.T) {
 
 	g := &Goproxy{Cacher: DirCacher(tempDir)}
 	g.init()
-	if err := g.setCacheFile(
+	if err := g.putCacheFile(
 		context.Background(),
 		"foo",
 		cacheFile.Name(),
@@ -1154,7 +1154,7 @@ func TestGoproxySetCacheFile(t *testing.T) {
 	} else if got, want := string(b), "bar"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	if err := g.setCacheFile(
+	if err := g.putCacheFile(
 		context.Background(),
 		"bar",
 		filepath.Join(tempDir, "bar-sourcel"),

@@ -407,7 +407,7 @@ func (g *Goproxy) serveFetch(
 	}
 	defer content.Close()
 
-	if err := g.setCache(req.Context(), f.name, content); err != nil {
+	if err := g.putCache(req.Context(), f.name, content); err != nil {
 		g.logErrorf("failed to cache module file: %s: %v", f.name, err)
 		responseInternalServerError(rw, req)
 		return
@@ -451,7 +451,7 @@ func (g *Goproxy) serveFetchDownload(
 			continue
 		}
 
-		if err := g.setCacheFile(
+		if err := g.putCacheFile(
 			req.Context(),
 			fmt.Sprint(nameWithoutExt, cache.nameExt),
 			cache.localFile,
@@ -557,7 +557,7 @@ func (g *Goproxy) serveSUMDB(
 		return
 	}
 
-	if err := g.setCacheFile(
+	if err := g.putCacheFile(
 		req.Context(),
 		name,
 		tempFile.Name(),
@@ -620,8 +620,8 @@ func (g *Goproxy) cache(
 	return g.Cacher.Get(ctx, name)
 }
 
-// setCache sets the content as a cache with the name to the g.Cacher.
-func (g *Goproxy) setCache(
+// putCache puts a cache to the g.Cacher for the name with the content.
+func (g *Goproxy) putCache(
 	ctx context.Context,
 	name string,
 	content io.ReadSeeker,
@@ -640,19 +640,19 @@ func (g *Goproxy) setCache(
 		}
 	}
 
-	return g.Cacher.Set(ctx, name, content)
+	return g.Cacher.Put(ctx, name, content)
 }
 
-// setCacheFile sets the local file targeted by the file as a cache with the
-// name to the g.Cacher.
-func (g *Goproxy) setCacheFile(ctx context.Context, name, file string) error {
+// putCacheFile puts a cache to the g.Cacher for the name with the targeted
+// local file.
+func (g *Goproxy) putCacheFile(ctx context.Context, name, file string) error {
 	f, err := os.Open(file)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 
-	return g.setCache(ctx, name, f)
+	return g.putCache(ctx, name, f)
 }
 
 // logErrorf formats according to the format and logs the v as an error.

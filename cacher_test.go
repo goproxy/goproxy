@@ -38,7 +38,7 @@ func TestDirCacher(t *testing.T) {
 		t.Errorf("got %v, want nil", rc)
 	}
 
-	if err := dirCacher.Set(
+	if err := dirCacher.Put(
 		context.Background(),
 		"a/b/c",
 		strings.NewReader("foobar"),
@@ -63,7 +63,7 @@ func TestDirCacher(t *testing.T) {
 		t.Fatalf("unexpected error %q", err)
 	}
 
-	if err := dirCacher.Set(
+	if err := dirCacher.Put(
 		context.Background(),
 		"d/e/f",
 		&errorReadSeeker{},
@@ -77,7 +77,7 @@ func TestDirCacher(t *testing.T) {
 		tempDir,
 		filepath.FromSlash("a/b/c"),
 	))
-	if err := dirCacher.Set(
+	if err := dirCacher.Put(
 		context.Background(),
 		"d/e/f",
 		strings.NewReader("foobar"),
