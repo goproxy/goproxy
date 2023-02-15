@@ -26,7 +26,8 @@ type Cacher interface {
 	//     priority.
 	//  4. interface{ ETag() string }, mostly for the ETag response header.
 	//     Also for the If-Match, If-None-Match and If-Range request headers
-	//     when 1 is implemented. Note that the return value will be set
+	//     when 1 is implemented. Note that the return value will be assumed
+	//     to have complied with RFC 7232, section 2.3, so it will be used
 	//     directly without further processing.
 	Get(ctx context.Context, name string) (io.ReadCloser, error)
 
