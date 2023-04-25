@@ -22,7 +22,7 @@ var (
 	// errBadUpstream indicates an upstream is in a bad state.
 	errBadUpstream = errors.New("bad upstream")
 
-	// errFetchTimedOut indicates a fetch operation has timed out.
+	// errFetchTimedOut means a fetch operation has timed out.
 	errFetchTimedOut = errors.New("fetch timed out")
 )
 

@@ -24,7 +24,7 @@ func TestNewFetch(t *testing.T) {
 		n                    int
 		env                  []string
 		name                 string
-		wantOps              fetchOps
+		wantOps              FetchOps
 		wantModulePath       string
 		wantModuleVersion    string
 		wantModAtVer         string
@@ -35,7 +35,7 @@ func TestNewFetch(t *testing.T) {
 		{
 			n:                    1,
 			name:                 "example.com/@latest",
-			wantOps:              fetchOpsResolve,
+			wantOps:              FetchOpsResolve,
 			wantModulePath:       "example.com",
 			wantModuleVersion:    "latest",
 			wantModAtVer:         "example.com@latest",
@@ -46,7 +46,7 @@ func TestNewFetch(t *testing.T) {
 			n:                    2,
 			env:                  []string{"GOSUMDB=off"},
 			name:                 "example.com/@latest",
-			wantOps:              fetchOpsResolve,
+			wantOps:              FetchOpsResolve,
 			wantModulePath:       "example.com",
 			wantModuleVersion:    "latest",
 			wantModAtVer:         "example.com@latest",
@@ -57,7 +57,7 @@ func TestNewFetch(t *testing.T) {
 			n:                    3,
 			env:                  []string{"GONOSUMDB=example.com"},
 			name:                 "example.com/@latest",
-			wantOps:              fetchOpsResolve,
+			wantOps:              FetchOpsResolve,
 			wantModulePath:       "example.com",
 			wantModuleVersion:    "latest",
 			wantModAtVer:         "example.com@latest",
@@ -68,7 +68,7 @@ func TestNewFetch(t *testing.T) {
 			n:                    4,
 			env:                  []string{"GOPRIVATE=example.com"},
 			name:                 "example.com/@latest",
-			wantOps:              fetchOpsResolve,
+			wantOps:              FetchOpsResolve,
 			wantModulePath:       "example.com",
 			wantModuleVersion:    "latest",
 			wantModAtVer:         "example.com@latest",
@@ -78,7 +78,7 @@ func TestNewFetch(t *testing.T) {
 		{
 			n:                    5,
 			name:                 "example.com/@v/list",
-			wantOps:              fetchOpsList,
+			wantOps:              FetchOpsList,
 			wantModulePath:       "example.com",
 			wantModuleVersion:    "latest",
 			wantModAtVer:         "example.com@latest",
@@ -88,7 +88,7 @@ func TestNewFetch(t *testing.T) {
 		{
 			n:                    6,
 			name:                 "example.com/@v/v1.0.0.info",
-			wantOps:              fetchOpsDownloadInfo,
+			wantOps:              FetchOpsDownloadInfo,
 			wantModulePath:       "example.com",
 			wantModuleVersion:    "v1.0.0",
 			wantModAtVer:         "example.com@v1.0.0",
@@ -98,7 +98,7 @@ func TestNewFetch(t *testing.T) {
 		{
 			n:                    7,
 			name:                 "example.com/@v/v1.0.0.mod",
-			wantOps:              fetchOpsDownloadMod,
+			wantOps:              FetchOpsDownloadMod,
 			wantModulePath:       "example.com",
 			wantModuleVersion:    "v1.0.0",
 			wantModAtVer:         "example.com@v1.0.0",
@@ -108,7 +108,7 @@ func TestNewFetch(t *testing.T) {
 		{
 			n:                    8,
 			name:                 "example.com/@v/v1.0.0.zip",
-			wantOps:              fetchOpsDownloadZip,
+			wantOps:              FetchOpsDownloadZip,
 			wantModulePath:       "example.com",
 			wantModuleVersion:    "v1.0.0",
 			wantModAtVer:         "example.com@v1.0.0",
@@ -128,7 +128,7 @@ func TestNewFetch(t *testing.T) {
 		{
 			n:                    11,
 			name:                 "example.com/@v/master.info",
-			wantOps:              fetchOpsResolve,
+			wantOps:              FetchOpsResolve,
 			wantModulePath:       "example.com",
 			wantModuleVersion:    "master",
 			wantModAtVer:         "example.com@master",
@@ -163,7 +163,7 @@ func TestNewFetch(t *testing.T) {
 		{
 			n:                    17,
 			name:                 "example.com/!foobar/@v/!v1.0.0.info",
-			wantOps:              fetchOpsResolve,
+			wantOps:              FetchOpsResolve,
 			wantModulePath:       "example.com/Foobar",
 			wantModuleVersion:    "V1.0.0",
 			wantModAtVer:         "example.com/Foobar@V1.0.0",
@@ -914,16 +914,16 @@ func TestFetchDoDirect(t *testing.T) {
 func TestFetchOpsString(t *testing.T) {
 	for _, tt := range []struct {
 		n            int
-		fo           fetchOps
+		fo           FetchOps
 		wantFetchOps string
 	}{
-		{1, fetchOpsResolve, "resolve"},
-		{2, fetchOpsList, "list"},
-		{3, fetchOpsDownloadInfo, "download info"},
-		{4, fetchOpsDownloadMod, "download mod"},
-		{5, fetchOpsDownloadZip, "download zip"},
-		{6, fetchOpsInvalid, "invalid"},
-		{7, fetchOps(255), "invalid"},
+		{1, FetchOpsResolve, "resolve"},
+		{2, FetchOpsList, "list"},
+		{3, FetchOpsDownloadInfo, "download info"},
+		{4, FetchOpsDownloadMod, "download mod"},
+		{5, FetchOpsDownloadZip, "download zip"},
+		{6, FetchOpsInvalid, "invalid"},
+		{7, FetchOps(255), "invalid"},
 	} {
 		if got, want := tt.fo.String(), tt.wantFetchOps; got != want {
 			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
@@ -934,42 +934,42 @@ func TestFetchOpsString(t *testing.T) {
 func TestFetchResultOpen(t *testing.T) {
 	for _, tt := range []struct {
 		n                int
-		fr               *fetchResult
-		setupFetchResult func(fr *fetchResult) error
+		fr               *FetchResult
+		setupFetchResult func(fr *FetchResult) error
 		wantContent      string
 		wantError        error
 	}{
 		{
 			n:           1,
-			fr:          &fetchResult{f: &fetch{ops: fetchOpsResolve}, Version: "v1.0.0", Time: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)},
+			fr:          &FetchResult{f: &Fetch{ops: FetchOpsResolve}, Version: "v1.0.0", Time: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)},
 			wantContent: `{"Version":"v1.0.0","Time":"2000-01-01T00:00:00Z"}`,
 		},
 		{
 			n:           2,
-			fr:          &fetchResult{f: &fetch{ops: fetchOpsList}, Versions: []string{"v1.0.0", "v1.1.0"}},
+			fr:          &FetchResult{f: &Fetch{ops: FetchOpsList}, Versions: []string{"v1.0.0", "v1.1.0"}},
 			wantContent: "v1.0.0\nv1.1.0",
 		},
 		{
 			n:                3,
-			fr:               &fetchResult{f: &fetch{ops: fetchOpsDownloadInfo}, Info: filepath.Join(t.TempDir(), "info")},
-			setupFetchResult: func(fr *fetchResult) error { return os.WriteFile(fr.Info, []byte("info"), 0o644) },
+			fr:               &FetchResult{f: &Fetch{ops: FetchOpsDownloadInfo}, Info: filepath.Join(t.TempDir(), "info")},
+			setupFetchResult: func(fr *FetchResult) error { return os.WriteFile(fr.Info, []byte("info"), 0o644) },
 			wantContent:      "info",
 		},
 		{
 			n:                4,
-			fr:               &fetchResult{f: &fetch{ops: fetchOpsDownloadMod}, GoMod: filepath.Join(t.TempDir(), "mod")},
-			setupFetchResult: func(fr *fetchResult) error { return os.WriteFile(fr.GoMod, []byte("mod"), 0o644) },
+			fr:               &FetchResult{f: &Fetch{ops: FetchOpsDownloadMod}, GoMod: filepath.Join(t.TempDir(), "mod")},
+			setupFetchResult: func(fr *FetchResult) error { return os.WriteFile(fr.GoMod, []byte("mod"), 0o644) },
 			wantContent:      "mod",
 		},
 		{
 			n:                5,
-			fr:               &fetchResult{f: &fetch{ops: fetchOpsDownloadZip}, Zip: filepath.Join(t.TempDir(), "zip")},
-			setupFetchResult: func(fr *fetchResult) error { return os.WriteFile(fr.Zip, []byte("zip"), 0o644) },
+			fr:               &FetchResult{f: &Fetch{ops: FetchOpsDownloadZip}, Zip: filepath.Join(t.TempDir(), "zip")},
+			setupFetchResult: func(fr *FetchResult) error { return os.WriteFile(fr.Zip, []byte("zip"), 0o644) },
 			wantContent:      "zip",
 		},
 		{
 			n:         6,
-			fr:        &fetchResult{f: &fetch{ops: fetchOpsInvalid}},
+			fr:        &FetchResult{f: &Fetch{ops: FetchOpsInvalid}},
 			wantError: errors.New("invalid fetch operation"),
 		},
 	} {
@@ -1211,7 +1211,7 @@ func TestVerifyModFile(t *testing.T) {
 			modFile:       modFile,
 			modulePath:    "example.com",
 			moduleVersion: "v1.1.0",
-			wantError:     notFoundError("example.com@v1.1.0/go.mod: bad upstream"),
+			wantError:     NotFoundError("example.com@v1.1.0/go.mod: bad upstream"),
 		},
 		{
 			n:             3,
@@ -1225,10 +1225,10 @@ func TestVerifyModFile(t *testing.T) {
 			modFile:       modFile2,
 			modulePath:    "example.com",
 			moduleVersion: "v1.0.0",
-			wantError:     notFoundError("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
+			wantError:     NotFoundError("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
 		},
 	} {
-		err := verifyModFile(g.sumdbClient, tt.modFile, tt.modulePath, tt.moduleVersion)
+		err := verifyModFile(g.SumdbClient, tt.modFile, tt.modulePath, tt.moduleVersion)
 		if tt.wantError != nil {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
@@ -1267,7 +1267,7 @@ func TestCheckZipFile(t *testing.T) {
 			zipFile:       zipFile,
 			modulePath:    "example.com",
 			moduleVersion: "v1.1.0",
-			wantError:     notFoundError(`invalid zip file: example.com@v1.0.0/go.mod: path does not have prefix "example.com@v1.1.0/"`),
+			wantError:     NotFoundError(`invalid zip file: example.com@v1.0.0/go.mod: path does not have prefix "example.com@v1.1.0/"`),
 		},
 		{
 			n:             3,
@@ -1354,7 +1354,7 @@ func TestVerifyZipFile(t *testing.T) {
 			zipFile:       zipFile,
 			modulePath:    "example.com",
 			moduleVersion: "v1.1.0",
-			wantError:     notFoundError("example.com@v1.1.0: bad upstream"),
+			wantError:     NotFoundError("example.com@v1.1.0: bad upstream"),
 		},
 		{
 			n:             3,
@@ -1368,10 +1368,10 @@ func TestVerifyZipFile(t *testing.T) {
 			zipFile:       zipFile2,
 			modulePath:    "example.com",
 			moduleVersion: "v1.0.0",
-			wantError:     notFoundError("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
+			wantError:     NotFoundError("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
 		},
 	} {
-		err := verifyZipFile(g.sumdbClient, tt.zipFile, tt.modulePath, tt.moduleVersion)
+		err := verifyZipFile(g.SumdbClient, tt.zipFile, tt.modulePath, tt.moduleVersion)
 		if tt.wantError != nil {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)

@@ -83,6 +83,11 @@ type Goproxy struct {
 	// local disk and discarded when the request ends.
 	Cacher Cacher
 
+	// Fetcher is the [Fetcher] used to fetch files according to the
+	// environment variables.
+	// If the Fetcher is nil, the default fetcher is used.
+	Fetcher Fetcher
+
 	// TempDir is the directory for storing temporary files.
 	//
 	// If TempDir is empty, [os.TempDir] is used.
@@ -108,8 +113,8 @@ type Goproxy struct {
 	goBinName             string
 	directFetchWorkerPool chan struct{}
 	proxiedSUMDBs         map[string]*url.URL
-	httpClient            *http.Client
-	sumdbClient           *sumdb.Client
+	HttpClient            *http.Client
+	SumdbClient           *sumdb.Client
 }
 
 // init initializes the g.
@@ -238,11 +243,15 @@ func (g *Goproxy) init() {
 		g.proxiedSUMDBs[sumdbName] = sumdbURL
 	}
 
-	g.httpClient = &http.Client{Transport: g.Transport}
-	g.sumdbClient = sumdb.NewClient(&sumdbClientOps{
+	if g.Fetcher == nil {
+		g.Fetcher = BuiltinFetcher("builtin")
+	}
+
+	g.HttpClient = &http.Client{Transport: g.Transport}
+	g.SumdbClient = sumdb.NewClient(&sumdbClientOps{
 		envGOPROXY: g.envGOPROXY,
 		envGOSUMDB: g.envGOSUMDB,
-		httpClient: g.httpClient,
+		httpClient: g.HttpClient,
 	})
 }
 
@@ -282,15 +291,15 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 // serveFetch serves fetch requests.
 func (g *Goproxy) serveFetch(rw http.ResponseWriter, req *http.Request, name, tempDir string) {
-	f, err := newFetch(g, name, tempDir)
+	f, err := g.Fetcher.NewFetch(g, name, tempDir)
 	if err != nil {
 		responseNotFound(rw, req, 86400, err)
 		return
 	}
 
 	var isDownload bool
-	switch f.ops {
-	case fetchOpsDownloadInfo, fetchOpsDownloadMod, fetchOpsDownloadZip:
+	switch f.Ops() {
+	case FetchOpsDownloadInfo, FetchOpsDownloadMod, FetchOpsDownloadZip:
 		isDownload = true
 	}
 
@@ -302,23 +311,24 @@ func (g *Goproxy) serveFetch(rw http.ResponseWriter, req *http.Request, name, te
 		} else {
 			cacheControlMaxAge = 60
 		}
-		g.serveCache(rw, req, f.name, f.contentType, cacheControlMaxAge, func() {
+		g.serveCache(rw, req, f.Name(), f.ContentType(), cacheControlMaxAge, func() {
 			responseNotFound(rw, req, 60, "temporarily unavailable")
-		})
+		},
+		)
 		return
 	}
 
 	if isDownload {
-		g.serveCache(rw, req, f.name, f.contentType, 604800, func() {
+		g.serveCache(rw, req, f.Name(), f.ContentType(), 604800, func() {
 			g.serveFetchDownload(rw, req, f)
 		})
 		return
 	}
 
-	fr, err := f.do(req.Context())
+	fr, err := f.Do(req.Context())
 	if err != nil {
-		g.serveCache(rw, req, f.name, f.contentType, 60, func() {
-			g.logErrorf("failed to %s module version: %s: %v", f.ops, f.name, err)
+		g.serveCache(rw, req, f.Name(), f.ContentType(), 60, func() {
+			g.logErrorf("failed to %s module version: %s: %v", f.Ops(), f.Name(), err)
 			responseError(rw, req, err, true)
 		})
 		return
@@ -326,35 +336,35 @@ func (g *Goproxy) serveFetch(rw http.ResponseWriter, req *http.Request, name, te
 
 	content, err := fr.Open()
 	if err != nil {
-		g.logErrorf("failed to open fetch result: %s: %v", f.name, err)
+		g.logErrorf("failed to open BuiltinFetch result: %s: %v", f.Name(), err)
 		responseInternalServerError(rw, req)
 		return
 	}
 	defer content.Close()
 
-	if err := g.putCache(req.Context(), f.name, content); err != nil {
-		g.logErrorf("failed to cache module file: %s: %v", f.name, err)
+	if err := g.putCache(req.Context(), f.Name(), content); err != nil {
+		g.logErrorf("failed to cache module file: %s: %v", f.Name(), err)
 		responseInternalServerError(rw, req)
 		return
 	} else if _, err := content.Seek(0, io.SeekStart); err != nil {
-		g.logErrorf("failed to seek fetch result content: %s: %v", f.name, err)
+		g.logErrorf("failed to seek BuiltinFetch result content: %s: %v", f.Name(), err)
 		responseInternalServerError(rw, req)
 		return
 	}
 
-	responseSuccess(rw, req, content, f.contentType, 60)
+	responseSuccess(rw, req, content, f.ContentType(), 60)
 }
 
-// serveFetchDownload serves fetch download requests.
-func (g *Goproxy) serveFetchDownload(rw http.ResponseWriter, req *http.Request, f *fetch) {
-	fr, err := f.do(req.Context())
+// serveFetchDownload serves BuiltinFetch download requests.
+func (g *Goproxy) serveFetchDownload(rw http.ResponseWriter, req *http.Request, f Fetch) {
+	fr, err := f.Do(req.Context())
 	if err != nil {
-		g.logErrorf("failed to download module version: %s: %v", f.name, err)
+		g.logErrorf("failed to download module version: %s: %v", f.Name(), err)
 		responseError(rw, req, err, false)
 		return
 	}
 
-	nameWithoutExt := strings.TrimSuffix(f.name, path.Ext(f.name))
+	nameWithoutExt := strings.TrimSuffix(f.Name(), path.Ext(f.Name()))
 	for _, cache := range []struct{ nameExt, localFile string }{
 		{".info", fr.Info},
 		{".mod", fr.GoMod},
@@ -364,7 +374,7 @@ func (g *Goproxy) serveFetchDownload(rw http.ResponseWriter, req *http.Request, 
 			continue
 		}
 		if err := g.putCacheFile(req.Context(), nameWithoutExt+cache.nameExt, cache.localFile); err != nil {
-			g.logErrorf("failed to cache module file: %s: %v", f.name, err)
+			g.logErrorf("failed to cache module file: %s: %v", f.Name(), err)
 			responseInternalServerError(rw, req)
 			return
 		}
@@ -372,13 +382,13 @@ func (g *Goproxy) serveFetchDownload(rw http.ResponseWriter, req *http.Request, 
 
 	content, err := fr.Open()
 	if err != nil {
-		g.logErrorf("failed to open fetch result: %s: %v", f.name, err)
+		g.logErrorf("failed to open BuiltinFetch result: %s: %v", f.Name(), err)
 		responseInternalServerError(rw, req)
 		return
 	}
 	defer content.Close()
 
-	responseSuccess(rw, req, content, f.contentType, 604800)
+	responseSuccess(rw, req, content, f.ContentType(), 604800)
 }
 
 // serveSUMDB serves checksum database proxy requests.
@@ -422,7 +432,7 @@ func (g *Goproxy) serveSUMDB(rw http.ResponseWriter, req *http.Request, name, te
 		responseInternalServerError(rw, req)
 		return
 	}
-	if err := httpGet(req.Context(), g.httpClient, appendURL(proxiedSUMDBURL, sumdbURL.Path).String(), tempFile); err != nil {
+	if err := httpGet(req.Context(), g.HttpClient, appendURL(proxiedSUMDBURL, sumdbURL.Path).String(), tempFile); err != nil {
 		g.serveCache(rw, req, name, contentType, cacheControlMaxAge, func() {
 			g.logErrorf("failed to proxy checksum database: %s: %v", name, err)
 			responseError(rw, req, err, true)
