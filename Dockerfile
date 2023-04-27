@@ -1,12 +1,17 @@
 FROM golang:1.20-alpine3.17 AS build
 
-COPY . /usr/local/src/goproxy
+WORKDIR /usr/local/src/goproxy
+COPY . .
 
 RUN apk add --no-cache git
-RUN cd /usr/local/src/goproxy && go mod download && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o bin/ ./cmd/goproxy
+RUN go mod download
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o bin/ ./cmd/goproxy
 
 FROM alpine:3.17
 
 COPY --from=build /usr/local/src/goproxy/bin/ /usr/local/bin/
+
+RUN apk add --no-cache go git git-lfs openssh gpg subversion fossil mercurial breezy
+RUN git lfs install
 
 ENTRYPOINT ["/usr/local/bin/goproxy"]
