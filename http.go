@@ -17,7 +17,7 @@ import (
 
 var (
 	// errNotFound indicates something was not found.
-	errNotFound = notFoundError("not found")
+	errNotFound = NotFoundError("not found")
 
 	// errBadUpstream indicates an upstream is in a bad state.
 	errBadUpstream = errors.New("bad upstream")
@@ -26,16 +26,16 @@ var (
 	errFetchTimedOut = errors.New("fetch timed out")
 )
 
-// notFoundError is an error indicating that something was not found.
-type notFoundError string
+// NotFoundError is an error indicating that something was not found.
+type NotFoundError string
 
 // Error implements [error].
-func (nfe notFoundError) Error() string {
+func (nfe NotFoundError) Error() string {
 	return string(nfe)
 }
 
 // Is reports whether the target matches [errNotFound] or [fs.ErrNotExist].
-func (notFoundError) Is(target error) bool {
+func (NotFoundError) Is(target error) bool {
 	switch target {
 	case errNotFound, fs.ErrNotExist:
 		return true
@@ -85,7 +85,7 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 		case http.StatusBadRequest,
 			http.StatusNotFound,
 			http.StatusGone:
-			return notFoundError(respBody)
+			return NotFoundError(respBody)
 		case http.StatusTooManyRequests,
 			http.StatusInternalServerError,
 			http.StatusBadGateway,

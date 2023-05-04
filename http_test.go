@@ -19,13 +19,13 @@ import (
 func TestNotFoundError(t *testing.T) {
 	for _, tt := range []struct {
 		n         int
-		nfe       notFoundError
+		nfe       NotFoundError
 		wantError error
 	}{
-		{1, notFoundError(""), errors.New("")},
-		{2, notFoundError("foobar"), errors.New("foobar")},
-		{3, notFoundError("foobar"), fs.ErrNotExist},
-		{3, notFoundError("foobar"), errNotFound},
+		{1, NotFoundError(""), errors.New("")},
+		{2, NotFoundError("foobar"), errors.New("foobar")},
+		{3, NotFoundError("foobar"), fs.ErrNotExist},
+		{3, NotFoundError("foobar"), errNotFound},
 		{3, errNotFound, fs.ErrNotExist},
 	} {
 		if got, want := tt.nfe, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
@@ -33,7 +33,7 @@ func TestNotFoundError(t *testing.T) {
 		}
 	}
 
-	var nfe notFoundError
+	var nfe NotFoundError
 	for _, tt := range []struct {
 		n      int
 		err    error
