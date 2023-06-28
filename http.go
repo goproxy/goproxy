@@ -48,6 +48,18 @@ func httpGet(
 ) error {
 	var lastError error
 	for attempt := 0; attempt < 10; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-time.After(exponentialBackoffSleep(
+				100*time.Millisecond,
+				time.Second,
+				attempt,
+			)):
+			case <-ctx.Done():
+				return lastError
+			}
+		}
+
 		req, err := http.NewRequestWithContext(
 			ctx,
 			http.MethodGet,
@@ -103,16 +115,6 @@ func httpGet(
 				res.Status,
 				b,
 			)
-		}
-
-		select {
-		case <-ctx.Done():
-			return lastError
-		case <-time.After(exponentialBackoffSleep(
-			100*time.Millisecond,
-			time.Second,
-			attempt,
-		)):
 		}
 	}
 
