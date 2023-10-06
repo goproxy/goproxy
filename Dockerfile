@@ -14,4 +14,9 @@ COPY --from=build /usr/local/src/goproxy/bin/ /usr/local/bin/
 RUN apk add --no-cache go git git-lfs openssh gpg subversion fossil mercurial breezy
 RUN git lfs install
 
+USER nobody
+WORKDIR /goproxy
+VOLUME /goproxy
+EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/goproxy"]
+CMD ["--address", ":8080"]
