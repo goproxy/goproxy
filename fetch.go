@@ -109,7 +109,7 @@ func newFetch(g *Goproxy, name, tempDir string) (*fetch, error) {
 		return nil, err
 	}
 
-	f.modAtVer = fmt.Sprint(f.modulePath, "@", f.moduleVersion)
+	f.modAtVer = f.modulePath + "@" + f.moduleVersion
 	f.requiredToVerify = g.goBinEnvGOSUMDB != "off" &&
 		!globsMatchPath(g.goBinEnvGONOSUMDB, f.modulePath)
 
@@ -299,7 +299,7 @@ func (f *fetch) doDirect(ctx context.Context) (*fetchResult, error) {
 		var msg string
 		for _, line := range strings.Split(string(output), "\n") {
 			if !strings.HasPrefix(line, "go: finding") {
-				msg = fmt.Sprint(msg, line, "\n")
+				msg += line + "\n"
 			}
 		}
 
@@ -499,7 +499,7 @@ func verifyModFile(
 ) error {
 	gosumLines, err := sumdbClient.Lookup(
 		modulePath,
-		fmt.Sprint(moduleVersion, "/go.mod"),
+		moduleVersion+"/go.mod",
 	)
 	if err != nil {
 		return err

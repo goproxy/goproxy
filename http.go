@@ -151,7 +151,7 @@ func parseRawURL(rawURL string) (*url.URL, error) {
 		!strings.Contains(rawURL, ":/") &&
 		!filepath.IsAbs(rawURL) &&
 		!path.IsAbs(rawURL) {
-		rawURL = fmt.Sprint("https://", rawURL)
+		rawURL = "https://" + rawURL
 	}
 
 	u, err := url.Parse(rawURL)
@@ -181,8 +181,8 @@ func appendURL(u *url.URL, extraPaths ...string) *url.URL {
 			strings.ReplaceAll(url.PathEscape(ep), "%2F", "/"),
 		)
 		if ep[len(ep)-1] == '/' {
-			u.Path = fmt.Sprint(u.Path, "/")
-			u.RawPath = fmt.Sprint(u.RawPath, "/")
+			u.Path += "/"
+			u.RawPath += "/"
 		}
 	}
 

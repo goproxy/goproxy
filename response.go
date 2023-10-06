@@ -59,7 +59,7 @@ func responseNotFound(
 		if msg != "" &&
 			msg != "not found" &&
 			!strings.HasPrefix(msg, "not found: ") {
-			msg = fmt.Sprint("not found: ", msg)
+			msg = "not found: " + msg
 		}
 	}
 

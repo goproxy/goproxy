@@ -159,11 +159,7 @@ func (g *Goproxy) init() {
 			case "GOPRIVATE":
 				goBinEnvGOPRIVATE = v
 			default:
-				g.goBinEnv = append(g.goBinEnv, fmt.Sprintf(
-					"%s=%s",
-					k,
-					v,
-				))
+				g.goBinEnv = append(g.goBinEnv, k+"="+v)
 			}
 		}
 	}
@@ -202,7 +198,7 @@ func (g *Goproxy) init() {
 			goproxy = ""
 		}
 
-		goBinEnvGOPROXY = fmt.Sprint(goBinEnvGOPROXY, proxy, sep)
+		goBinEnvGOPROXY += proxy + sep
 	}
 
 	if goBinEnvGOPROXY != "" {
@@ -453,7 +449,7 @@ func (g *Goproxy) serveFetchDownload(
 
 		if err := g.putCacheFile(
 			req.Context(),
-			fmt.Sprint(nameWithoutExt, cache.nameExt),
+			nameWithoutExt+cache.nameExt,
 			cache.localFile,
 		); err != nil {
 			g.logErrorf(
@@ -657,7 +653,7 @@ func (g *Goproxy) putCacheFile(ctx context.Context, name, file string) error {
 
 // logErrorf formats according to the format and logs the v as an error.
 func (g *Goproxy) logErrorf(format string, v ...interface{}) {
-	msg := fmt.Sprint("goproxy: ", fmt.Sprintf(format, v...))
+	msg := "goproxy: " + fmt.Sprintf(format, v...)
 	if g.ErrorLogger != nil {
 		g.ErrorLogger.Output(2, msg)
 	} else {
