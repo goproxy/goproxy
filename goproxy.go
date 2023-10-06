@@ -145,24 +145,24 @@ func (g *Goproxy) init() {
 
 	var goBinEnvGOPRIVATE string
 	for _, env := range goBinEnv {
-		if envParts := strings.SplitN(env, "=", 2); len(envParts) == 2 {
-			switch strings.TrimSpace(envParts[0]) {
+		if k, v, ok := strings.Cut(env, "="); ok {
+			switch strings.TrimSpace(k) {
 			case "GO111MODULE":
 			case "GOPROXY":
-				g.goBinEnvGOPROXY = envParts[1]
+				g.goBinEnvGOPROXY = v
 			case "GONOPROXY":
-				g.goBinEnvGONOPROXY = envParts[1]
+				g.goBinEnvGONOPROXY = v
 			case "GOSUMDB":
-				g.goBinEnvGOSUMDB = envParts[1]
+				g.goBinEnvGOSUMDB = v
 			case "GONOSUMDB":
-				g.goBinEnvGONOSUMDB = envParts[1]
+				g.goBinEnvGONOSUMDB = v
 			case "GOPRIVATE":
-				goBinEnvGOPRIVATE = envParts[1]
+				goBinEnvGOPRIVATE = v
 			default:
 				g.goBinEnv = append(g.goBinEnv, fmt.Sprintf(
 					"%s=%s",
-					envParts[0],
-					envParts[1],
+					k,
+					v,
 				))
 			}
 		}

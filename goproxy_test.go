@@ -38,9 +38,9 @@ func TestGoproxyInit(t *testing.T) {
 	}
 	var goBinEnvPATH string
 	for _, env := range g.goBinEnv {
-		if envParts := strings.SplitN(env, "=", 2); len(envParts) == 2 {
-			if strings.TrimSpace(envParts[0]) == "PATH" {
-				goBinEnvPATH = envParts[1]
+		if k, v, ok := strings.Cut(env, "="); ok {
+			if strings.TrimSpace(k) == "PATH" {
+				goBinEnvPATH = v
 			}
 		}
 	}
@@ -65,9 +65,9 @@ func TestGoproxyInit(t *testing.T) {
 	}
 	var goBinEnvGOPRIVATE string
 	for _, env := range g.goBinEnv {
-		if envParts := strings.SplitN(env, "=", 2); len(envParts) == 2 {
-			if strings.TrimSpace(envParts[0]) == "GOPRIVATE" {
-				goBinEnvGOPRIVATE = envParts[1]
+		if k, v, ok := strings.Cut(env, "="); ok {
+			if strings.TrimSpace(k) == "GOPRIVATE" {
+				goBinEnvGOPRIVATE = v
 			}
 		}
 	}
