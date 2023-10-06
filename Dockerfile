@@ -1,4 +1,4 @@
-FROM golang:1.20-alpine3.18 AS build
+FROM golang:1.21-alpine3.18 AS build
 
 WORKDIR /usr/local/src/goproxy
 COPY . .
