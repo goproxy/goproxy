@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
+	"io/fs"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -205,7 +205,7 @@ func (discardWriter) Write(p []byte) (int, error) {
 }
 
 func TestGoproxyServeHTTP(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "goproxy.TestGoproxyServeHTTP")
+	tempDir, err := os.MkdirTemp("", "goproxy.TestGoproxyServeHTTP")
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -371,7 +371,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 }
 
 func TestGoproxyServeFetch(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "goproxy.TestGoproxyServeFetch")
+	tempDir, err := os.MkdirTemp("", "goproxy.TestGoproxyServeFetch")
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -581,7 +581,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 }
 
 func TestGoproxyServeFetchDownload(t *testing.T) {
-	tempDir, err := ioutil.TempDir(
+	tempDir, err := os.MkdirTemp(
 		"",
 		"goproxy.TestGoproxyServeFetchDownload",
 	)
@@ -702,7 +702,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 }
 
 func TestGoproxyServeSUMDB(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "goproxy.TestGoproxyServeSUMDB")
+	tempDir, err := os.MkdirTemp("", "goproxy.TestGoproxyServeSUMDB")
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -931,7 +931,7 @@ func (errorCacher) Put(context.Context, string, io.ReadSeeker) error {
 }
 
 func TestGoproxyServeCache(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "goproxy.TestGoproxyServeCache")
+	tempDir, err := os.MkdirTemp("", "goproxy.TestGoproxyServeCache")
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -984,16 +984,16 @@ func TestGoproxyServeCache(t *testing.T) {
 }
 
 func TestGoproxyCache(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "goproxy.TestGoproxyCache")
+	tempDir, err := os.MkdirTemp("", "goproxy.TestGoproxyCache")
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 	defer os.RemoveAll(tempDir)
 
-	if err := ioutil.WriteFile(
+	if err := os.WriteFile(
 		filepath.Join(tempDir, "foo"),
 		[]byte("bar"),
-		0600,
+		0o600,
 	); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -1002,7 +1002,7 @@ func TestGoproxyCache(t *testing.T) {
 	g.init()
 	if rc, err := g.cache(context.Background(), "foo"); err != nil {
 		t.Fatalf("unexpected error %q", err)
-	} else if b, err := ioutil.ReadAll(rc); err != nil {
+	} else if b, err := io.ReadAll(rc); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if err := rc.Close(); err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -1010,7 +1010,7 @@ func TestGoproxyCache(t *testing.T) {
 		t.Errorf("got %q, want %q", got, want)
 	} else if _, err := g.cache(context.Background(), "bar"); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := errors.Is(err, os.ErrNotExist),
+	} else if got, want := errors.Is(err, fs.ErrNotExist),
 		true; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
@@ -1019,7 +1019,7 @@ func TestGoproxyCache(t *testing.T) {
 	g.init()
 	if _, err := g.cache(context.Background(), ""); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := errors.Is(err, os.ErrNotExist),
+	} else if got, want := errors.Is(err, fs.ErrNotExist),
 		true; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
@@ -1048,7 +1048,7 @@ func (trs *testReaderSeeker) Seek(offset int64, whence int) (int64, error) {
 }
 
 func TestGoproxyPutCache(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "goproxy.TestGoproxyPutCache")
+	tempDir, err := os.MkdirTemp("", "goproxy.TestGoproxyPutCache")
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -1065,7 +1065,7 @@ func TestGoproxyPutCache(t *testing.T) {
 		strings.NewReader("bar"),
 	); err != nil {
 		t.Fatalf("unexpected error %q", err)
-	} else if b, err := ioutil.ReadFile(
+	} else if b, err := os.ReadFile(
 		filepath.Join(tempDir, "foo"),
 	); err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -1102,11 +1102,11 @@ func TestGoproxyPutCache(t *testing.T) {
 		strings.NewReader("foobar"),
 	); err != nil {
 		t.Fatalf("unexpected error %q", err)
-	} else if _, err := ioutil.ReadFile(
+	} else if _, err := os.ReadFile(
 		filepath.Join(tempDir, "foobar"),
 	); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := errors.Is(err, os.ErrNotExist),
+	} else if got, want := errors.Is(err, fs.ErrNotExist),
 		true; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
@@ -1123,13 +1123,13 @@ func TestGoproxyPutCache(t *testing.T) {
 }
 
 func TestGoproxyPutCacheFile(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "goproxy.TestGoproxyPutCacheFile")
+	tempDir, err := os.MkdirTemp("", "goproxy.TestGoproxyPutCacheFile")
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 	defer os.RemoveAll(tempDir)
 
-	cacheFile, err := ioutil.TempFile(tempDir, "")
+	cacheFile, err := os.CreateTemp(tempDir, "")
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if _, err := cacheFile.WriteString("bar"); err != nil {
@@ -1146,7 +1146,7 @@ func TestGoproxyPutCacheFile(t *testing.T) {
 		cacheFile.Name(),
 	); err != nil {
 		t.Fatalf("unexpected error %q", err)
-	} else if b, err := ioutil.ReadFile(filepath.Join(
+	} else if b, err := os.ReadFile(filepath.Join(
 		tempDir,
 		"foo",
 	)); err != nil {
@@ -1160,7 +1160,7 @@ func TestGoproxyPutCacheFile(t *testing.T) {
 		filepath.Join(tempDir, "bar-sourcel"),
 	); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := errors.Is(err, os.ErrNotExist),
+	} else if got, want := errors.Is(err, fs.ErrNotExist),
 		true; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}

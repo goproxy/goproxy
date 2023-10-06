@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -65,7 +64,7 @@ func TestResponseString(t *testing.T) {
 		t.Errorf("got %q, want %q", recrCC, want)
 	}
 
-	if b, err := ioutil.ReadAll(recr.Body); err != nil {
+	if b, err := io.ReadAll(recr.Body); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if want := "foobar"; string(b) != want {
 		t.Errorf("got %q, want %q", b, want)
@@ -91,7 +90,7 @@ func TestResponseNotFound(t *testing.T) {
 		t.Errorf("got %q, want %q", recrCC, want)
 	}
 
-	if b, err := ioutil.ReadAll(recr.Body); err != nil {
+	if b, err := io.ReadAll(recr.Body); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if want := "not found"; string(b) != want {
 		t.Errorf("got %q, want %q", b, want)
@@ -114,7 +113,7 @@ func TestResponseNotFound(t *testing.T) {
 		t.Errorf("got %q, want %q", recrCC, want)
 	}
 
-	if b, err := ioutil.ReadAll(recr.Body); err != nil {
+	if b, err := io.ReadAll(recr.Body); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if want := "not found: foobar"; string(b) != want {
 		t.Errorf("got %q, want %q", b, want)
@@ -137,7 +136,7 @@ func TestResponseNotFound(t *testing.T) {
 		t.Errorf("got %q, want %q", recrCC, want)
 	}
 
-	if b, err := ioutil.ReadAll(recr.Body); err != nil {
+	if b, err := io.ReadAll(recr.Body); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if want := "not found: foobar"; string(b) != want {
 		t.Errorf("got %q, want %q", b, want)
@@ -160,7 +159,7 @@ func TestResponseNotFound(t *testing.T) {
 		t.Errorf("got %q, want %q", recrCC, want)
 	}
 
-	if b, err := ioutil.ReadAll(recr.Body); err != nil {
+	if b, err := io.ReadAll(recr.Body); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if want := "not found: foobar"; string(b) != want {
 		t.Errorf("got %q, want %q", b, want)
@@ -183,7 +182,7 @@ func TestResponseNotFound(t *testing.T) {
 		t.Errorf("got %q, want %q", recrCC, want)
 	}
 
-	if b, err := ioutil.ReadAll(recr.Body); err != nil {
+	if b, err := io.ReadAll(recr.Body); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if want := "not found: foobar"; string(b) != want {
 		t.Errorf("got %q, want %q", b, want)
@@ -206,7 +205,7 @@ func TestResponseNotFound(t *testing.T) {
 		t.Errorf("got %q, want %q", recrCC, want)
 	}
 
-	if b, err := ioutil.ReadAll(recr.Body); err != nil {
+	if b, err := io.ReadAll(recr.Body); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if want := "not found"; string(b) != want {
 		t.Errorf("got %q, want %q", b, want)
@@ -232,7 +231,7 @@ func TestResponseMethodNotAllowed(t *testing.T) {
 		t.Errorf("got %q, want %q", recrCC, want)
 	}
 
-	if b, err := ioutil.ReadAll(recr.Body); err != nil {
+	if b, err := io.ReadAll(recr.Body); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if want := "method not allowed"; string(b) != want {
 		t.Errorf("got %q, want %q", b, want)
@@ -258,7 +257,7 @@ func TestResponseInternalServerError(t *testing.T) {
 		t.Errorf("got %q, want %q", recrCC, want)
 	}
 
-	if b, err := ioutil.ReadAll(recr.Body); err != nil {
+	if b, err := io.ReadAll(recr.Body); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if want := "internal server error"; string(b) != want {
 		t.Errorf("got %q, want %q", b, want)
@@ -330,7 +329,7 @@ func TestResponseSuccess(t *testing.T) {
 		t.Errorf("got %q, want %q", recrET, want)
 	}
 
-	if b, err := ioutil.ReadAll(recr.Body); err != nil {
+	if b, err := io.ReadAll(recr.Body); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if want := "foobar"; string(b) != want {
 		t.Errorf("got %q, want %q", b, want)
@@ -370,7 +369,7 @@ func TestResponseSuccess(t *testing.T) {
 		t.Errorf("got %q, want %q", recrET, want)
 	}
 
-	if b, err := ioutil.ReadAll(recr.Body); err != nil {
+	if b, err := io.ReadAll(recr.Body); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if want := ""; string(b) != want {
 		t.Errorf("got %q, want %q", b, want)
@@ -416,7 +415,7 @@ func TestResponseSuccess(t *testing.T) {
 		t.Errorf("got %q, want %q", recrET, want)
 	}
 
-	if b, err := ioutil.ReadAll(recr.Body); err != nil {
+	if b, err := io.ReadAll(recr.Body); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if want := "foobar"; string(b) != want {
 		t.Errorf("got %q, want %q", b, want)
@@ -459,7 +458,7 @@ func TestResponseSuccess(t *testing.T) {
 		t.Errorf("got %q, want %q", recrET, want)
 	}
 
-	if b, err := ioutil.ReadAll(recr.Body); err != nil {
+	if b, err := io.ReadAll(recr.Body); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if want := "foobar"; string(b) != want {
 		t.Errorf("got %q, want %q", b, want)
@@ -502,7 +501,7 @@ func TestResponseSuccess(t *testing.T) {
 		t.Errorf("got %q, want %q", recrET, want)
 	}
 
-	if b, err := ioutil.ReadAll(recr.Body); err != nil {
+	if b, err := io.ReadAll(recr.Body); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if want := "foobar"; string(b) != want {
 		t.Errorf("got %q, want %q", b, want)
@@ -564,7 +563,7 @@ func TestResponseSuccess(t *testing.T) {
 		t.Errorf("got %q, want %q", recrET, want)
 	}
 
-	if b, err := ioutil.ReadAll(recr.Body); err != nil {
+	if b, err := io.ReadAll(recr.Body); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if want := "foobar"; string(b) != want {
 		t.Errorf("got %q, want %q", b, want)
@@ -590,7 +589,7 @@ func TestResponseError(t *testing.T) {
 		t.Errorf("got %q, want %q", recrCC, want)
 	}
 
-	if b, err := ioutil.ReadAll(recr.Body); err != nil {
+	if b, err := io.ReadAll(recr.Body); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if want := "not found: cache insensitive"; string(b) != want {
 		t.Errorf("got %q, want %q", b, want)
@@ -613,7 +612,7 @@ func TestResponseError(t *testing.T) {
 		t.Errorf("got %q, want %q", recrCC, want)
 	}
 
-	if b, err := ioutil.ReadAll(recr.Body); err != nil {
+	if b, err := io.ReadAll(recr.Body); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if want := "not found: cache sensitive"; string(b) != want {
 		t.Errorf("got %q, want %q", b, want)
@@ -636,7 +635,7 @@ func TestResponseError(t *testing.T) {
 		t.Errorf("got %q, want %q", recrCC, want)
 	}
 
-	if b, err := ioutil.ReadAll(recr.Body); err != nil {
+	if b, err := io.ReadAll(recr.Body); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if want := "not found: bad upstream"; string(b) != want {
 		t.Errorf("got %q, want %q", b, want)
@@ -664,7 +663,7 @@ func TestResponseError(t *testing.T) {
 		t.Errorf("got %q, want %q", recrCC, want)
 	}
 
-	if b, err := ioutil.ReadAll(recr.Body); err != nil {
+	if b, err := io.ReadAll(recr.Body); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if want := "not found: fetch timed out"; string(b) != want {
 		t.Errorf("got %q, want %q", b, want)
@@ -687,7 +686,7 @@ func TestResponseError(t *testing.T) {
 		t.Errorf("got %q, want %q", recrCC, want)
 	}
 
-	if b, err := ioutil.ReadAll(recr.Body); err != nil {
+	if b, err := io.ReadAll(recr.Body); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if want := "not found: bad upstream"; string(b) != want {
 		t.Errorf("got %q, want %q", b, want)
@@ -710,7 +709,7 @@ func TestResponseError(t *testing.T) {
 		t.Errorf("got %q, want %q", recrCC, want)
 	}
 
-	if b, err := ioutil.ReadAll(recr.Body); err != nil {
+	if b, err := io.ReadAll(recr.Body); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if want := "not found: fetch timed out"; string(b) != want {
 		t.Errorf("got %q, want %q", b, want)
@@ -733,7 +732,7 @@ func TestResponseError(t *testing.T) {
 		t.Errorf("got %q, want %q", recrCC, want)
 	}
 
-	if b, err := ioutil.ReadAll(recr.Body); err != nil {
+	if b, err := io.ReadAll(recr.Body); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if want := "internal server error"; string(b) != want {
 		t.Errorf("got %q, want %q", b, want)

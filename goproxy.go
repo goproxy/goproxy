@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
+	"io/fs"
 	"log"
 	"math"
 	"math/rand"
@@ -315,7 +315,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		name = strings.TrimPrefix(name, "/")
 	}
 
-	tempDir, err := ioutil.TempDir(g.TempDir, "goproxy")
+	tempDir, err := os.MkdirTemp(g.TempDir, "goproxy")
 	if err != nil {
 		g.logErrorf("failed to create temporary directory: %v", err)
 		responseInternalServerError(rw, req)
@@ -519,7 +519,7 @@ func (g *Goproxy) serveSUMDB(
 		return
 	}
 
-	tempFile, err := ioutil.TempFile(tempDir, "")
+	tempFile, err := os.CreateTemp(tempDir, "")
 	if err != nil {
 		g.logErrorf("failed to create temporary file: %v", err)
 		responseInternalServerError(rw, req)
@@ -589,7 +589,7 @@ func (g *Goproxy) serveCache(
 ) {
 	content, err := g.cache(req.Context(), name)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+		if errors.Is(err, fs.ErrNotExist) {
 			onNotFound()
 			return
 		}
@@ -614,7 +614,7 @@ func (g *Goproxy) cache(
 	name string,
 ) (io.ReadCloser, error) {
 	if g.Cacher == nil {
-		return nil, os.ErrNotExist
+		return nil, fs.ErrNotExist
 	}
 
 	return g.Cacher.Get(ctx, name)
@@ -804,26 +804,3 @@ func globsMatchPath(globs, target string) bool {
 
 	return false
 }
-
-// readSeekCloser is the interface that groups the basic Read, Seek and Close
-// methods.
-//
-// TODO: Remove the readSeekCloser when the minimum supported Go version is
-// 1.16. See https://go.dev/doc/go1.16#io.
-type readSeekCloser interface {
-	io.Reader
-	io.Seeker
-	io.Closer
-}
-
-// nopCloser is an [io.ReadCloser] with a no-op Close method wrapping an
-// [io.Reader].
-//
-// TODO: Remove the nopCloser when the minimum supported Go version is 1.16. See
-// https://go.dev/doc/go1.16#io.
-type nopCloser struct {
-	io.Reader
-}
-
-// Close implements the [io.Closer].
-func (nopCloser) Close() error { return nil }

@@ -5,9 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 )
@@ -141,7 +141,7 @@ func (sco *sumdbClientOps) ReadCache(file string) ([]byte, error) {
 		return nil, sco.initError
 	}
 
-	return nil, os.ErrNotExist
+	return nil, fs.ErrNotExist
 }
 
 // WriteCache implements the [golang.org/x/mod/sumdb.ClientOps].

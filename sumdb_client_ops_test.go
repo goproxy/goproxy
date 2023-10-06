@@ -2,9 +2,9 @@ package goproxy
 
 import (
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 )
 
@@ -331,7 +331,7 @@ func TestSUMDBClientOps(t *testing.T) {
 	}
 	if _, err := sco.ReadCache(""); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := err, os.ErrNotExist; got != want {
+	} else if got, want := err, fs.ErrNotExist; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
 }

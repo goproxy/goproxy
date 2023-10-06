@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
@@ -156,7 +155,7 @@ func (f *fetch) doProxy(
 		return nil, err
 	}
 
-	tempFile, err := ioutil.TempFile(f.tempDir, "")
+	tempFile, err := os.CreateTemp(f.tempDir, "")
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +176,7 @@ func (f *fetch) doProxy(
 	r := &fetchResult{f: f}
 	switch f.ops {
 	case fetchOpsResolve:
-		b, err := ioutil.ReadFile(tempFile.Name())
+		b, err := os.ReadFile(tempFile.Name())
 		if err != nil {
 			return nil, err
 		}
@@ -190,7 +189,7 @@ func (f *fetch) doProxy(
 			))
 		}
 	case fetchOpsList:
-		b, err := ioutil.ReadFile(tempFile.Name())
+		b, err := os.ReadFile(tempFile.Name())
 		if err != nil {
 			return nil, err
 		}
@@ -398,20 +397,20 @@ type fetchResult struct {
 }
 
 // Open opens the content of the fr.
-func (fr *fetchResult) Open() (readSeekCloser, error) {
+func (fr *fetchResult) Open() (io.ReadSeekCloser, error) {
 	switch fr.f.ops {
 	case fetchOpsResolve:
 		content := strings.NewReader(marshalInfo(fr.Version, fr.Time))
 		return struct {
 			io.ReadCloser
 			io.Seeker
-		}{nopCloser{content}, content}, nil
+		}{io.NopCloser(content), content}, nil
 	case fetchOpsList:
 		content := strings.NewReader(strings.Join(fr.Versions, "\n"))
 		return struct {
 			io.ReadCloser
 			io.Seeker
-		}{nopCloser{content}, content}, nil
+		}{io.NopCloser(content), content}, nil
 	case fetchOpsDownloadInfo:
 		return os.Open(fr.Info)
 	case fetchOpsDownloadMod:
@@ -452,7 +451,7 @@ func unmarshalInfo(s string) (string, time.Time, error) {
 
 // checkAndFormatInfoFile checks and formats the info file targeted by the name.
 func checkAndFormatInfoFile(name string) error {
-	b, err := ioutil.ReadFile(name)
+	b, err := os.ReadFile(name)
 	if err != nil {
 		return err
 	}
@@ -463,7 +462,7 @@ func checkAndFormatInfoFile(name string) error {
 	}
 
 	if info := marshalInfo(infoVersion, infoTime); info != string(b) {
-		return ioutil.WriteFile(name, []byte(info), 0600)
+		return os.WriteFile(name, []byte(info), 0o600)
 	}
 
 	return nil

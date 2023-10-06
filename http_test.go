@@ -403,31 +403,3 @@ func TestAppendURL(t *testing.T) {
 		t.Errorf("got %q, want %q", us, want)
 	}
 }
-
-func TestRedactedURL(t *testing.T) {
-	ru := redactedURL(&url.URL{
-		Scheme: "https",
-		Host:   "example.com",
-	})
-	if want := "https://example.com"; ru != want {
-		t.Errorf("got %q, want %q", ru, want)
-	}
-
-	ru = redactedURL(&url.URL{
-		Scheme: "https",
-		User:   url.User("user"),
-		Host:   "example.com",
-	})
-	if want := "https://user@example.com"; ru != want {
-		t.Errorf("got %q, want %q", ru, want)
-	}
-
-	ru = redactedURL(&url.URL{
-		Scheme: "https",
-		User:   url.UserPassword("user", "password"),
-		Host:   "example.com",
-	})
-	if want := "https://user:xxxxx@example.com"; ru != want {
-		t.Errorf("got %q, want %q", ru, want)
-	}
-}

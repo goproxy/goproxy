@@ -47,7 +47,7 @@ $ docker pull ghcr.io/goproxy/goproxy
 
 done.
 
-> The only requirement is the [Go](https://go.dev), at least v1.13.
+> The only requirement is the [Go](https://go.dev), at least v1.18.
 
 ## Quick Start
 

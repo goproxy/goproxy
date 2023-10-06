@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"path"
@@ -90,7 +89,7 @@ func httpGet(
 			return err
 		}
 
-		b, err := ioutil.ReadAll(res.Body)
+		b, err := io.ReadAll(res.Body)
 		res.Body.Close()
 		if err != nil {
 			return err
@@ -111,7 +110,7 @@ func httpGet(
 		default:
 			return fmt.Errorf(
 				"GET %s: %s: %s",
-				redactedURL(req.URL),
+				req.URL.Redacted(),
 				res.Status,
 				b,
 			)
@@ -188,20 +187,4 @@ func appendURL(u *url.URL, extraPaths ...string) *url.URL {
 	}
 
 	return u
-}
-
-// redactedURL returns a redacted string form of the u, suitable for printing in
-// error messages. The string form replaces any non-empty password in the u with
-// "xxxxx".
-//
-// TODO: Remove the redactedURL when the minimum supported Go version is 1.15.
-// See https://go.dev/doc/go1.15#net/url.
-func redactedURL(u *url.URL) string {
-	if _, ok := u.User.Password(); ok {
-		ru := *u
-		u = &ru
-		u.User = url.UserPassword(u.User.Username(), "xxxxx")
-	}
-
-	return u.String()
 }

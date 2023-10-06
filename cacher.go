@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 )
@@ -13,7 +12,7 @@ import (
 // [Goproxy].
 type Cacher interface {
 	// Get gets the matched cache for the name. It returns the
-	// [os.ErrNotExist] if not found.
+	// [fs.ErrNotExist] if not found.
 	//
 	// Note that the returned [io.ReadCloser] can optionally implement the
 	// following interfaces:
@@ -69,11 +68,11 @@ func (dc DirCacher) Put(
 	file := filepath.Join(string(dc), filepath.FromSlash(name))
 
 	dir := filepath.Dir(file)
-	if err := os.MkdirAll(dir, 0750); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return err
 	}
 
-	f, err := ioutil.TempFile(dir, fmt.Sprintf(
+	f, err := os.CreateTemp(dir, fmt.Sprintf(
 		".%s.tmp*",
 		filepath.Base(file),
 	))
