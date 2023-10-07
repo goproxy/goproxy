@@ -51,9 +51,8 @@ func TestNewFetch(t *testing.T) {
 	if got, want := f.requiredToVerify, true; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
-	wantContentType := "application/json; charset=utf-8"
-	if got := f.contentType; got != wantContentType {
-		t.Errorf("got %q, want %q", got, wantContentType)
+	if got, want := f.contentType, "application/json; charset=utf-8"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	g = &Goproxy{}
@@ -106,9 +105,8 @@ func TestNewFetch(t *testing.T) {
 	if got, want := f.moduleVersion, "latest"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	wantContentType = "text/plain; charset=utf-8"
-	if got := f.contentType; got != wantContentType {
-		t.Errorf("got %q, want %q", got, wantContentType)
+	if got, want := f.contentType, "text/plain; charset=utf-8"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	name = "example.com/foo/bar/@v/v1.0.0.info"
@@ -125,9 +123,8 @@ func TestNewFetch(t *testing.T) {
 	if got, want := f.moduleVersion, "v1.0.0"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	wantContentType = "application/json; charset=utf-8"
-	if got := f.contentType; got != wantContentType {
-		t.Errorf("got %q, want %q", got, wantContentType)
+	if got, want := f.contentType, "application/json; charset=utf-8"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	name = "example.com/foo/bar/@v/v1.0.0.mod"
@@ -144,9 +141,8 @@ func TestNewFetch(t *testing.T) {
 	if got, want := f.moduleVersion, "v1.0.0"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	wantContentType = "text/plain; charset=utf-8"
-	if got := f.contentType; got != wantContentType {
-		t.Errorf("got %q, want %q", got, wantContentType)
+	if got, want := f.contentType, "text/plain; charset=utf-8"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	name = "example.com/foo/bar/@v/v1.0.0.zip"
@@ -163,9 +159,8 @@ func TestNewFetch(t *testing.T) {
 	if got, want := f.moduleVersion, "v1.0.0"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	wantContentType = "application/zip"
-	if got := f.contentType; got != wantContentType {
-		t.Errorf("got %q, want %q", got, wantContentType)
+	if got, want := f.contentType, "application/zip"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	name = "example.com/foo/bar/@v/v1.0.0.ext"
@@ -196,9 +191,8 @@ func TestNewFetch(t *testing.T) {
 	if got, want := f.moduleVersion, "master"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	wantContentType = "application/json; charset=utf-8"
-	if got := f.contentType; got != wantContentType {
-		t.Errorf("got %q, want %q", got, wantContentType)
+	if got, want := f.contentType, "application/json; charset=utf-8"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	name = "example.com/foo/bar/@v/master.mod"
@@ -225,16 +219,14 @@ func TestNewFetch(t *testing.T) {
 	name = "example.com/foo/bar/@v/"
 	if _, err := newFetch(g, name, tempDir); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := err.Error(),
-		`no file extension in filename ""`; got != want {
+	} else if got, want := err.Error(), `no file extension in filename ""`; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
 	name = "example.com/foo/bar/@v/main"
 	if _, err := newFetch(g, name, tempDir); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := err.Error(),
-		`no file extension in filename "main"`; got != want {
+	} else if got, want := err.Error(), `no file extension in filename "main"`; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
@@ -252,9 +244,8 @@ func TestNewFetch(t *testing.T) {
 	if got, want := f.moduleVersion, "V1.0.0"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	wantContentType = "application/json; charset=utf-8"
-	if got := f.contentType; got != wantContentType {
-		t.Errorf("got %q, want %q", got, wantContentType)
+	if got, want := f.contentType, "application/json; charset=utf-8"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	name = "example.com/!!foo/bar/@latest"
@@ -277,18 +268,9 @@ func TestFetchDo(t *testing.T) {
 
 	infoTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 	goproxyHandlerFunc := func(rw http.ResponseWriter, req *http.Request) {
-		responseSuccess(
-			rw,
-			req,
-			strings.NewReader(marshalInfo("v1.0.0", infoTime)),
-			"application/json; charset=utf-8",
-			60,
-		)
+		responseSuccess(rw, req, strings.NewReader(marshalInfo("v1.0.0", infoTime)), "application/json; charset=utf-8", 60)
 	}
-	goproxyServer := httptest.NewServer(http.HandlerFunc(func(
-		rw http.ResponseWriter,
-		req *http.Request,
-	) {
+	goproxyServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		goproxyHandlerFunc(rw, req)
 	}))
 	defer goproxyServer.Close()
@@ -309,8 +291,7 @@ func TestFetchDo(t *testing.T) {
 		t.Fatalf("unexpected error %q", err)
 	} else if got, want := fr.Version, "v1.0.0"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := fr.Time.String(),
-		infoTime.String(); got != want {
+	} else if got, want := fr.Time.String(), infoTime.String(); got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
@@ -378,18 +359,9 @@ func TestFetchDoProxy(t *testing.T) {
 	now := time.Now()
 
 	handlerFunc := func(rw http.ResponseWriter, req *http.Request) {
-		responseSuccess(
-			rw,
-			req,
-			strings.NewReader(marshalInfo("v1.0.0", now)),
-			"application/json; charset=utf-8",
-			60,
-		)
+		responseSuccess(rw, req, strings.NewReader(marshalInfo("v1.0.0", now)), "application/json; charset=utf-8", 60)
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(
-		rw http.ResponseWriter,
-		req *http.Request,
-	) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		handlerFunc(rw, req)
 	}))
 	defer server.Close()
@@ -414,13 +386,7 @@ func TestFetchDoProxy(t *testing.T) {
 	}
 
 	handlerFunc = func(rw http.ResponseWriter, req *http.Request) {
-		responseSuccess(
-			rw,
-			req,
-			strings.NewReader(marshalInfo("v1.0.0", time.Time{})),
-			"application/json; charset=utf-8",
-			60,
-		)
+		responseSuccess(rw, req, strings.NewReader(marshalInfo("v1.0.0", time.Time{})), "application/json; charset=utf-8", 60)
 	}
 	g = &Goproxy{
 		GoBinEnv: []string{"GOSUMDB=off"},
@@ -432,24 +398,17 @@ func TestFetchDoProxy(t *testing.T) {
 	}
 	if _, err := f.doProxy(context.Background(), server.URL); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := err.Error(),
-		"invalid info response: zero time"; got != want {
+	} else if got, want := err.Error(), "invalid info response: zero time"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
 	handlerFunc = func(rw http.ResponseWriter, req *http.Request) {
-		responseSuccess(
-			rw,
-			req,
-			strings.NewReader(`v1.0.0
+		responseSuccess(rw, req, strings.NewReader(`v1.0.0
 v1.1.0
 v1.1.1-0.20200101000000-0123456789ab
 v1.2.0 foo bar
 invalid
-`),
-			"text/plain; charset=utf-8",
-			60,
-		)
+`), "text/plain; charset=utf-8", 60)
 	}
 	g = &Goproxy{
 		GoBinEnv: []string{"GOSUMDB=off"},
@@ -463,19 +422,12 @@ invalid
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	if got, want := strings.Join(fr.Versions, "\n"),
-		"v1.0.0\nv1.1.0\nv1.2.0"; got != want {
+	if got, want := strings.Join(fr.Versions, "\n"), "v1.0.0\nv1.1.0\nv1.2.0"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
 	handlerFunc = func(rw http.ResponseWriter, req *http.Request) {
-		responseSuccess(
-			rw,
-			req,
-			strings.NewReader(marshalInfo("v1.0.0", now)),
-			"application/json; charset=utf-8",
-			60,
-		)
+		responseSuccess(rw, req, strings.NewReader(marshalInfo("v1.0.0", now)), "application/json; charset=utf-8", 60)
 	}
 	g = &Goproxy{
 		GoBinEnv: []string{"GOSUMDB=off"},
@@ -491,21 +443,12 @@ invalid
 	}
 	if info, err := os.ReadFile(fr.Info); err != nil {
 		t.Fatalf("unexpected error %q", err)
-	} else if got, want := string(info), fmt.Sprintf(
-		`{"Version":"v1.0.0","Time":%q}`,
-		now.UTC().Format(time.RFC3339Nano),
-	); got != want {
+	} else if got, want := string(info), fmt.Sprintf(`{"Version":"v1.0.0","Time":%q}`, now.UTC().Format(time.RFC3339Nano)); got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
 	handlerFunc = func(rw http.ResponseWriter, req *http.Request) {
-		responseSuccess(
-			rw,
-			req,
-			strings.NewReader(marshalInfo("v1.0.0", time.Time{})),
-			"application/json; charset=utf-8",
-			60,
-		)
+		responseSuccess(rw, req, strings.NewReader(marshalInfo("v1.0.0", time.Time{})), "application/json; charset=utf-8", 60)
 	}
 	g = &Goproxy{
 		GoBinEnv: []string{"GOSUMDB=off"},
@@ -517,19 +460,12 @@ invalid
 	}
 	if _, err := f.doProxy(context.Background(), server.URL); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := err.Error(),
-		"invalid info file: zero time"; got != want {
+	} else if got, want := err.Error(), "invalid info file: zero time"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
 	handlerFunc = func(rw http.ResponseWriter, req *http.Request) {
-		responseSuccess(
-			rw,
-			req,
-			strings.NewReader("module example.com"),
-			"text/plain; charset=utf-8",
-			60,
-		)
+		responseSuccess(rw, req, strings.NewReader("module example.com"), "text/plain; charset=utf-8", 60)
 	}
 	g = &Goproxy{
 		GoBinEnv: []string{"GOSUMDB=off"},
@@ -550,29 +486,18 @@ invalid
 	}
 
 	modFile := filepath.Join(tempDir, "go.mod")
-	if err := os.WriteFile(
-		modFile,
-		[]byte("module example.com"),
-		0o600,
-	); err != nil {
+	if err := os.WriteFile(modFile, []byte("module example.com"), 0o600); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 
-	dirHash, err := dirhash.HashDir(
-		tempDir,
-		"example.com@v1.0.0",
-		dirhash.DefaultHash,
-	)
+	dirHash, err := dirhash.HashDir(tempDir, "example.com@v1.0.0", dirhash.DefaultHash)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 
-	modHash, err := dirhash.DefaultHash(
-		[]string{"go.mod"},
-		func(string) (io.ReadCloser, error) {
-			return os.Open(modFile)
-		},
-	)
+	modHash, err := dirhash.DefaultHash([]string{"go.mod"}, func(string) (io.ReadCloser, error) {
+		return os.Open(modFile)
+	})
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -583,22 +508,11 @@ invalid
 	}
 
 	gosum := func(modulePath, moduleVersion string) ([]byte, error) {
-		return []byte(fmt.Sprintf(
-			"%s %s %s\n%s %s/go.mod %s\n",
-			modulePath,
-			moduleVersion,
-			dirHash,
-			modulePath,
-			moduleVersion,
-			modHash,
-		)), nil
+		return []byte(fmt.Sprintf("%s %s %s\n%s %s/go.mod %s\n", modulePath, moduleVersion, dirHash, modulePath, moduleVersion, modHash)), nil
 	}
-	sumdbServer := httptest.NewServer(sumdb.NewServer(sumdb.NewTestServer(
-		skey,
-		func(modulePath, moduleVersion string) ([]byte, error) {
-			return gosum(modulePath, moduleVersion)
-		},
-	)))
+	sumdbServer := httptest.NewServer(sumdb.NewServer(sumdb.NewTestServer(skey, func(modulePath, moduleVersion string) ([]byte, error) {
+		return gosum(modulePath, moduleVersion)
+	})))
 	defer sumdbServer.Close()
 
 	g = &Goproxy{GoBinEnv: []string{
@@ -620,15 +534,7 @@ invalid
 		t.Errorf("got %q, want %q", got, want)
 	}
 	gosum = func(modulePath, moduleVersion string) ([]byte, error) {
-		return []byte(fmt.Sprintf(
-			"%s %s %s\n%s %s/go.mod %s\n",
-			modulePath,
-			"v1.0.0",
-			dirHash,
-			modulePath,
-			"v1.0.0",
-			modHash,
-		)), nil
+		return []byte(fmt.Sprintf("%s %s %s\n%s %s/go.mod %s\n", modulePath, "v1.0.0", dirHash, modulePath, "v1.0.0", modHash)), nil
 	}
 	f, err = newFetch(g, "example.com/@v/v1.1.0.mod", tempDir)
 	if err != nil {
@@ -636,20 +542,12 @@ invalid
 	}
 	if _, err := f.doProxy(context.Background(), server.URL); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := err.Error(),
-		"example.com@v1.1.0: invalid version: untrusted revision "+
-			"v1.1.0"; got != want {
+	} else if got, want := err.Error(), "example.com@v1.1.0: invalid version: untrusted revision v1.1.0"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
 	handlerFunc = func(rw http.ResponseWriter, req *http.Request) {
-		responseSuccess(
-			rw,
-			req,
-			strings.NewReader("Go 1.13\n"),
-			"text/plain; charset=utf-8",
-			60,
-		)
+		responseSuccess(rw, req, strings.NewReader("Go 1.13\n"), "text/plain; charset=utf-8", 60)
 	}
 	g = &Goproxy{
 		GoBinEnv: []string{"GOSUMDB=off"},
@@ -661,8 +559,7 @@ invalid
 	}
 	if _, err := f.doProxy(context.Background(), server.URL); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := err.Error(),
-		"invalid mod file: missing module directive"; got != want {
+	} else if got, want := err.Error(), "invalid mod file: missing module directive"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
@@ -671,13 +568,9 @@ invalid
 		t.Fatalf("unexpected error %q", err)
 	}
 	zipWriter := zip.NewWriter(tempFile)
-	if zfw, err := zipWriter.Create(
-		"example.com@v1.2.0/go.mod",
-	); err != nil {
+	if zfw, err := zipWriter.Create("example.com@v1.2.0/go.mod"); err != nil {
 		t.Fatalf("unexpected error %q", err)
-	} else if _, err := zfw.Write(
-		[]byte("module example.com"),
-	); err != nil {
+	} else if _, err := zfw.Write([]byte("module example.com")); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if err := zipWriter.Close(); err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -713,15 +606,7 @@ invalid
 		t.Fatalf("unexpected error %q", err)
 	}
 	gosum = func(modulePath, moduleVersion string) ([]byte, error) {
-		return []byte(fmt.Sprintf(
-			"%s %s %s\n%s %s/go.mod %s\n",
-			modulePath,
-			moduleVersion,
-			dirHash,
-			modulePath,
-			moduleVersion,
-			modHash,
-		)), nil
+		return []byte(fmt.Sprintf("%s %s %s\n%s %s/go.mod %s\n", modulePath, moduleVersion, dirHash, modulePath, moduleVersion, modHash)), nil
 	}
 	g = &Goproxy{GoBinEnv: []string{
 		"GOPROXY=off",
@@ -740,32 +625,16 @@ invalid
 		t.Fatal("unexpected empty")
 	}
 	gosum = func(modulePath, moduleVersion string) ([]byte, error) {
-		return []byte(fmt.Sprintf(
-			"%s %s %s\n%s %s/go.mod %s\n",
-			modulePath,
-			"v1.2.0",
-			dirHash,
-			modulePath,
-			"v1.2.0",
-			modHash,
-		)), nil
+		return []byte(fmt.Sprintf("%s %s %s\n%s %s/go.mod %s\n", modulePath, "v1.2.0", dirHash, modulePath, "v1.2.0", modHash)), nil
 	}
-	tempFile, err = os.OpenFile(
-		tempFile.Name(),
-		os.O_WRONLY|os.O_TRUNC,
-		0o600,
-	)
+	tempFile, err = os.OpenFile(tempFile.Name(), os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 	zipWriter = zip.NewWriter(tempFile)
-	if zfw, err := zipWriter.Create(
-		"example.com@v1.3.0/go.mod",
-	); err != nil {
+	if zfw, err := zipWriter.Create("example.com@v1.3.0/go.mod"); err != nil {
 		t.Fatalf("unexpected error %q", err)
-	} else if _, err := zfw.Write(
-		[]byte("module example.com"),
-	); err != nil {
+	} else if _, err := zfw.Write([]byte("module example.com")); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if err := zipWriter.Close(); err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -778,20 +647,12 @@ invalid
 	}
 	if _, err := f.doProxy(context.Background(), server.URL); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := err.Error(),
-		"example.com@v1.3.0: invalid version: untrusted revision "+
-			"v1.3.0"; got != want {
+	} else if got, want := err.Error(), "example.com@v1.3.0: invalid version: untrusted revision v1.3.0"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
 	handlerFunc = func(rw http.ResponseWriter, req *http.Request) {
-		responseSuccess(
-			rw,
-			req,
-			strings.NewReader("I'm a ZIP file!"),
-			"application/zip",
-			60,
-		)
+		responseSuccess(rw, req, strings.NewReader("I'm a ZIP file!"), "application/zip", 60)
 	}
 	g = &Goproxy{
 		GoBinEnv: []string{"GOSUMDB=off"},
@@ -803,8 +664,7 @@ invalid
 	}
 	if _, err := f.doProxy(context.Background(), server.URL); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := err.Error(),
-		"invalid zip file: zip: not a valid zip file"; got != want {
+	} else if got, want := err.Error(), "invalid zip file: zip: not a valid zip file"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
@@ -860,90 +720,36 @@ func TestFetchDoDirect(t *testing.T) {
 	gopathDir := filepath.Join(tempDir, "gopath")
 
 	staticGOPROXYDir := filepath.Join(tempDir, "static-goproxy")
-	if err := os.MkdirAll(
-		filepath.Join(staticGOPROXYDir, "example.com", "@v"),
-		0o700,
-	); err != nil {
+	if err := os.MkdirAll(filepath.Join(staticGOPROXYDir, "example.com", "@v"), 0o700); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 
 	infoTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
-	if err := os.WriteFile(
-		filepath.Join(staticGOPROXYDir, "example.com", "@latest"),
-		[]byte(marshalInfo("v1.1.0", infoTime)),
-		0o600,
-	); err != nil {
+	if err := os.WriteFile(filepath.Join(staticGOPROXYDir, "example.com", "@latest"), []byte(marshalInfo("v1.1.0", infoTime)), 0o600); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	if err := os.WriteFile(
-		filepath.Join(staticGOPROXYDir, "example.com", "@v", "list"),
-		[]byte("v1.1.0\nv1.0.0"),
-		0o600,
-	); err != nil {
+	if err := os.WriteFile(filepath.Join(staticGOPROXYDir, "example.com", "@v", "list"), []byte("v1.1.0\nv1.0.0"), 0o600); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	if err := os.WriteFile(
-		filepath.Join(
-			staticGOPROXYDir,
-			"example.com",
-			"@v",
-			"v1.0.0.info",
-		),
-		[]byte(marshalInfo("v1.0.0", infoTime)),
-		0o600,
-	); err != nil {
+	if err := os.WriteFile(filepath.Join(staticGOPROXYDir, "example.com", "@v", "v1.0.0.info"), []byte(marshalInfo("v1.0.0", infoTime)), 0o600); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	if err := os.WriteFile(
-		filepath.Join(
-			staticGOPROXYDir,
-			"example.com",
-			"@v",
-			"v1.1.0.info",
-		),
-		[]byte(marshalInfo("v1.1.0", infoTime.Add(time.Hour))),
-		0o600,
-	); err != nil {
+	if err := os.WriteFile(filepath.Join(staticGOPROXYDir, "example.com", "@v", "v1.1.0.info"), []byte(marshalInfo("v1.1.0", infoTime.Add(time.Hour))), 0o600); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 	mod := "module example.com"
-	if err := os.WriteFile(
-		filepath.Join(
-			staticGOPROXYDir,
-			"example.com",
-			"@v",
-			"v1.0.0.mod",
-		),
-		[]byte(mod),
-		0o600,
-	); err != nil {
+	if err := os.WriteFile(filepath.Join(staticGOPROXYDir, "example.com", "@v", "v1.0.0.mod"), []byte(mod), 0o600); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	if err := os.WriteFile(
-		filepath.Join(
-			staticGOPROXYDir,
-			"example.com",
-			"@v",
-			"v1.1.0.mod",
-		),
-		[]byte(mod),
-		0o600,
-	); err != nil {
+	if err := os.WriteFile(filepath.Join(staticGOPROXYDir, "example.com", "@v", "v1.1.0.mod"), []byte(mod), 0o600); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	zipFile, err := os.Create(filepath.Join(
-		staticGOPROXYDir,
-		"example.com",
-		"@v",
-		"v1.0.0.zip",
-	))
+	zipFile, err := os.Create(filepath.Join(staticGOPROXYDir, "example.com", "@v", "v1.0.0.zip"))
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 	zipWriter := zip.NewWriter(zipFile)
-	if zfw, err := zipWriter.Create(
-		"example.com@v1.0.0/go.mod",
-	); err != nil {
+	if zfw, err := zipWriter.Create("example.com@v1.0.0/go.mod"); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if _, err := zfw.Write([]byte(mod)); err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -956,26 +762,14 @@ func TestFetchDoDirect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	if err := os.WriteFile(
-		filepath.Join(
-			staticGOPROXYDir,
-			"example.com",
-			"@v",
-			"v1.1.0.zip",
-		),
-		zipFileBytes,
-		0o600,
-	); err != nil {
+	if err := os.WriteFile(filepath.Join(staticGOPROXYDir, "example.com", "@v", "v1.1.0.zip"), zipFileBytes, 0o600); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 
 	goproxyHandlerFunc := func(rw http.ResponseWriter, req *http.Request) {
 		http.FileServer(http.Dir(staticGOPROXYDir)).ServeHTTP(rw, req)
 	}
-	goproxyServer := httptest.NewServer(http.HandlerFunc(func(
-		rw http.ResponseWriter,
-		req *http.Request,
-	) {
+	goproxyServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		goproxyHandlerFunc(rw, req)
 	}))
 	defer goproxyServer.Close()
@@ -999,8 +793,7 @@ func TestFetchDoDirect(t *testing.T) {
 		t.Fatalf("unexpected error %q", err)
 	} else if got, want := fr.Version, "v1.1.0"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := fr.Time.String(),
-		infoTime.Add(time.Hour).String(); got != want {
+	} else if got, want := fr.Time.String(), infoTime.Add(time.Hour).String(); got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 	f, err = newFetch(g, "example.com/@v/list", tempDir)
@@ -1010,8 +803,7 @@ func TestFetchDoDirect(t *testing.T) {
 	fr, err = f.doDirect(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
-	} else if got, want := strings.Join(fr.Versions, "\n"),
-		"v1.0.0\nv1.1.0"; got != want {
+	} else if got, want := strings.Join(fr.Versions, "\n"), "v1.0.0\nv1.1.0"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 	f, err = newFetch(g, "example.com/@v/v1.0.0.info", tempDir)
@@ -1064,10 +856,7 @@ func TestFetchDoDirect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	timedOutCtx, cancel := context.WithDeadline(
-		context.Background(),
-		time.Time{},
-	)
+	timedOutCtx, cancel := context.WithDeadline(context.Background(), time.Time{})
 	defer cancel()
 	if _, err := f.doDirect(timedOutCtx); err == nil {
 		t.Fatal("expected error")
@@ -1093,12 +882,9 @@ func TestFetchDoDirect(t *testing.T) {
 		t.Fatalf("unexpected error %q", err)
 	}
 
-	modHash, err := dirhash.DefaultHash(
-		[]string{"go.mod"},
-		func(string) (io.ReadCloser, error) {
-			return io.NopCloser(strings.NewReader(mod)), nil
-		},
-	)
+	modHash, err := dirhash.DefaultHash([]string{"go.mod"}, func(string) (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader(mod)), nil
+	})
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -1108,24 +894,10 @@ func TestFetchDoDirect(t *testing.T) {
 		t.Fatalf("unexpected error %q", err)
 	}
 
-	sumdbHandler := sumdb.NewServer(sumdb.NewTestServer(
-		skey,
-		func(modulePath, moduleVersion string) ([]byte, error) {
-			return []byte(fmt.Sprintf(
-				"%s %s %s\n%s %s/go.mod %s\n",
-				modulePath,
-				moduleVersion,
-				dirHash,
-				modulePath,
-				moduleVersion,
-				modHash,
-			)), nil
-		},
-	))
-	sumdbServer := httptest.NewServer(http.HandlerFunc(func(
-		rw http.ResponseWriter,
-		req *http.Request,
-	) {
+	sumdbHandler := sumdb.NewServer(sumdb.NewTestServer(skey, func(modulePath, moduleVersion string) ([]byte, error) {
+		return []byte(fmt.Sprintf("%s %s %s\n%s %s/go.mod %s\n", modulePath, moduleVersion, dirHash, modulePath, moduleVersion, modHash)), nil
+	}))
+	sumdbServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		sumdbHandler.ServeHTTP(rw, req)
 	}))
 	defer sumdbServer.Close()
@@ -1152,20 +924,9 @@ func TestFetchDoDirect(t *testing.T) {
 		t.Fatal("unexpected empty")
 	}
 
-	sumdbHandler = sumdb.NewServer(sumdb.NewTestServer(
-		skey,
-		func(modulePath, moduleVersion string) ([]byte, error) {
-			return []byte(fmt.Sprintf(
-				"%s %s %s\n%s %s/go.mod %s\n",
-				modulePath,
-				moduleVersion,
-				modHash,
-				modulePath,
-				moduleVersion,
-				dirHash,
-			)), nil
-		},
-	))
+	sumdbHandler = sumdb.NewServer(sumdb.NewTestServer(skey, func(modulePath, moduleVersion string) ([]byte, error) {
+		return []byte(fmt.Sprintf("%s %s %s\n%s %s/go.mod %s\n", modulePath, moduleVersion, modHash, modulePath, moduleVersion, dirHash)), nil
+	}))
 	g = &Goproxy{
 		GoBinMaxWorkers: 1,
 		GoBinEnv: append(
@@ -1185,20 +946,9 @@ func TestFetchDoDirect(t *testing.T) {
 		t.Fatal("expected error")
 	}
 
-	sumdbHandler = sumdb.NewServer(sumdb.NewTestServer(
-		skey,
-		func(modulePath, moduleVersion string) ([]byte, error) {
-			return []byte(fmt.Sprintf(
-				"%s %s %s\n%s %s/go.mod %s\n",
-				modulePath,
-				moduleVersion,
-				modHash,
-				modulePath,
-				moduleVersion,
-				modHash,
-			)), nil
-		},
-	))
+	sumdbHandler = sumdb.NewServer(sumdb.NewTestServer(skey, func(modulePath, moduleVersion string) ([]byte, error) {
+		return []byte(fmt.Sprintf("%s %s %s\n%s %s/go.mod %s\n", modulePath, moduleVersion, modHash, modulePath, moduleVersion, modHash)), nil
+	}))
 	g = &Goproxy{
 		GoBinMaxWorkers: 1,
 		GoBinEnv: append(
@@ -1220,38 +970,31 @@ func TestFetchDoDirect(t *testing.T) {
 }
 
 func TestFetchOpsString(t *testing.T) {
-	fo := fetchOpsResolve
-	if got, want := fo.String(), "resolve"; got != want {
+	if got, want := fetchOpsResolve.String(), "resolve"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
-	fo = fetchOpsList
-	if got, want := fo.String(), "list"; got != want {
+	if got, want := fetchOpsList.String(), "list"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
-	fo = fetchOpsDownloadInfo
-	if got, want := fo.String(), "download info"; got != want {
+	if got, want := fetchOpsDownloadInfo.String(), "download info"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
-	fo = fetchOpsDownloadMod
-	if got, want := fo.String(), "download mod"; got != want {
+	if got, want := fetchOpsDownloadMod.String(), "download mod"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
-	fo = fetchOpsDownloadZip
-	if got, want := fo.String(), "download zip"; got != want {
+	if got, want := fetchOpsDownloadZip.String(), "download zip"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
-	fo = fetchOpsInvalid
-	if got, want := fo.String(), "invalid"; got != want {
+	if got, want := fetchOpsInvalid.String(), "invalid"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
-	fo = fetchOps(255)
-	if got, want := fo.String(), "invalid"; got != want {
+	if got, want := fetchOps(255).String(), "invalid"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }
@@ -1369,11 +1112,9 @@ func TestMarshalInfo(t *testing.T) {
 		Version string
 		Time    time.Time
 	}{"v1.0.0", time.Now()}
-
 	got := marshalInfo(info.Version, info.Time)
 
 	info.Time = info.Time.UTC()
-
 	want, err := json.Marshal(info)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -1401,9 +1142,7 @@ func TestUnmarshalInfo(t *testing.T) {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
-	infoVersion, infoTime, err := unmarshalInfo(
-		`{"Version":"v1.0.0","Time":"2000-01-01T00:00:00Z"}`,
-	)
+	infoVersion, infoTime, err := unmarshalInfo(`{"Version":"v1.0.0","Time":"2000-01-01T00:00:00Z"}`)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if got, want := infoVersion, "v1.0.0"; got != want {
@@ -1416,10 +1155,7 @@ func TestUnmarshalInfo(t *testing.T) {
 }
 
 func TestCheckAndFormatInfoFile(t *testing.T) {
-	tempFile, err := os.CreateTemp(
-		"",
-		"goproxy.TestCheckAndFormatInfoFile",
-	)
+	tempFile, err := os.CreateTemp("", "goproxy.TestCheckAndFormatInfoFile")
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -1430,17 +1166,12 @@ func TestCheckAndFormatInfoFile(t *testing.T) {
 		t.Fatalf("unexpected error %q", err)
 	} else if err := checkAndFormatInfoFile(tempFile.Name()); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := err.Error(),
-		"invalid info file: empty version"; got != want {
+	} else if got, want := err.Error(), "invalid info file: empty version"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
 	wantInfo := `{"Version":"v1.0.0","Time":"2000-01-01T00:00:00Z"}`
-	if err := os.WriteFile(
-		tempFile.Name(),
-		[]byte(wantInfo),
-		0o600,
-	); err != nil {
+	if err := os.WriteFile(tempFile.Name(), []byte(wantInfo), 0o600); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if err := checkAndFormatInfoFile(tempFile.Name()); err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -1450,12 +1181,7 @@ func TestCheckAndFormatInfoFile(t *testing.T) {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
-	if err := os.WriteFile(
-		tempFile.Name(),
-		[]byte(`{"Version":"v1.0.0",`+
-			`"Time":"2000-01-01T01:00:00+01:00"}`),
-		0o600,
-	); err != nil {
+	if err := os.WriteFile(tempFile.Name(), []byte(`{"Version":"v1.0.0","Time":"2000-01-01T01:00:00+01:00"}`), 0o600); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if err := checkAndFormatInfoFile(tempFile.Name()); err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -1469,8 +1195,7 @@ func TestCheckAndFormatInfoFile(t *testing.T) {
 		t.Fatalf("unexpected error %q", err)
 	} else if err := checkAndFormatInfoFile(tempFile.Name()); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := errors.Is(err, fs.ErrNotExist),
-		true; got != want {
+	} else if got, want := errors.Is(err, fs.ErrNotExist), true; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
 }
@@ -1485,26 +1210,17 @@ func TestCheckModFile(t *testing.T) {
 		t.Fatalf("unexpected error %q", err)
 	} else if err := checkModFile(tempFile.Name()); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := err.Error(),
-		"invalid mod file: missing module directive"; got != want {
+	} else if got, want := err.Error(), "invalid mod file: missing module directive"; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
 
-	if err := os.WriteFile(
-		tempFile.Name(),
-		[]byte("module"),
-		0o600,
-	); err != nil {
+	if err := os.WriteFile(tempFile.Name(), []byte("module"), 0o600); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if err := checkModFile(tempFile.Name()); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 
-	if err := os.WriteFile(
-		tempFile.Name(),
-		[]byte("// foobar\nmodule foobar"),
-		0o600,
-	); err != nil {
+	if err := os.WriteFile(tempFile.Name(), []byte("// foobar\nmodule foobar"), 0o600); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if err := checkModFile(tempFile.Name()); err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -1514,8 +1230,7 @@ func TestCheckModFile(t *testing.T) {
 		t.Fatalf("unexpected error %q", err)
 	} else if err := checkModFile(tempFile.Name()); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := errors.Is(err, fs.ErrNotExist),
-		true; got != want {
+	} else if got, want := errors.Is(err, fs.ErrNotExist), true; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
 }
@@ -1528,38 +1243,23 @@ func TestVerifyModFile(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	modFile := filepath.Join(tempDir, "go.mod")
-	if err := os.WriteFile(
-		modFile,
-		[]byte("module example.com/foo/bar"),
-		0o600,
-	); err != nil {
+	if err := os.WriteFile(modFile, []byte("module example.com/foo/bar"), 0o600); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 
 	modFileWrong := filepath.Join(tempDir, "go.mod.wrong")
-	if err := os.WriteFile(
-		modFileWrong,
-		[]byte("module example.com/foo/bar/v2"),
-		0o600,
-	); err != nil {
+	if err := os.WriteFile(modFileWrong, []byte("module example.com/foo/bar/v2"), 0o600); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 
-	dirHash, err := dirhash.HashDir(
-		tempDir,
-		"example.com/foo/bar@v1.0.0",
-		dirhash.DefaultHash,
-	)
+	dirHash, err := dirhash.HashDir(tempDir, "example.com/foo/bar@v1.0.0", dirhash.DefaultHash)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 
-	modHash, err := dirhash.DefaultHash(
-		[]string{"go.mod"},
-		func(string) (io.ReadCloser, error) {
-			return os.Open(modFile)
-		},
-	)
+	modHash, err := dirhash.DefaultHash([]string{"go.mod"}, func(string) (io.ReadCloser, error) {
+		return os.Open(modFile)
+	})
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -1569,75 +1269,41 @@ func TestVerifyModFile(t *testing.T) {
 		t.Fatalf("unexpected error %q", err)
 	}
 
-	server := httptest.NewServer(sumdb.NewServer(sumdb.NewTestServer(
-		skey,
-		func(modulePath, moduleVersion string) ([]byte, error) {
-			if modulePath == "example.com/foo/bar" &&
-				moduleVersion == "v1.0.0" {
-				return []byte(fmt.Sprintf(
-					"%s %s %s\n%s %s/go.mod %s\n",
-					modulePath,
-					moduleVersion,
-					dirHash,
-					modulePath,
-					moduleVersion,
-					modHash,
-				)), nil
-			}
-			return nil, errors.New("unknown module version")
-		},
-	)))
+	server := httptest.NewServer(sumdb.NewServer(sumdb.NewTestServer(skey, func(modulePath, moduleVersion string) ([]byte, error) {
+		if modulePath == "example.com/foo/bar" && moduleVersion == "v1.0.0" {
+			return []byte(fmt.Sprintf("%s %s %s\n%s %s/go.mod %s\n", modulePath, moduleVersion, dirHash, modulePath, moduleVersion, modHash)), nil
+		}
+		return nil, errors.New("unknown module version")
+	})))
 	defer server.Close()
 
-	g := &Goproxy{GoBinEnv: []string{
-		"GOPROXY=off",
-		"GOSUMDB=" + vkey + " " + server.URL,
-	}}
+	g := &Goproxy{
+		GoBinEnv: []string{
+			"GOPROXY=off",
+			"GOSUMDB=" + vkey + " " + server.URL,
+		},
+	}
 	g.init()
 
-	if err := verifyModFile(
-		g.sumdbClient,
-		modFile,
-		"example.com/foo/bar",
-		"v1.0.0",
-	); err != nil {
+	if err := verifyModFile(g.sumdbClient, modFile, "example.com/foo/bar", "v1.0.0"); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 
-	if err := verifyModFile(
-		g.sumdbClient,
-		modFile,
-		"example.com/foo/bar",
-		"v1.1.0",
-	); err == nil {
+	if err := verifyModFile(g.sumdbClient, modFile, "example.com/foo/bar", "v1.1.0"); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := err.Error(),
-		"example.com/foo/bar@v1.1.0/go.mod: bad upstream"; got != want {
+	} else if got, want := err.Error(), "example.com/foo/bar@v1.1.0/go.mod: bad upstream"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
-	if err := verifyModFile(
-		g.sumdbClient,
-		"",
-		"example.com/foo/bar",
-		"v1.0.0",
-	); err == nil {
+	if err := verifyModFile(g.sumdbClient, "", "example.com/foo/bar", "v1.0.0"); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := errors.Is(err, fs.ErrNotExist),
-		true; got != want {
+	} else if got, want := errors.Is(err, fs.ErrNotExist), true; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
 
-	if err := verifyModFile(
-		g.sumdbClient,
-		modFileWrong,
-		"example.com/foo/bar",
-		"v1.0.0",
-	); err == nil {
+	if err := verifyModFile(g.sumdbClient, modFileWrong, "example.com/foo/bar", "v1.0.0"); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := err.Error(),
-		"example.com/foo/bar@v1.0.0: invalid version: "+
-			"untrusted revision v1.0.0"; got != want {
+	} else if got, want := err.Error(), "example.com/foo/bar@v1.0.0: invalid version: untrusted revision v1.0.0"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }
@@ -1654,32 +1320,20 @@ func TestCheckZipFile(t *testing.T) {
 		t.Fatal("expected error")
 	}
 
-	tempFile, err = os.OpenFile(
-		tempFile.Name(),
-		os.O_WRONLY|os.O_TRUNC,
-		0o600,
-	)
+	tempFile, err = os.OpenFile(tempFile.Name(), os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 	zipWriter := zip.NewWriter(tempFile)
-	if zfw, err := zipWriter.Create(
-		"example.com@v1.0.0/go.mod",
-	); err != nil {
+	if zfw, err := zipWriter.Create("example.com@v1.0.0/go.mod"); err != nil {
 		t.Fatalf("unexpected error %q", err)
-	} else if _, err := zfw.Write(
-		[]byte("module example.com"),
-	); err != nil {
+	} else if _, err := zfw.Write([]byte("module example.com")); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if err := zipWriter.Close(); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if err := tempFile.Close(); err != nil {
 		t.Fatalf("unexpected error %q", err)
-	} else if err := checkZipFile(
-		tempFile.Name(),
-		"example.com",
-		"v1.0.0",
-	); err != nil {
+	} else if err := checkZipFile(tempFile.Name(), "example.com", "v1.0.0"); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 }
@@ -1691,13 +1345,9 @@ func TestVerifyZipFile(t *testing.T) {
 	}
 	defer os.Remove(zipFile.Name())
 	zipWriter := zip.NewWriter(zipFile)
-	if zfw, err := zipWriter.Create(
-		"example.com/foo/bar@v1.0.0/go.mod",
-	); err != nil {
+	if zfw, err := zipWriter.Create("example.com/foo/bar@v1.0.0/go.mod"); err != nil {
 		t.Fatalf("unexpected error %q", err)
-	} else if _, err := zfw.Write(
-		[]byte("module example.com/foo/bar"),
-	); err != nil {
+	} else if _, err := zfw.Write([]byte("module example.com/foo/bar")); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if err := zipWriter.Close(); err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -1711,13 +1361,9 @@ func TestVerifyZipFile(t *testing.T) {
 	}
 	defer os.Remove(zipFileWrong.Name())
 	zipWrongWriter := zip.NewWriter(zipFileWrong)
-	if zfw, err := zipWrongWriter.Create(
-		"example.com/foo/bar/v2@v2.0.0/go.mod",
-	); err != nil {
+	if zfw, err := zipWrongWriter.Create("example.com/foo/bar/v2@v2.0.0/go.mod"); err != nil {
 		t.Fatalf("unexpected error %q", err)
-	} else if _, err := zfw.Write(
-		[]byte("module example.com/foo/bar/v2"),
-	); err != nil {
+	} else if _, err := zfw.Write([]byte("module example.com/foo/bar/v2")); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if err := zipWrongWriter.Close(); err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -1730,14 +1376,9 @@ func TestVerifyZipFile(t *testing.T) {
 		t.Fatalf("unexpected error %q", err)
 	}
 
-	modHash, err := dirhash.DefaultHash(
-		[]string{"go.mod"},
-		func(string) (io.ReadCloser, error) {
-			return io.NopCloser(strings.NewReader(
-				"example.com/foo/bar@v1.0.0/go.mod",
-			)), nil
-		},
-	)
+	modHash, err := dirhash.DefaultHash([]string{"go.mod"}, func(string) (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader("example.com/foo/bar@v1.0.0/go.mod")), nil
+	})
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -1747,75 +1388,41 @@ func TestVerifyZipFile(t *testing.T) {
 		t.Fatalf("unexpected error %q", err)
 	}
 
-	server := httptest.NewServer(sumdb.NewServer(sumdb.NewTestServer(
-		skey,
-		func(modulePath, moduleVersion string) ([]byte, error) {
-			if modulePath == "example.com/foo/bar" &&
-				moduleVersion == "v1.0.0" {
-				return []byte(fmt.Sprintf(
-					"%s %s %s\n%s %s/go.mod %s\n",
-					modulePath,
-					moduleVersion,
-					dirHash,
-					modulePath,
-					moduleVersion,
-					modHash,
-				)), nil
-			}
-			return nil, errors.New("unknown module version")
-		},
-	)))
+	server := httptest.NewServer(sumdb.NewServer(sumdb.NewTestServer(skey, func(modulePath, moduleVersion string) ([]byte, error) {
+		if modulePath == "example.com/foo/bar" && moduleVersion == "v1.0.0" {
+			return []byte(fmt.Sprintf("%s %s %s\n%s %s/go.mod %s\n", modulePath, moduleVersion, dirHash, modulePath, moduleVersion, modHash)), nil
+		}
+		return nil, errors.New("unknown module version")
+	})))
 	defer server.Close()
 
-	g := &Goproxy{GoBinEnv: []string{
-		"GOPROXY=off",
-		"GOSUMDB=" + vkey + " " + server.URL,
-	}}
+	g := &Goproxy{
+		GoBinEnv: []string{
+			"GOPROXY=off",
+			"GOSUMDB=" + vkey + " " + server.URL,
+		},
+	}
 	g.init()
 
-	if err := verifyZipFile(
-		g.sumdbClient,
-		zipFile.Name(),
-		"example.com/foo/bar",
-		"v1.0.0",
-	); err != nil {
+	if err := verifyZipFile(g.sumdbClient, zipFile.Name(), "example.com/foo/bar", "v1.0.0"); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 
-	if err := verifyZipFile(
-		g.sumdbClient,
-		zipFile.Name(),
-		"example.com/foo/bar",
-		"v1.1.0",
-	); err == nil {
+	if err := verifyZipFile(g.sumdbClient, zipFile.Name(), "example.com/foo/bar", "v1.1.0"); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := err.Error(),
-		"example.com/foo/bar@v1.1.0: bad upstream"; got != want {
+	} else if got, want := err.Error(), "example.com/foo/bar@v1.1.0: bad upstream"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
-	if err := verifyZipFile(
-		g.sumdbClient,
-		"",
-		"example.com/foo/bar",
-		"v1.0.0",
-	); err == nil {
+	if err := verifyZipFile(g.sumdbClient, "", "example.com/foo/bar", "v1.0.0"); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := errors.Is(err, fs.ErrNotExist),
-		true; got != want {
+	} else if got, want := errors.Is(err, fs.ErrNotExist), true; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
 
-	if err := verifyZipFile(
-		g.sumdbClient,
-		zipFileWrong.Name(),
-		"example.com/foo/bar",
-		"v1.0.0",
-	); err == nil {
+	if err := verifyZipFile(g.sumdbClient, zipFileWrong.Name(), "example.com/foo/bar", "v1.0.0"); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := err.Error(),
-		"example.com/foo/bar@v1.0.0: invalid version: "+
-			"untrusted revision v1.0.0"; got != want {
+	} else if got, want := err.Error(), "example.com/foo/bar@v1.0.0: invalid version: untrusted revision v1.0.0"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }

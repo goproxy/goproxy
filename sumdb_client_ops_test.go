@@ -14,9 +14,8 @@ func TestSUMDBClientOps(t *testing.T) {
 	if sco.initError == nil {
 		t.Fatal("expected error")
 	}
-	wantInitError := "missing GOSUMDB"
-	if got := sco.initError.Error(); got != wantInitError {
-		t.Errorf("got %q, want %q", got, wantInitError)
+	if got, want := sco.initError.Error(), "missing GOSUMDB"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	sco = &sumdbClientOps{envGOSUMDB: "example.com foo bar"}
@@ -24,9 +23,8 @@ func TestSUMDBClientOps(t *testing.T) {
 	if sco.initError == nil {
 		t.Fatal("expected error")
 	}
-	wantInitError = "invalid GOSUMDB: too many fields"
-	if got := sco.initError.Error(); got != wantInitError {
-		t.Errorf("got %q, want %q", got, wantInitError)
+	if got, want := sco.initError.Error(), "invalid GOSUMDB: too many fields"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	sco = &sumdbClientOps{
@@ -37,10 +35,8 @@ func TestSUMDBClientOps(t *testing.T) {
 	if sco.initError != nil {
 		t.Fatalf("unexpected error %q", sco.initError)
 	}
-	wantKey := "sum.golang.org" +
-		"+033de0ae+Ac4zctda0e5eza+HJyk9SxEdh+s3Ux18htTTAD8OuAn8"
-	if got := string(sco.key); got != wantKey {
-		t.Errorf("got %q, want %q", got, wantKey)
+	if got := string(sco.key); got != sumGolangOrgKey {
+		t.Errorf("got %q, want %q", got, sumGolangOrgKey)
 	}
 
 	sco = &sumdbClientOps{
@@ -51,8 +47,8 @@ func TestSUMDBClientOps(t *testing.T) {
 	if sco.initError != nil {
 		t.Fatalf("unexpected error %q", sco.initError)
 	}
-	if got := string(sco.key); got != wantKey {
-		t.Errorf("got %q, want %q", got, wantKey)
+	if got := string(sco.key); got != sumGolangOrgKey {
+		t.Errorf("got %q, want %q", got, sumGolangOrgKey)
 	}
 
 	sco = &sumdbClientOps{envGOSUMDB: "example.com ://invalid"}
@@ -64,10 +60,7 @@ func TestSUMDBClientOps(t *testing.T) {
 	handlerFunc := func(rw http.ResponseWriter, req *http.Request) {
 		rw.WriteHeader(http.StatusOK)
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(
-		rw http.ResponseWriter,
-		req *http.Request,
-	) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		handlerFunc(rw, req)
 	}))
 	defer server.Close()
@@ -80,9 +73,8 @@ func TestSUMDBClientOps(t *testing.T) {
 	if sco.initError != nil {
 		t.Fatalf("unexpected error %q", sco.initError)
 	}
-	wantEndpointURL := server.URL + "/sumdb/example.com"
-	if got := sco.endpointURL.String(); got != wantEndpointURL {
-		t.Errorf("got %q, want %q", got, wantEndpointURL)
+	if got, want := sco.endpointURL.String(), server.URL+"/sumdb/example.com"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	handlerFunc = func(rw http.ResponseWriter, req *http.Request) {
@@ -97,9 +89,8 @@ func TestSUMDBClientOps(t *testing.T) {
 	if sco.initError != nil {
 		t.Fatalf("unexpected error %q", sco.initError)
 	}
-	wantEndpointURL = "https://example.com"
-	if got := sco.endpointURL.String(); got != wantEndpointURL {
-		t.Errorf("got %q, want %q", got, wantEndpointURL)
+	if got, want := sco.endpointURL.String(), "https://example.com"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	handlerFunc = func(rw http.ResponseWriter, req *http.Request) {
@@ -114,9 +105,8 @@ func TestSUMDBClientOps(t *testing.T) {
 	if sco.initError != nil {
 		t.Fatalf("unexpected error %q", sco.initError)
 	}
-	wantEndpointURL = "https://example.com"
-	if got := sco.endpointURL.String(); got != wantEndpointURL {
-		t.Errorf("got %q, want %q", got, wantEndpointURL)
+	if got, want := sco.endpointURL.String(), "https://example.com"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	handlerFunc = func(rw http.ResponseWriter, req *http.Request) {
@@ -131,9 +121,8 @@ func TestSUMDBClientOps(t *testing.T) {
 	if sco.initError != nil {
 		t.Fatalf("unexpected error %q", sco.initError)
 	}
-	wantEndpointURL = "https://example.com"
-	if got := sco.endpointURL.String(); got != wantEndpointURL {
-		t.Errorf("got %q, want %q", got, wantEndpointURL)
+	if got, want := sco.endpointURL.String(), "https://example.com"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	handlerFunc = func(rw http.ResponseWriter, req *http.Request) {
@@ -148,9 +137,8 @@ func TestSUMDBClientOps(t *testing.T) {
 	if sco.initError == nil {
 		t.Fatal("expected error")
 	}
-	wantInitError = "bad upstream"
-	if got := sco.initError.Error(); got != wantInitError {
-		t.Errorf("got %q, want %q", got, wantInitError)
+	if got, want := sco.initError.Error(), "bad upstream"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	sco = &sumdbClientOps{
@@ -164,48 +152,55 @@ func TestSUMDBClientOps(t *testing.T) {
 	}
 
 	sco = &sumdbClientOps{}
-	sco.ReadRemote("")
+	if _, err := sco.ReadRemote(""); err == nil {
+		t.Fatal("expected error")
+	} else if got, want := err.Error(), "missing GOSUMDB"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
 	if sco.initError == nil {
 		t.Fatal("expected error")
 	}
-	wantInitError = "missing GOSUMDB"
-	if got := sco.initError.Error(); got != wantInitError {
-		t.Errorf("got %q, want %q", got, wantInitError)
+	if got, want := sco.initError.Error(), "missing GOSUMDB"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	sco = &sumdbClientOps{}
-	sco.ReadConfig("")
+	if _, err := sco.ReadConfig(""); err == nil {
+		t.Fatal("expected error")
+	} else if got, want := err.Error(), "missing GOSUMDB"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
 	if sco.initError == nil {
 		t.Fatal("expected error")
 	}
-	if got := sco.initError.Error(); got != wantInitError {
-		t.Errorf("got %q, want %q", got, wantInitError)
+	if got, want := sco.initError.Error(), "missing GOSUMDB"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	sco = &sumdbClientOps{}
 	if err := sco.WriteConfig("", nil, nil); err == nil {
 		t.Fatal("expected error")
-	} else if got := err.Error(); got != wantInitError {
-		t.Errorf("got %q, want %q", got, wantInitError)
+	} else if got, want := err.Error(), "missing GOSUMDB"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 	if sco.initError == nil {
 		t.Fatal("expected error")
 	}
-	if got := sco.initError.Error(); got != wantInitError {
-		t.Errorf("got %q, want %q", got, wantInitError)
+	if got, want := sco.initError.Error(), "missing GOSUMDB"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	sco = &sumdbClientOps{}
 	if _, err := sco.ReadCache(""); err == nil {
 		t.Fatal("expected error")
-	} else if got := err.Error(); got != wantInitError {
-		t.Errorf("got %q, want %q", got, wantInitError)
+	} else if got, want := err.Error(), "missing GOSUMDB"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 	if sco.initError == nil {
 		t.Fatal("expected error")
 	}
-	if got := sco.initError.Error(); got != wantInitError {
-		t.Errorf("got %q, want %q", got, wantInitError)
+	if got, want := sco.initError.Error(), "missing GOSUMDB"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	sco = &sumdbClientOps{}
@@ -213,8 +208,8 @@ func TestSUMDBClientOps(t *testing.T) {
 	if sco.initError == nil {
 		t.Fatal("expected error")
 	}
-	if got := sco.initError.Error(); got != wantInitError {
-		t.Errorf("got %q, want %q", got, wantInitError)
+	if got, want := sco.initError.Error(), "missing GOSUMDB"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	sco = &sumdbClientOps{}
@@ -222,8 +217,8 @@ func TestSUMDBClientOps(t *testing.T) {
 	if sco.initError == nil {
 		t.Fatal("expected error")
 	}
-	if got := sco.initError.Error(); got != wantInitError {
-		t.Errorf("got %q, want %q", got, wantInitError)
+	if got, want := sco.initError.Error(), "missing GOSUMDB"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	sco = &sumdbClientOps{}
@@ -231,8 +226,8 @@ func TestSUMDBClientOps(t *testing.T) {
 	if sco.initError == nil {
 		t.Fatal("expected error")
 	}
-	if got := sco.initError.Error(); got != wantInitError {
-		t.Errorf("got %q, want %q", got, wantInitError)
+	if got, want := sco.initError.Error(), "missing GOSUMDB"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	handlerFunc = func(rw http.ResponseWriter, req *http.Request) {
@@ -286,8 +281,8 @@ func TestSUMDBClientOps(t *testing.T) {
 	}
 	if b, err := sco.ReadConfig("key"); err != nil {
 		t.Fatalf("unexpected error %q", sco.initError)
-	} else if got := string(b); got != wantKey {
-		t.Errorf("got %q, want %q", got, wantKey)
+	} else if got := string(b); got != sumGolangOrgKey {
+		t.Errorf("got %q, want %q", got, sumGolangOrgKey)
 	}
 
 	sco = &sumdbClientOps{

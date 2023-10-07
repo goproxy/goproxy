@@ -43,11 +43,9 @@ func (fs httpDirFS) Open(name string) (http.File, error) {
 			return nil, errors.New("file URL missing drive letter")
 		}
 	}
-
 	if !filepath.IsAbs(name) {
 		return nil, errors.New("path is not absolute")
 	}
-
 	return os.Open(name)
 }
 
@@ -55,13 +53,9 @@ func main() {
 	flag.Parse()
 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.DialContext = (&net.Dialer{
-		Timeout:   *connectTimeout,
-		KeepAlive: 30 * time.Second,
-	}).DialContext
+	transport.DialContext = (&net.Dialer{Timeout: *connectTimeout, KeepAlive: 30 * time.Second}).DialContext
 	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: *insecure}
 	transport.RegisterProtocol("file", http.NewFileTransport(httpDirFS{}))
-
 	g := &goproxy.Goproxy{
 		GoBinName:           *goBinName,
 		GoBinMaxWorkers:     *goBinMaxWorkers,
@@ -73,30 +67,20 @@ func main() {
 		TempDir:             *tempDir,
 	}
 
-	server := &http.Server{Addr: *address}
-	if *fetchTimeout == 0 {
-		server.Handler = g
-	} else {
-		server.Handler = http.HandlerFunc(func(
-			rw http.ResponseWriter,
-			req *http.Request,
-		) {
-			ctx, cancel := context.WithTimeout(
-				req.Context(),
-				*fetchTimeout,
-			)
+	server := &http.Server{Addr: *address, Handler: g}
+	if *fetchTimeout > 0 {
+		server.Handler = http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			ctx, cancel := context.WithTimeout(req.Context(), *fetchTimeout)
 			g.ServeHTTP(rw, req.WithContext(ctx))
 			cancel()
 		})
 	}
-
 	var err error
 	if *tlsCertFile != "" && *tlsKeyFile != "" {
 		err = server.ListenAndServeTLS(*tlsCertFile, *tlsKeyFile)
 	} else {
 		err = server.ListenAndServe()
 	}
-
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Printf("http server error: %v\n", err)
 		return

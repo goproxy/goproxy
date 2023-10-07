@@ -39,67 +39,48 @@ func (notFoundError) Is(target error) bool {
 }
 
 // httpGet gets the content targeted by the url into the dst.
-func httpGet(
-	ctx context.Context,
-	httpClient *http.Client,
-	url string,
-	dst io.Writer,
-) error {
+func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer) error {
 	var lastError error
 	for attempt := 0; attempt < 10; attempt++ {
 		if attempt > 0 {
 			select {
-			case <-time.After(exponentialBackoffSleep(
-				100*time.Millisecond,
-				time.Second,
-				attempt,
-			)):
+			case <-time.After(exponentialBackoffSleep(100*time.Millisecond, time.Second, attempt)):
 			case <-ctx.Done():
 				return lastError
 			}
 		}
 
-		req, err := http.NewRequestWithContext(
-			ctx,
-			http.MethodGet,
-			url,
-			nil,
-		)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
 			return err
 		}
 
-		res, err := httpClient.Do(req)
+		resp, err := client.Do(req)
 		if err != nil {
 			if isRetryableHTTPClientDoError(err) {
 				lastError = err
 				continue
 			}
-
 			return err
 		}
-
-		if res.StatusCode == http.StatusOK {
+		if resp.StatusCode == http.StatusOK {
 			if dst != nil {
-				_, err = io.Copy(dst, res.Body)
+				_, err = io.Copy(dst, resp.Body)
 			}
-
-			res.Body.Close()
-
+			resp.Body.Close()
 			return err
 		}
 
-		b, err := io.ReadAll(res.Body)
-		res.Body.Close()
+		respBody, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
 		if err != nil {
 			return err
 		}
-
-		switch res.StatusCode {
+		switch resp.StatusCode {
 		case http.StatusBadRequest,
 			http.StatusNotFound,
 			http.StatusGone:
-			return notFoundError(b)
+			return notFoundError(respBody)
 		case http.StatusTooManyRequests,
 			http.StatusInternalServerError,
 			http.StatusBadGateway,
@@ -108,40 +89,29 @@ func httpGet(
 		case http.StatusGatewayTimeout:
 			lastError = errFetchTimedOut
 		default:
-			return fmt.Errorf(
-				"GET %s: %s: %s",
-				req.URL.Redacted(),
-				res.Status,
-				b,
-			)
+			return fmt.Errorf("GET %s: %s: %s", resp.Request.URL.Redacted(), resp.Status, respBody)
 		}
 	}
-
 	return lastError
 }
 
 // isRetryableHTTPClientDoError reports whether the err is a retryable error
 // returned by the [http.Client.Do].
 func isRetryableHTTPClientDoError(err error) bool {
-	if errors.Is(err, context.Canceled) ||
-		errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
-
 	if ue, ok := err.(*url.Error); ok {
 		e := ue.Unwrap()
-
 		switch e.(type) {
 		case x509.UnknownAuthorityError:
 			return false
 		}
-
 		switch e.Error() {
 		case "http: server gave HTTP response to HTTPS client":
 			return false
 		}
 	}
-
 	return true
 }
 
@@ -153,12 +123,10 @@ func parseRawURL(rawURL string) (*url.URL, error) {
 		!path.IsAbs(rawURL) {
 		rawURL = "https://" + rawURL
 	}
-
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, err
 	}
-
 	return u, nil
 }
 
@@ -174,17 +142,12 @@ func appendURL(u *url.URL, extraPaths ...string) *url.URL {
 		if ep == "" {
 			continue
 		}
-
 		u.Path = path.Join(u.Path, ep)
-		u.RawPath = path.Join(
-			u.RawPath,
-			strings.ReplaceAll(url.PathEscape(ep), "%2F", "/"),
-		)
+		u.RawPath = path.Join(u.RawPath, strings.ReplaceAll(url.PathEscape(ep), "%2F", "/"))
 		if ep[len(ep)-1] == '/' {
 			u.Path += "/"
 			u.RawPath += "/"
 		}
 	}
-
 	return u
 }

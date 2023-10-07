@@ -10,32 +10,23 @@ import (
 	"time"
 )
 
-// setResponseCacheControlHeader sets the Cache-Control header based on the
-// maxAge.
+// setResponseCacheControlHeader sets the Cache-Control header based on the maxAge.
 func setResponseCacheControlHeader(rw http.ResponseWriter, maxAge int) {
 	if maxAge < -1 {
 		return
 	}
-
 	cacheControl := ""
 	if maxAge == -1 {
 		cacheControl = "must-revalidate, no-cache, no-store"
 	} else {
 		cacheControl = fmt.Sprintf("public, max-age=%d", maxAge)
 	}
-
 	rw.Header().Set("Cache-Control", cacheControl)
 }
 
 // responseString responses the s as a "text/plain" content to the client with
 // the statusCode and cacheControlMaxAge.
-func responseString(
-	rw http.ResponseWriter,
-	req *http.Request,
-	statusCode int,
-	cacheControlMaxAge int,
-	s string,
-) {
+func responseString(rw http.ResponseWriter, req *http.Request, statusCode, cacheControlMaxAge int, s string) {
 	rw.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	setResponseCacheControlHeader(rw, cacheControlMaxAge)
 	rw.WriteHeader(statusCode)
@@ -46,66 +37,35 @@ func responseString(
 
 // responseNotFound responses "not found" to the client with the
 // cacheControlMaxAge and optional msgs.
-func responseNotFound(
-	rw http.ResponseWriter,
-	req *http.Request,
-	cacheControlMaxAge int,
-	msgs ...interface{},
-) {
+func responseNotFound(rw http.ResponseWriter, req *http.Request, cacheControlMaxAge int, msgs ...interface{}) {
 	var msg string
 	if len(msgs) > 0 {
 		msg = strings.TrimPrefix(fmt.Sprint(msgs...), "bad request: ")
 		msg = strings.TrimPrefix(msg, "gone: ")
-		if msg != "" &&
-			msg != "not found" &&
-			!strings.HasPrefix(msg, "not found: ") {
+		if msg != "" && msg != "not found" && !strings.HasPrefix(msg, "not found: ") {
 			msg = "not found: " + msg
 		}
 	}
-
 	if msg == "" {
 		msg = "not found"
 	}
-
 	responseString(rw, req, http.StatusNotFound, cacheControlMaxAge, msg)
 }
 
 // responseMethodNotAllowed responses "method not allowed" to the client with
 // the cacheControlMaxAge.
-func responseMethodNotAllowed(
-	rw http.ResponseWriter,
-	req *http.Request,
-	cacheControlMaxAge int,
-) {
-	responseString(
-		rw,
-		req,
-		http.StatusMethodNotAllowed,
-		cacheControlMaxAge,
-		"method not allowed",
-	)
+func responseMethodNotAllowed(rw http.ResponseWriter, req *http.Request, cacheControlMaxAge int) {
+	responseString(rw, req, http.StatusMethodNotAllowed, cacheControlMaxAge, "method not allowed")
 }
 
 // responseInternalServerError responses "internal server error" to the client.
 func responseInternalServerError(rw http.ResponseWriter, req *http.Request) {
-	responseString(
-		rw,
-		req,
-		http.StatusInternalServerError,
-		-2,
-		"internal server error",
-	)
+	responseString(rw, req, http.StatusInternalServerError, -2, "internal server error")
 }
 
 // responseSuccess responses success to the client with the content, contentType
 // and cacheControlMaxAge.
-func responseSuccess(
-	rw http.ResponseWriter,
-	req *http.Request,
-	content io.Reader,
-	contentType string,
-	cacheControlMaxAge int,
-) {
+func responseSuccess(rw http.ResponseWriter, req *http.Request, content io.Reader, contentType string, cacheControlMaxAge int) {
 	rw.Header().Set("Content-Type", contentType)
 	setResponseCacheControlHeader(rw, cacheControlMaxAge)
 
@@ -128,10 +88,7 @@ func responseSuccess(
 	}
 
 	if !lastModified.IsZero() {
-		rw.Header().Set(
-			"Last-Modified",
-			lastModified.UTC().Format(http.TimeFormat),
-		)
+		rw.Header().Set("Last-Modified", lastModified.UTC().Format(http.TimeFormat))
 	}
 
 	rw.WriteHeader(http.StatusOK)
@@ -141,12 +98,7 @@ func responseSuccess(
 }
 
 // responseError responses error to the client with the err and cacheSensitive.
-func responseError(
-	rw http.ResponseWriter,
-	req *http.Request,
-	err error,
-	cacheSensitive bool,
-) {
+func responseError(rw http.ResponseWriter, req *http.Request, err error, cacheSensitive bool) {
 	if errors.Is(err, errNotFound) {
 		cacheControlMaxAge := -1
 		msg := err.Error()
@@ -159,13 +111,10 @@ func responseError(
 		} else {
 			cacheControlMaxAge = 600
 		}
-
 		responseNotFound(rw, req, cacheControlMaxAge, msg)
 	} else if errors.Is(err, errBadUpstream) {
 		responseNotFound(rw, req, -1, errBadUpstream)
-	} else if t, ok := err.(interface {
-		Timeout() bool
-	}); (ok && t.Timeout()) ||
+	} else if t, ok := err.(interface{ Timeout() bool }); (ok && t.Timeout()) ||
 		errors.Is(err, context.DeadlineExceeded) ||
 		errors.Is(err, errFetchTimedOut) ||
 		strings.Contains(err.Error(), errFetchTimedOut.Error()) {

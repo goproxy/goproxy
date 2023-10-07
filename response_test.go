@@ -297,13 +297,7 @@ func (srb successResponseBody_ETag) ETag() string {
 func TestResponseSuccess(t *testing.T) {
 	req := httptest.NewRequest("", "/", nil)
 	rec := httptest.NewRecorder()
-	responseSuccess(
-		rec,
-		req,
-		strings.NewReader("foobar"),
-		"text/plain; charset=utf-8",
-		60,
-	)
+	responseSuccess(rec, req, strings.NewReader("foobar"), "text/plain; charset=utf-8", 60)
 	recr := rec.Result()
 	if want := http.StatusOK; recr.StatusCode != want {
 		t.Errorf("got %d, want %d", recr.StatusCode, want)
@@ -337,13 +331,7 @@ func TestResponseSuccess(t *testing.T) {
 
 	req = httptest.NewRequest(http.MethodHead, "/", nil)
 	rec = httptest.NewRecorder()
-	responseSuccess(
-		rec,
-		req,
-		bytes.NewBuffer([]byte("foobar")),
-		"text/plain; charset=utf-8",
-		60,
-	)
+	responseSuccess(rec, req, bytes.NewBuffer([]byte("foobar")), "text/plain; charset=utf-8", 60)
 	recr = rec.Result()
 	if want := http.StatusOK; recr.StatusCode != want {
 		t.Errorf("got %d, want %d", recr.StatusCode, want)
@@ -377,19 +365,10 @@ func TestResponseSuccess(t *testing.T) {
 
 	req = httptest.NewRequest("", "/", nil)
 	rec = httptest.NewRecorder()
-	responseSuccess(
-		rec,
-		req,
-		successResponseBody_LastModified{
-			Reader: strings.NewReader("foobar"),
-			lastModified: time.Date(
-				2000, 1, 1, 0, 0, 0, 0,
-				time.UTC,
-			),
-		},
-		"text/plain; charset=utf-8",
-		60,
-	)
+	responseSuccess(rec, req, successResponseBody_LastModified{
+		Reader:       strings.NewReader("foobar"),
+		lastModified: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
+	}, "text/plain; charset=utf-8", 60)
 	recr = rec.Result()
 	if want := http.StatusOK; recr.StatusCode != want {
 		t.Errorf("got %d, want %d", recr.StatusCode, want)
@@ -423,16 +402,10 @@ func TestResponseSuccess(t *testing.T) {
 
 	req = httptest.NewRequest("", "/", nil)
 	rec = httptest.NewRecorder()
-	responseSuccess(
-		rec,
-		req,
-		successResponseBody_ModTime{
-			Reader:  strings.NewReader("foobar"),
-			modTime: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
-		},
-		"text/plain; charset=utf-8",
-		60,
-	)
+	responseSuccess(rec, req, successResponseBody_ModTime{
+		Reader:  strings.NewReader("foobar"),
+		modTime: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
+	}, "text/plain; charset=utf-8", 60)
 	recr = rec.Result()
 	if want := http.StatusOK; recr.StatusCode != want {
 		t.Errorf("got %d, want %d", recr.StatusCode, want)
@@ -466,16 +439,10 @@ func TestResponseSuccess(t *testing.T) {
 
 	req = httptest.NewRequest("", "/", nil)
 	rec = httptest.NewRecorder()
-	responseSuccess(
-		rec,
-		req,
-		successResponseBody_ETag{
-			Reader: strings.NewReader("foobar"),
-			etag:   `"foobar"`,
-		},
-		"text/plain; charset=utf-8",
-		60,
-	)
+	responseSuccess(rec, req, successResponseBody_ETag{
+		Reader: strings.NewReader("foobar"),
+		etag:   `"foobar"`,
+	}, "text/plain; charset=utf-8", 60)
 	recr = rec.Result()
 	if want := http.StatusOK; recr.StatusCode != want {
 		t.Errorf("got %d, want %d", recr.StatusCode, want)
@@ -509,35 +476,17 @@ func TestResponseSuccess(t *testing.T) {
 
 	req = httptest.NewRequest("", "/", nil)
 	rec = httptest.NewRecorder()
-	responseSuccess(
-		rec,
-		req,
-		struct {
-			io.Reader
-			successResponseBody_LastModified
-			successResponseBody_ModTime
-			successResponseBody_ETag
-		}{
-			strings.NewReader("foobar"),
-			successResponseBody_LastModified{
-				lastModified: time.Date(
-					2000, 1, 1, 0, 0, 0, 0,
-					time.UTC,
-				),
-			},
-			successResponseBody_ModTime{
-				modTime: time.Date(
-					2000, 1, 2, 0, 0, 0, 0,
-					time.UTC,
-				),
-			},
-			successResponseBody_ETag{
-				etag: `"foobar"`,
-			},
-		},
-		"text/plain; charset=utf-8",
-		60,
-	)
+	responseSuccess(rec, req, struct {
+		io.Reader
+		successResponseBody_LastModified
+		successResponseBody_ModTime
+		successResponseBody_ETag
+	}{
+		strings.NewReader("foobar"),
+		successResponseBody_LastModified{lastModified: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)},
+		successResponseBody_ModTime{modTime: time.Date(2000, 1, 2, 0, 0, 0, 0, time.UTC)},
+		successResponseBody_ETag{etag: `"foobar"`},
+	}, "text/plain; charset=utf-8", 60)
 	recr = rec.Result()
 	if want := http.StatusOK; recr.StatusCode != want {
 		t.Errorf("got %d, want %d", recr.StatusCode, want)
@@ -642,12 +591,7 @@ func TestResponseError(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	responseError(
-		rec,
-		req,
-		notFoundError("not found: fetch timed out"),
-		false,
-	)
+	responseError(rec, req, notFoundError("not found: fetch timed out"), false)
 	recr = rec.Result()
 	if want := http.StatusNotFound; recr.StatusCode != want {
 		t.Errorf("got %d, want %d", recr.StatusCode, want)

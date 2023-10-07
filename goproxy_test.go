@@ -17,6 +17,17 @@ import (
 	"time"
 )
 
+func getenv(env []string, key string) string {
+	for _, e := range env {
+		if k, v, ok := strings.Cut(e, "="); ok {
+			if strings.TrimSpace(k) == key {
+				return v
+			}
+		}
+	}
+	return ""
+}
+
 func TestGoproxyInit(t *testing.T) {
 	for _, key := range []string{
 		"GO111MODULE",
@@ -26,9 +37,7 @@ func TestGoproxyInit(t *testing.T) {
 		"GONOSUMDB",
 		"GOPRIVATE",
 	} {
-		if err := os.Setenv(key, ""); err != nil {
-			t.Fatalf("unexpected error %q", err)
-		}
+		t.Setenv(key, "")
 	}
 
 	g := &Goproxy{}
@@ -36,115 +45,76 @@ func TestGoproxyInit(t *testing.T) {
 	if got, want := g.goBinName, "go"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	var goBinEnvPATH string
-	for _, env := range g.goBinEnv {
-		if k, v, ok := strings.Cut(env, "="); ok {
-			if strings.TrimSpace(k) == "PATH" {
-				goBinEnvPATH = v
-			}
-		}
-	}
-	if got, want := goBinEnvPATH, os.Getenv("PATH"); got != want {
+	if got, want := getenv(g.goBinEnv, "PATH"), os.Getenv("PATH"); got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	gotEnvGOPROXY := g.goBinEnvGOPROXY
-	wantEnvGOPROXY := "https://proxy.golang.org,direct"
-	if gotEnvGOPROXY != wantEnvGOPROXY {
-		t.Errorf("got %q, want %q", gotEnvGOPROXY, wantEnvGOPROXY)
+	if got, want := g.goBinEnvGOPROXY, "https://proxy.golang.org,direct"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 	if got, want := g.goBinEnvGONOPROXY, ""; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	gotEnvGOSUMDB := g.goBinEnvGOSUMDB
-	wantEnvGOSUMDB := "sum.golang.org"
-	if gotEnvGOSUMDB != wantEnvGOSUMDB {
-		t.Errorf("got %q, want %q", gotEnvGOSUMDB, wantEnvGOSUMDB)
+	if got, want := g.goBinEnvGOSUMDB, "sum.golang.org"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 	if got, want := g.goBinEnvGONOSUMDB, ""; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	var goBinEnvGOPRIVATE string
-	for _, env := range g.goBinEnv {
-		if k, v, ok := strings.Cut(env, "="); ok {
-			if strings.TrimSpace(k) == "GOPRIVATE" {
-				goBinEnvGOPRIVATE = v
-			}
-		}
-	}
-	if got, want := goBinEnvGOPRIVATE, ""; got != want {
+	if got, want := getenv(g.goBinEnv, "GOPRIVATE"), ""; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
 	g = &Goproxy{}
-	wantEnvGOPROXY = "https://example.com|https://backup.example.com,direct"
-	g.GoBinEnv = []string{"GOPROXY=" + wantEnvGOPROXY}
+	envGOPROXY := "https://example.com|https://backup.example.com,direct"
+	g.GoBinEnv = []string{"GOPROXY=" + envGOPROXY}
 	g.init()
-	gotEnvGOPROXY = g.goBinEnvGOPROXY
-	if gotEnvGOPROXY != wantEnvGOPROXY {
-		t.Errorf("got %q, want %q", gotEnvGOPROXY, wantEnvGOPROXY)
+	if got, want := g.goBinEnvGOPROXY, envGOPROXY; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	g = &Goproxy{}
-	g.GoBinEnv = []string{
-		"GOPROXY=https://example.com,direct,https://backup.example.com",
-	}
+	g.GoBinEnv = []string{"GOPROXY=https://example.com,direct,https://backup.example.com"}
 	g.init()
-	gotEnvGOPROXY = g.goBinEnvGOPROXY
-	wantEnvGOPROXY = "https://example.com,direct"
-	if gotEnvGOPROXY != wantEnvGOPROXY {
-		t.Errorf("got %q, want %q", gotEnvGOPROXY, wantEnvGOPROXY)
+	if got, want := g.goBinEnvGOPROXY, "https://example.com,direct"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	g = &Goproxy{}
-	g.GoBinEnv = []string{
-		"GOPROXY=https://example.com,off,https://backup.example.com",
-	}
+	g.GoBinEnv = []string{"GOPROXY=https://example.com,off,https://backup.example.com"}
 	g.init()
-	gotEnvGOPROXY = g.goBinEnvGOPROXY
-	wantEnvGOPROXY = "https://example.com,off"
-	if gotEnvGOPROXY != wantEnvGOPROXY {
-		t.Errorf("got %q, want %q", gotEnvGOPROXY, wantEnvGOPROXY)
+	if got, want := g.goBinEnvGOPROXY, "https://example.com,off"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	g = &Goproxy{}
 	g.GoBinEnv = []string{"GOPROXY=https://example.com|"}
 	g.init()
-	gotEnvGOPROXY = g.goBinEnvGOPROXY
-	wantEnvGOPROXY = "https://example.com"
-	if gotEnvGOPROXY != wantEnvGOPROXY {
-		t.Errorf("got %q, want %q", gotEnvGOPROXY, wantEnvGOPROXY)
+	if got, want := g.goBinEnvGOPROXY, "https://example.com"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	g = &Goproxy{}
 	g.GoBinEnv = []string{"GOPROXY=,"}
 	g.init()
-	gotEnvGOPROXY = g.goBinEnvGOPROXY
-	wantEnvGOPROXY = "off"
-	if gotEnvGOPROXY != wantEnvGOPROXY {
-		t.Errorf("got %q, want %q", gotEnvGOPROXY, wantEnvGOPROXY)
+	if got, want := g.goBinEnvGOPROXY, "off"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	g = &Goproxy{}
 	g.GoBinEnv = []string{"GOSUMDB=example.com"}
 	g.init()
-	gotEnvGOSUMDB = g.goBinEnvGOSUMDB
-	wantEnvGOSUMDB = "example.com"
-	if gotEnvGOSUMDB != wantEnvGOSUMDB {
-		t.Errorf("got %q, want %q", gotEnvGOSUMDB, wantEnvGOSUMDB)
+	if got, want := g.goBinEnvGOSUMDB, "example.com"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	g = &Goproxy{}
 	g.GoBinEnv = []string{"GOPRIVATE=example.com"}
 	g.init()
-	gotEnvGONOPROXY := g.goBinEnvGONOPROXY
-	wantEnvGONOPROXY := "example.com"
-	if gotEnvGONOPROXY != wantEnvGONOPROXY {
-		t.Errorf("got %q, want %q", gotEnvGONOPROXY, wantEnvGONOPROXY)
+	if got, want := g.goBinEnvGONOPROXY, "example.com"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
-	gotEnvGONOSUMDB := g.goBinEnvGONOSUMDB
-	wantEnvGONOSUMDB := "example.com"
-	if gotEnvGONOSUMDB != wantEnvGONOSUMDB {
-		t.Errorf("got %q, want %q", gotEnvGONOSUMDB, wantEnvGONOSUMDB)
+	if got, want := g.goBinEnvGONOSUMDB, "example.com"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	g = &Goproxy{}
@@ -154,15 +124,11 @@ func TestGoproxyInit(t *testing.T) {
 		"GONOSUMDB=alt2.example.com",
 	}
 	g.init()
-	gotEnvGONOPROXY = g.goBinEnvGONOPROXY
-	wantEnvGONOPROXY = "alt1.example.com"
-	if gotEnvGONOPROXY != wantEnvGONOPROXY {
-		t.Errorf("got %q, want %q", gotEnvGONOPROXY, wantEnvGONOPROXY)
+	if got, want := g.goBinEnvGONOPROXY, "alt1.example.com"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
-	gotEnvGONOSUMDB = g.goBinEnvGONOSUMDB
-	wantEnvGONOSUMDB = "alt2.example.com"
-	if gotEnvGONOSUMDB != wantEnvGONOSUMDB {
-		t.Errorf("got %q, want %q", gotEnvGONOSUMDB, wantEnvGONOSUMDB)
+	if got, want := g.goBinEnvGONOSUMDB, "alt2.example.com"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	g = &Goproxy{}
@@ -183,25 +149,15 @@ func TestGoproxyInit(t *testing.T) {
 	if got, want := len(g.proxiedSUMDBs), 2; got != want {
 		t.Errorf("got %d, want %d", got, want)
 	}
-	gotSUMDBURL := g.proxiedSUMDBs["sum.golang.google.cn"].String()
-	wantSUMDBURL := "https://sum.golang.google.cn"
-	if gotSUMDBURL != wantSUMDBURL {
-		t.Errorf("got %q, want %q", gotSUMDBURL, wantSUMDBURL)
+	if got, want := g.proxiedSUMDBs["sum.golang.google.cn"].String(), "https://sum.golang.google.cn"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
-	gotSUMDBURL = g.proxiedSUMDBs["sum.golang.org"].String()
-	wantSUMDBURL = "https://sum.golang.google.cn"
-	if gotSUMDBURL != wantSUMDBURL {
-		t.Errorf("got %q, want %q", gotSUMDBURL, wantSUMDBURL)
+	if got, want := g.proxiedSUMDBs["sum.golang.org"].String(), "https://sum.golang.google.cn"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 	if got := g.proxiedSUMDBs["example.com"]; got != nil {
 		t.Errorf("got %v, want nil", got)
 	}
-}
-
-type discardWriter struct{}
-
-func (discardWriter) Write(p []byte) (int, error) {
-	return len(p), nil
 }
 
 func TestGoproxyServeHTTP(t *testing.T) {
@@ -215,24 +171,12 @@ func TestGoproxyServeHTTP(t *testing.T) {
 	handlerFunc := func(rw http.ResponseWriter, req *http.Request) {
 		switch req.URL.Path {
 		case "/example.com/@latest":
-			responseSuccess(
-				rw,
-				req,
-				strings.NewReader(marshalInfo(
-					"v1.0.0",
-					infoTime,
-				)),
-				"application/json; charset=utf-8",
-				-2,
-			)
+			responseSuccess(rw, req, strings.NewReader(marshalInfo("v1.0.0", infoTime)), "application/json; charset=utf-8", -2)
 		default:
 			responseNotFound(rw, req, 60)
 		}
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(
-		rw http.ResponseWriter,
-		req *http.Request,
-	) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		handlerFunc(rw, req)
 	}))
 	defer server.Close()
@@ -241,7 +185,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 		Cacher:      DirCacher(tempDir),
 		GoBinEnv:    []string{"GOPROXY=" + server.URL, "GOSUMDB=off"},
 		TempDir:     tempDir,
-		ErrorLogger: log.New(&discardWriter{}, "", 0),
+		ErrorLogger: log.New(io.Discard, "", 0),
 	}
 	g.init()
 
@@ -251,14 +195,11 @@ func TestGoproxyServeHTTP(t *testing.T) {
 	recr := rec.Result()
 	if got, want := rec.Code, http.StatusOK; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"application/json; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "application/json; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		"public, max-age=60"; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.Body.String(),
-		marshalInfo("v1.0.0", infoTime); got != want {
+	} else if got, want := rec.Body.String(), marshalInfo("v1.0.0", infoTime); got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
@@ -268,11 +209,9 @@ func TestGoproxyServeHTTP(t *testing.T) {
 	recr = rec.Result()
 	if got, want := rec.Code, http.StatusOK; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"application/json; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "application/json; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		"public, max-age=60"; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), ""; got != want {
 		t.Errorf("got %q, want %q", got, want)
@@ -284,14 +223,11 @@ func TestGoproxyServeHTTP(t *testing.T) {
 	recr = rec.Result()
 	if got, want := rec.Code, http.StatusMethodNotAllowed; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"text/plain; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		"public, max-age=86400"; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), "public, max-age=86400"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.Body.String(),
-		"method not allowed"; got != want {
+	} else if got, want := rec.Body.String(), "method not allowed"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
@@ -301,11 +237,9 @@ func TestGoproxyServeHTTP(t *testing.T) {
 	recr = rec.Result()
 	if got, want := rec.Code, http.StatusNotFound; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"text/plain; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		"public, max-age=86400"; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), "public, max-age=86400"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), "not found"; got != want {
 		t.Errorf("got %q, want %q", got, want)
@@ -317,11 +251,9 @@ func TestGoproxyServeHTTP(t *testing.T) {
 	recr = rec.Result()
 	if got, want := rec.Code, http.StatusNotFound; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"text/plain; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		"public, max-age=86400"; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), "public, max-age=86400"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), "not found"; got != want {
 		t.Errorf("got %q, want %q", got, want)
@@ -333,11 +265,9 @@ func TestGoproxyServeHTTP(t *testing.T) {
 	recr = rec.Result()
 	if got, want := rec.Code, http.StatusNotFound; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"text/plain; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		"public, max-age=86400"; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), "public, max-age=86400"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), "not found"; got != want {
 		t.Errorf("got %q, want %q", got, want)
@@ -348,7 +278,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 		Cacher:      DirCacher(tempDir),
 		GoBinEnv:    []string{"GOPROXY=" + server.URL, "GOSUMDB=off"},
 		TempDir:     filepath.Join(tempDir, "404"),
-		ErrorLogger: log.New(&discardWriter{}, "", 0),
+		ErrorLogger: log.New(io.Discard, "", 0),
 	}
 	g.init()
 
@@ -358,14 +288,11 @@ func TestGoproxyServeHTTP(t *testing.T) {
 	recr = rec.Result()
 	if got, want := rec.Code, http.StatusInternalServerError; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"text/plain; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		""; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), ""; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.Body.String(),
-		"internal server error"; got != want {
+	} else if got, want := rec.Body.String(), "internal server error"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }
@@ -381,32 +308,14 @@ func TestGoproxyServeFetch(t *testing.T) {
 	handlerFunc := func(rw http.ResponseWriter, req *http.Request) {
 		switch req.URL.Path {
 		case "/example.com/@latest", "/example.com/@v/v1.0.0.info":
-			responseSuccess(
-				rw,
-				req,
-				strings.NewReader(marshalInfo(
-					"v1.0.0",
-					infoTime,
-				)),
-				"application/json; charset=utf-8",
-				-2,
-			)
+			responseSuccess(rw, req, strings.NewReader(marshalInfo("v1.0.0", infoTime)), "application/json; charset=utf-8", -2)
 		case "/example.com/@v/list":
-			responseSuccess(
-				rw,
-				req,
-				strings.NewReader("v1.0.0"),
-				"text/plain; charset=utf-8",
-				-2,
-			)
+			responseSuccess(rw, req, strings.NewReader("v1.0.0"), "text/plain; charset=utf-8", -2)
 		default:
 			responseNotFound(rw, req, 60)
 		}
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(
-		rw http.ResponseWriter,
-		req *http.Request,
-	) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		handlerFunc(rw, req)
 	}))
 	defer server.Close()
@@ -414,7 +323,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 	g := &Goproxy{
 		Cacher:      DirCacher(tempDir),
 		GoBinEnv:    []string{"GOPROXY=" + server.URL, "GOSUMDB=off"},
-		ErrorLogger: log.New(&discardWriter{}, "", 0),
+		ErrorLogger: log.New(io.Discard, "", 0),
 	}
 	g.init()
 
@@ -424,14 +333,11 @@ func TestGoproxyServeFetch(t *testing.T) {
 	recr := rec.Result()
 	if got, want := rec.Code, http.StatusOK; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"application/json; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "application/json; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		"public, max-age=60"; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.Body.String(),
-		marshalInfo("v1.0.0", infoTime); got != want {
+	} else if got, want := rec.Body.String(), marshalInfo("v1.0.0", infoTime); got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
@@ -441,11 +347,9 @@ func TestGoproxyServeFetch(t *testing.T) {
 	recr = rec.Result()
 	if got, want := rec.Code, http.StatusNotFound; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"text/plain; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		"public, max-age=60"; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), "not found"; got != want {
 		t.Errorf("got %q, want %q", got, want)
@@ -457,14 +361,11 @@ func TestGoproxyServeFetch(t *testing.T) {
 	recr = rec.Result()
 	if got, want := rec.Code, http.StatusOK; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"application/json; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "application/json; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		"public, max-age=604800"; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), "public, max-age=604800"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.Body.String(),
-		marshalInfo("v1.0.0", infoTime); got != want {
+	} else if got, want := rec.Body.String(), marshalInfo("v1.0.0", infoTime); got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
@@ -474,11 +375,9 @@ func TestGoproxyServeFetch(t *testing.T) {
 	recr = rec.Result()
 	if got, want := rec.Code, http.StatusNotFound; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"text/plain; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		"public, max-age=600"; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), "public, max-age=600"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), "not found"; got != want {
 		t.Errorf("got %q, want %q", got, want)
@@ -491,14 +390,11 @@ func TestGoproxyServeFetch(t *testing.T) {
 	recr = rec.Result()
 	if got, want := rec.Code, http.StatusOK; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"application/json; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "application/json; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		"public, max-age=60"; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.Body.String(),
-		marshalInfo("v1.0.0", infoTime); got != want {
+	} else if got, want := rec.Body.String(), marshalInfo("v1.0.0", infoTime); got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
@@ -509,14 +405,11 @@ func TestGoproxyServeFetch(t *testing.T) {
 	recr = rec.Result()
 	if got, want := rec.Code, http.StatusNotFound; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"text/plain; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		"public, max-age=60"; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.Body.String(),
-		"not found: temporarily unavailable"; got != want {
+	} else if got, want := rec.Body.String(), "not found: temporarily unavailable"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
@@ -527,14 +420,11 @@ func TestGoproxyServeFetch(t *testing.T) {
 	recr = rec.Result()
 	if got, want := rec.Code, http.StatusOK; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"application/json; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "application/json; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		"public, max-age=604800"; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), "public, max-age=604800"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.Body.String(),
-		marshalInfo("v1.0.0", infoTime); got != want {
+	} else if got, want := rec.Body.String(), marshalInfo("v1.0.0", infoTime); got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
@@ -544,21 +434,18 @@ func TestGoproxyServeFetch(t *testing.T) {
 	recr = rec.Result()
 	if got, want := rec.Code, http.StatusNotFound; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"text/plain; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		"public, max-age=86400"; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), "public, max-age=86400"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.Body.String(),
-		"not found: missing /@v/"; got != want {
+	} else if got, want := rec.Body.String(), "not found: missing /@v/"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
 	g = &Goproxy{
 		Cacher:      &errorCacher{},
 		GoBinEnv:    []string{"GOPROXY=" + server.URL, "GOSUMDB=off"},
-		ErrorLogger: log.New(&discardWriter{}, "", 0),
+		ErrorLogger: log.New(io.Discard, "", 0),
 	}
 	g.init()
 
@@ -568,23 +455,17 @@ func TestGoproxyServeFetch(t *testing.T) {
 	recr = rec.Result()
 	if got, want := rec.Code, http.StatusInternalServerError; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"text/plain; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		""; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), ""; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.Body.String(),
-		"internal server error"; got != want {
+	} else if got, want := rec.Body.String(), "internal server error"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }
 
 func TestGoproxyServeFetchDownload(t *testing.T) {
-	tempDir, err := os.MkdirTemp(
-		"",
-		"goproxy.TestGoproxyServeFetchDownload",
-	)
+	tempDir, err := os.MkdirTemp("", "goproxy.TestGoproxyServeFetchDownload")
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -594,32 +475,14 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 	handlerFunc := func(rw http.ResponseWriter, req *http.Request) {
 		switch req.URL.Path {
 		case "/example.com/@v/v1.0.0.info":
-			responseSuccess(
-				rw,
-				req,
-				strings.NewReader(marshalInfo(
-					"v1.0.0",
-					infoTime,
-				)),
-				"application/json; charset=utf-8",
-				-2,
-			)
+			responseSuccess(rw, req, strings.NewReader(marshalInfo("v1.0.0", infoTime)), "application/json; charset=utf-8", -2)
 		case "/example.com/@v/v1.0.0.mod":
-			responseSuccess(
-				rw,
-				req,
-				strings.NewReader("module example.com"),
-				"text/plain; charset=utf-8",
-				-2,
-			)
+			responseSuccess(rw, req, strings.NewReader("module example.com"), "text/plain; charset=utf-8", -2)
 		default:
 			responseNotFound(rw, req, 60)
 		}
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(
-		rw http.ResponseWriter,
-		req *http.Request,
-	) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		handlerFunc(rw, req)
 	}))
 	defer server.Close()
@@ -627,7 +490,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 	g := &Goproxy{
 		Cacher:      DirCacher(tempDir),
 		GoBinEnv:    []string{"GOPROXY=" + server.URL, "GOSUMDB=off"},
-		ErrorLogger: log.New(&discardWriter{}, "", 0),
+		ErrorLogger: log.New(io.Discard, "", 0),
 	}
 	g.init()
 
@@ -641,14 +504,11 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 	recr := rec.Result()
 	if got, want := rec.Code, http.StatusOK; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"application/json; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "application/json; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		"public, max-age=604800"; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), "public, max-age=604800"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.Body.String(),
-		marshalInfo("v1.0.0", infoTime); got != want {
+	} else if got, want := rec.Body.String(), marshalInfo("v1.0.0", infoTime); got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
@@ -662,11 +522,9 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 	recr = rec.Result()
 	if got, want := rec.Code, http.StatusNotFound; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"text/plain; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		"public, max-age=600"; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), "public, max-age=600"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), "not found"; got != want {
 		t.Errorf("got %q, want %q", got, want)
@@ -675,7 +533,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 	g = &Goproxy{
 		Cacher:      &errorCacher{},
 		GoBinEnv:    []string{"GOPROXY=" + server.URL, "GOSUMDB=off"},
-		ErrorLogger: log.New(&discardWriter{}, "", 0),
+		ErrorLogger: log.New(io.Discard, "", 0),
 	}
 	g.init()
 
@@ -689,14 +547,11 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 	recr = rec.Result()
 	if got, want := rec.Code, http.StatusInternalServerError; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"text/plain; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		""; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), ""; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.Body.String(),
-		"internal server error"; got != want {
+	} else if got, want := rec.Body.String(), "internal server error"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }
@@ -711,10 +566,7 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 	handlerFunc := func(rw http.ResponseWriter, req *http.Request) {
 		fmt.Fprint(rw, req.URL.Path)
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(
-		rw http.ResponseWriter,
-		req *http.Request,
-	) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		handlerFunc(rw, req)
 	}))
 	defer server.Close()
@@ -722,7 +574,7 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 	g := &Goproxy{
 		Cacher:        DirCacher(tempDir),
 		ProxiedSUMDBs: []string{"sumdb.example.com " + server.URL},
-		ErrorLogger:   log.New(&discardWriter{}, "", 0),
+		ErrorLogger:   log.New(io.Discard, "", 0),
 	}
 	g.init()
 
@@ -732,11 +584,9 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 	recr := rec.Result()
 	if got, want := rec.Code, http.StatusOK; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		""; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), ""; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		"public, max-age=86400"; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), "public, max-age=86400"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), ""; got != want {
 		t.Errorf("got %q, want %q", got, want)
@@ -748,11 +598,9 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 	recr = rec.Result()
 	if got, want := rec.Code, http.StatusOK; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"text/plain; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		"public, max-age=3600"; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), "public, max-age=3600"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), "/latest"; got != want {
 		t.Errorf("got %q, want %q", got, want)
@@ -760,23 +608,15 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 
 	req = httptest.NewRequest("", "/", nil)
 	rec = httptest.NewRecorder()
-	g.serveSUMDB(
-		rec,
-		req,
-		"sumdb/sumdb.example.com/lookup/example.com@v1.0.0",
-		tempDir,
-	)
+	g.serveSUMDB(rec, req, "sumdb/sumdb.example.com/lookup/example.com@v1.0.0", tempDir)
 	recr = rec.Result()
 	if got, want := rec.Code, http.StatusOK; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"text/plain; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		"public, max-age=86400"; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), "public, max-age=86400"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.Body.String(),
-		"/lookup/example.com@v1.0.0"; got != want {
+	} else if got, want := rec.Body.String(), "/lookup/example.com@v1.0.0"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
@@ -786,11 +626,9 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 	recr = rec.Result()
 	if got, want := rec.Code, http.StatusOK; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"application/octet-stream"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "application/octet-stream"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		"public, max-age=86400"; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), "public, max-age=86400"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), "/tile/2/0/0"; got != want {
 		t.Errorf("got %q, want %q", got, want)
@@ -802,11 +640,9 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 	recr = rec.Result()
 	if got, want := rec.Code, http.StatusNotFound; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"text/plain; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		"public, max-age=86400"; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), "public, max-age=86400"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), "not found"; got != want {
 		t.Errorf("got %q, want %q", got, want)
@@ -818,11 +654,9 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 	recr = rec.Result()
 	if got, want := rec.Code, http.StatusNotFound; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"text/plain; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		"public, max-age=86400"; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), "public, max-age=86400"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), "not found"; got != want {
 		t.Errorf("got %q, want %q", got, want)
@@ -834,11 +668,9 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 	recr = rec.Result()
 	if got, want := rec.Code, http.StatusNotFound; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"text/plain; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		"public, max-age=86400"; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), "public, max-age=86400"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), "not found"; got != want {
 		t.Errorf("got %q, want %q", got, want)
@@ -846,23 +678,15 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 
 	req = httptest.NewRequest("", "/", nil)
 	rec = httptest.NewRecorder()
-	g.serveSUMDB(
-		rec,
-		req,
-		"sumdb/sumdb.example.com/latest",
-		filepath.Join(tempDir, "404"),
-	)
+	g.serveSUMDB(rec, req, "sumdb/sumdb.example.com/latest", filepath.Join(tempDir, "404"))
 	recr = rec.Result()
 	if got, want := rec.Code, http.StatusInternalServerError; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"text/plain; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		""; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), ""; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.Body.String(),
-		"internal server error"; got != want {
+	} else if got, want := rec.Body.String(), "internal server error"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
@@ -872,20 +696,13 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 
 	req = httptest.NewRequest("", "/", nil)
 	rec = httptest.NewRecorder()
-	g.serveSUMDB(
-		rec,
-		req,
-		"sumdb/sumdb.example.com/lookup/example.com/v2@v2.0.0",
-		tempDir,
-	)
+	g.serveSUMDB(rec, req, "sumdb/sumdb.example.com/lookup/example.com/v2@v2.0.0", tempDir)
 	recr = rec.Result()
 	if got, want := rec.Code, http.StatusNotFound; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"text/plain; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		"public, max-age=60"; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	} else if got, want := rec.Body.String(), "not found"; got != want {
 		t.Errorf("got %q, want %q", got, want)
@@ -894,7 +711,7 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 	g = &Goproxy{
 		Cacher:        &errorCacher{},
 		ProxiedSUMDBs: []string{"sumdb.example.com " + server.URL},
-		ErrorLogger:   log.New(&discardWriter{}, "", 0),
+		ErrorLogger:   log.New(io.Discard, "", 0),
 	}
 	g.init()
 
@@ -908,14 +725,11 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 	recr = rec.Result()
 	if got, want := rec.Code, http.StatusInternalServerError; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := recr.Header.Get("Content-Type"),
-		"text/plain; charset=utf-8"; got != want {
+	} else if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := recr.Header.Get("Cache-Control"),
-		""; got != want {
+	} else if got, want := recr.Header.Get("Cache-Control"), ""; got != want {
 		t.Errorf("got %q, want %q", got, want)
-	} else if got, want := rec.Body.String(),
-		"internal server error"; got != want {
+	} else if got, want := rec.Body.String(), "internal server error"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }
@@ -939,11 +753,7 @@ func TestGoproxyServeCache(t *testing.T) {
 
 	g := &Goproxy{Cacher: DirCacher(tempDir)}
 	g.init()
-	if err := g.putCache(
-		context.Background(),
-		"foo",
-		strings.NewReader("bar"),
-	); err != nil {
+	if err := g.putCache(context.Background(), "foo", strings.NewReader("bar")); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 
@@ -971,14 +781,13 @@ func TestGoproxyServeCache(t *testing.T) {
 	rec = httptest.NewRecorder()
 	g = &Goproxy{
 		Cacher:      &errorCacher{},
-		ErrorLogger: log.New(&discardWriter{}, "", 0),
+		ErrorLogger: log.New(io.Discard, "", 0),
 	}
 	g.init()
 	g.serveCache(rec, req, "foo", "", 60, func() {})
 	if got, want := rec.Code, http.StatusInternalServerError; got != want {
 		t.Errorf("got %d, want %d", got, want)
-	} else if got, want := rec.Body.String(),
-		"internal server error"; got != want {
+	} else if got, want := rec.Body.String(), "internal server error"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }
@@ -990,11 +799,7 @@ func TestGoproxyCache(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	if err := os.WriteFile(
-		filepath.Join(tempDir, "foo"),
-		[]byte("bar"),
-		0o600,
-	); err != nil {
+	if err := os.WriteFile(filepath.Join(tempDir, "foo"), []byte("bar"), 0o600); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 
@@ -1010,8 +815,7 @@ func TestGoproxyCache(t *testing.T) {
 		t.Errorf("got %q, want %q", got, want)
 	} else if _, err := g.cache(context.Background(), "bar"); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := errors.Is(err, fs.ErrNotExist),
-		true; got != want {
+	} else if got, want := errors.Is(err, fs.ErrNotExist), true; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
 
@@ -1019,8 +823,7 @@ func TestGoproxyCache(t *testing.T) {
 	g.init()
 	if _, err := g.cache(context.Background(), ""); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := errors.Is(err, fs.ErrNotExist),
-		true; got != want {
+	} else if got, want := errors.Is(err, fs.ErrNotExist), true; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
 }
@@ -1043,7 +846,6 @@ func (trs *testReaderSeeker) Seek(offset int64, whence int) (int64, error) {
 			return 0, errors.New("cannot seek end")
 		}
 	}
-
 	return trs.ReadSeeker.Seek(offset, whence)
 }
 
@@ -1059,65 +861,40 @@ func TestGoproxyPutCache(t *testing.T) {
 		CacherMaxCacheBytes: 5,
 	}
 	g.init()
-	if err := g.putCache(
-		context.Background(),
-		"foo",
-		strings.NewReader("bar"),
-	); err != nil {
+	if err := g.putCache(context.Background(), "foo", strings.NewReader("bar")); err != nil {
 		t.Fatalf("unexpected error %q", err)
-	} else if b, err := os.ReadFile(
-		filepath.Join(tempDir, "foo"),
-	); err != nil {
+	} else if b, err := os.ReadFile(filepath.Join(tempDir, "foo")); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if got, want := string(b), "bar"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	if err := g.putCache(
-		context.Background(),
-		"foo",
-		&testReaderSeeker{
-			ReadSeeker:      strings.NewReader("bar"),
-			cannotSeekStart: true,
-		},
-	); err == nil {
+	if err := g.putCache(context.Background(), "foo", &testReaderSeeker{
+		ReadSeeker:      strings.NewReader("bar"),
+		cannotSeekStart: true,
+	}); err == nil {
 		t.Fatal("expected error")
 	} else if got, want := err.Error(), "cannot seek start"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	if err := g.putCache(
-		context.Background(),
-		"foo",
-		&testReaderSeeker{
-			ReadSeeker:    strings.NewReader("bar"),
-			cannotSeekEnd: true,
-		},
-	); err == nil {
+	if err := g.putCache(context.Background(), "foo", &testReaderSeeker{
+		ReadSeeker:    strings.NewReader("bar"),
+		cannotSeekEnd: true,
+	}); err == nil {
 		t.Fatal("expected error")
 	} else if got, want := err.Error(), "cannot seek end"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	if err := g.putCache(
-		context.Background(),
-		"foobar",
-		strings.NewReader("foobar"),
-	); err != nil {
+	if err := g.putCache(context.Background(), "foobar", strings.NewReader("foobar")); err != nil {
 		t.Fatalf("unexpected error %q", err)
-	} else if _, err := os.ReadFile(
-		filepath.Join(tempDir, "foobar"),
-	); err == nil {
+	} else if _, err := os.ReadFile(filepath.Join(tempDir, "foobar")); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := errors.Is(err, fs.ErrNotExist),
-		true; got != want {
+	} else if got, want := errors.Is(err, fs.ErrNotExist), true; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
 
 	g = &Goproxy{}
 	g.init()
-	if err := g.putCache(
-		context.Background(),
-		"foo",
-		strings.NewReader("bar"),
-	); err != nil {
+	if err := g.putCache(context.Background(), "foo", strings.NewReader("bar")); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 }
@@ -1140,43 +917,26 @@ func TestGoproxyPutCacheFile(t *testing.T) {
 
 	g := &Goproxy{Cacher: DirCacher(tempDir)}
 	g.init()
-	if err := g.putCacheFile(
-		context.Background(),
-		"foo",
-		cacheFile.Name(),
-	); err != nil {
+	if err := g.putCacheFile(context.Background(), "foo", cacheFile.Name()); err != nil {
 		t.Fatalf("unexpected error %q", err)
-	} else if b, err := os.ReadFile(filepath.Join(
-		tempDir,
-		"foo",
-	)); err != nil {
+	} else if b, err := os.ReadFile(filepath.Join(tempDir, "foo")); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if got, want := string(b), "bar"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	if err := g.putCacheFile(
-		context.Background(),
-		"bar",
-		filepath.Join(tempDir, "bar-sourcel"),
-	); err == nil {
+	if err := g.putCacheFile(context.Background(), "bar", filepath.Join(tempDir, "bar-sourcel")); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := errors.Is(err, fs.ErrNotExist),
-		true; got != want {
+	} else if got, want := errors.Is(err, fs.ErrNotExist), true; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
 }
 
 func TestGoproxyLogErrorf(t *testing.T) {
 	var errorLoggerBuffer bytes.Buffer
-	g := &Goproxy{
-		ErrorLogger: log.New(&errorLoggerBuffer, "", log.Ldate),
-	}
+	g := &Goproxy{ErrorLogger: log.New(&errorLoggerBuffer, "", log.Ldate)}
 	g.init()
 	g.logErrorf("not found: %s", "invalid version")
-	if got, want := errorLoggerBuffer.String(), fmt.Sprintf(
-		"%s goproxy: not found: invalid version\n",
-		time.Now().Format("2006/01/02"),
-	); got != want {
+	if got, want := errorLoggerBuffer.String(), fmt.Sprintf("%s goproxy: not found: invalid version\n", time.Now().Format("2006/01/02")); got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
@@ -1188,10 +948,7 @@ func TestGoproxyLogErrorf(t *testing.T) {
 	log.SetOutput(&errorLoggerBuffer)
 	defer log.SetOutput(os.Stderr)
 	g.logErrorf("not found: %s", "invalid version")
-	if got, want := errorLoggerBuffer.String(), fmt.Sprintf(
-		"%s goproxy: not found: invalid version\n",
-		time.Now().Format("2006/01/02"),
-	); got != want {
+	if got, want := errorLoggerBuffer.String(), fmt.Sprintf("%s goproxy: not found: invalid version\n", time.Now().Format("2006/01/02")); got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }
@@ -1296,9 +1053,7 @@ func TestWalkGOPROXY(t *testing.T) {
 	onProxy = ""
 	onDirect = false
 	onOff = false
-	if err := walkGOPROXY("https://example.com,direct", func(
-		proxy string,
-	) error {
+	if err := walkGOPROXY("https://example.com,direct", func(proxy string) error {
 		onProxy = proxy
 		return nil
 	}, func() error {
@@ -1320,9 +1075,7 @@ func TestWalkGOPROXY(t *testing.T) {
 	onProxy = ""
 	onDirect = false
 	onOff = false
-	if err := walkGOPROXY("https://example.com,direct", func(
-		proxy string,
-	) error {
+	if err := walkGOPROXY("https://example.com,direct", func(proxy string) error {
 		onProxy = proxy
 		return notFoundError("not found")
 	}, func() error {
@@ -1344,24 +1097,19 @@ func TestWalkGOPROXY(t *testing.T) {
 	onProxy = ""
 	onDirect = false
 	onOff = false
-	if err := walkGOPROXY(
-		"https://example.com|https://alt.example.com",
-		func(proxy string) error {
-			onProxy = proxy
-			if proxy == "https://alt.example.com" {
-				return nil
-			}
-			return errors.New("foobar")
-		},
-		func() error {
-			onDirect = true
+	if err := walkGOPROXY("https://example.com|https://alt.example.com", func(proxy string) error {
+		onProxy = proxy
+		if proxy == "https://alt.example.com" {
 			return nil
-		},
-		func() error {
-			onOff = true
-			return nil
-		},
-	); err != nil {
+		}
+		return errors.New("foobar")
+	}, func() error {
+		onDirect = true
+		return nil
+	}, func() error {
+		onOff = true
+		return nil
+	}); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if got, want := onProxy, "https://alt.example.com"; got != want {
 		t.Errorf("got %q, want %q", got, want)
@@ -1374,9 +1122,7 @@ func TestWalkGOPROXY(t *testing.T) {
 	onProxy = ""
 	onDirect = false
 	onOff = false
-	if err := walkGOPROXY("https://example.com,direct", func(
-		proxy string,
-	) error {
+	if err := walkGOPROXY("https://example.com,direct", func(proxy string) error {
 		onProxy = proxy
 		return errors.New("foobar")
 	}, func() error {
@@ -1423,18 +1169,10 @@ func TestWalkGOPROXY(t *testing.T) {
 }
 
 func TestExponentialBackoffSleep(t *testing.T) {
-	if got, want := exponentialBackoffSleep(
-		100*time.Millisecond,
-		time.Second,
-		0,
-	) <= time.Second, true; got != want {
+	if got, want := exponentialBackoffSleep(100*time.Millisecond, time.Second, 0) <= time.Second, true; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
-	if got, want := exponentialBackoffSleep(
-		time.Minute,
-		time.Hour,
-		100,
-	) <= time.Hour, true; got != want {
+	if got, want := exponentialBackoffSleep(time.Minute, time.Hour, 100) <= time.Hour, true; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
 }
@@ -1443,7 +1181,6 @@ func TestStringSliceContains(t *testing.T) {
 	if !stringSliceContains([]string{"foo", "bar"}, "foo") {
 		t.Error("want true")
 	}
-
 	if stringSliceContains([]string{"foo", "bar"}, "foobar") {
 		t.Error("want false")
 	}

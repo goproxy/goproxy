@@ -41,7 +41,6 @@ func newFetch(g *Goproxy, name, tempDir string) (*fetch, error) {
 		name:    name,
 		tempDir: tempDir,
 	}
-
 	var escapedModulePath string
 	if strings.HasSuffix(name, "/@latest") {
 		escapedModulePath = strings.TrimSuffix(name, "/@latest")
@@ -76,18 +75,13 @@ func newFetch(g *Goproxy, name, tempDir string) (*fetch, error) {
 			f.ops = fetchOpsDownloadZip
 			f.contentType = "application/zip"
 		case "":
-			return nil, fmt.Errorf(
-				"no file extension in filename %q",
-				escapedModuleVersion,
-			)
+			return nil, fmt.Errorf("no file extension in filename %q", escapedModuleVersion)
 		default:
 			return nil, fmt.Errorf("unexpected extension %q", ext)
 		}
 
 		var err error
-		f.moduleVersion, err = module.UnescapeVersion(
-			escapedModuleVersion,
-		)
+		f.moduleVersion, err = module.UnescapeVersion(escapedModuleVersion)
 		if err != nil {
 			return nil, err
 		}
@@ -102,17 +96,13 @@ func newFetch(g *Goproxy, name, tempDir string) (*fetch, error) {
 			}
 		}
 	}
-
 	var err error
 	f.modulePath, err = module.UnescapePath(escapedModulePath)
 	if err != nil {
 		return nil, err
 	}
-
 	f.modAtVer = f.modulePath + "@" + f.moduleVersion
-	f.requiredToVerify = g.goBinEnvGOSUMDB != "off" &&
-		!globsMatchPath(g.goBinEnvGONOSUMDB, f.modulePath)
-
+	f.requiredToVerify = g.goBinEnvGOSUMDB != "off" && !globsMatchPath(g.goBinEnvGONOSUMDB, f.modulePath)
 	return f, nil
 }
 
@@ -121,7 +111,6 @@ func (f *fetch) do(ctx context.Context) (*fetchResult, error) {
 	if globsMatchPath(f.g.goBinEnvGONOPROXY, f.modulePath) {
 		return f.doDirect(ctx)
 	}
-
 	var r *fetchResult
 	if err := walkGOPROXY(f.g.goBinEnvGOPROXY, func(proxy string) error {
 		var err error
@@ -137,15 +126,11 @@ func (f *fetch) do(ctx context.Context) (*fetchResult, error) {
 	}); err != nil {
 		return nil, err
 	}
-
 	return r, nil
 }
 
 // doProxy executes the f via the proxy.
-func (f *fetch) doProxy(
-	ctx context.Context,
-	proxy string,
-) (*fetchResult, error) {
+func (f *fetch) doProxy(ctx context.Context, proxy string) (*fetchResult, error) {
 	proxyURL, err := parseRawURL(proxy)
 	if err != nil {
 		return nil, err
@@ -155,16 +140,9 @@ func (f *fetch) doProxy(
 	if err != nil {
 		return nil, err
 	}
-
-	if err := httpGet(
-		ctx,
-		f.g.httpClient,
-		appendURL(proxyURL, f.name).String(),
-		tempFile,
-	); err != nil {
+	if err := httpGet(ctx, f.g.httpClient, appendURL(proxyURL, f.name).String(), tempFile); err != nil {
 		return nil, err
 	}
-
 	if err := tempFile.Close(); err != nil {
 		return nil, err
 	}
@@ -176,13 +154,9 @@ func (f *fetch) doProxy(
 		if err != nil {
 			return nil, err
 		}
-
 		r.Version, r.Time, err = unmarshalInfo(string(b))
 		if err != nil {
-			return nil, notFoundError(fmt.Sprintf(
-				"invalid info response: %v",
-				err,
-			))
+			return nil, notFoundError(fmt.Sprintf("invalid info response: %v", err))
 		}
 	case fetchOpsList:
 		b, err := os.ReadFile(tempFile.Name())
@@ -195,9 +169,7 @@ func (f *fetch) doProxy(
 		for _, line := range lines {
 			// go/src/cmd/go/internal/modfetch.proxyRepo.Versions
 			lineParts := strings.Fields(line)
-			if len(lineParts) > 0 &&
-				semver.IsValid(lineParts[0]) &&
-				!module.IsPseudoVersion(lineParts[0]) {
+			if len(lineParts) > 0 && semver.IsValid(lineParts[0]) && !module.IsPseudoVersion(lineParts[0]) {
 				r.Versions = append(r.Versions, lineParts[0])
 			}
 		}
@@ -209,48 +181,28 @@ func (f *fetch) doProxy(
 		if err := checkAndFormatInfoFile(tempFile.Name()); err != nil {
 			return nil, err
 		}
-
 		r.Info = tempFile.Name()
 	case fetchOpsDownloadMod:
 		if err := checkModFile(tempFile.Name()); err != nil {
 			return nil, err
 		}
-
 		if f.requiredToVerify {
-			if err := verifyModFile(
-				f.g.sumdbClient,
-				tempFile.Name(),
-				f.modulePath,
-				f.moduleVersion,
-			); err != nil {
+			if err := verifyModFile(f.g.sumdbClient, tempFile.Name(), f.modulePath, f.moduleVersion); err != nil {
 				return nil, err
 			}
 		}
-
 		r.GoMod = tempFile.Name()
 	case fetchOpsDownloadZip:
-		if err := checkZipFile(
-			tempFile.Name(),
-			f.modulePath,
-			f.moduleVersion,
-		); err != nil {
+		if err := checkZipFile(tempFile.Name(), f.modulePath, f.moduleVersion); err != nil {
 			return nil, err
 		}
-
 		if f.requiredToVerify {
-			if err := verifyZipFile(
-				f.g.sumdbClient,
-				tempFile.Name(),
-				f.modulePath,
-				f.moduleVersion,
-			); err != nil {
+			if err := verifyZipFile(f.g.sumdbClient, tempFile.Name(), f.modulePath, f.moduleVersion); err != nil {
 				return nil, err
 			}
 		}
-
 		r.Zip = tempFile.Name()
 	}
-
 	return r, nil
 }
 
@@ -286,7 +238,6 @@ func (f *fetch) doDirect(ctx context.Context) (*fetchResult, error) {
 			if err := json.Unmarshal(output, &goError); err != nil {
 				return nil, err
 			}
-
 			if goError.Error != "" {
 				output = []byte(goError.Error)
 			}
@@ -302,11 +253,9 @@ func (f *fetch) doDirect(ctx context.Context) (*fetchResult, error) {
 				msg += line + "\n"
 			}
 		}
-
 		msg = strings.TrimPrefix(msg, "go: ")
 		msg = strings.TrimPrefix(msg, "go list -m: ")
 		msg = strings.TrimRight(msg, "\n")
-
 		return nil, notFoundError(msg)
 	}
 
@@ -314,7 +263,6 @@ func (f *fetch) doDirect(ctx context.Context) (*fetchResult, error) {
 	if err := json.Unmarshal(stdout, r); err != nil {
 		return nil, err
 	}
-
 	switch f.ops {
 	case fetchOpsList:
 		sort.Slice(r.Versions, func(i, j int) bool {
@@ -324,28 +272,15 @@ func (f *fetch) doDirect(ctx context.Context) (*fetchResult, error) {
 		if err := checkAndFormatInfoFile(r.Info); err != nil {
 			return nil, err
 		}
-
 		if f.requiredToVerify {
-			if err := verifyModFile(
-				f.g.sumdbClient,
-				r.GoMod,
-				f.modulePath,
-				f.moduleVersion,
-			); err != nil {
+			if err := verifyModFile(f.g.sumdbClient, r.GoMod, f.modulePath, f.moduleVersion); err != nil {
 				return nil, err
 			}
-
-			if err := verifyZipFile(
-				f.g.sumdbClient,
-				r.Zip,
-				f.modulePath,
-				f.moduleVersion,
-			); err != nil {
+			if err := verifyZipFile(f.g.sumdbClient, r.Zip, f.modulePath, f.moduleVersion); err != nil {
 				return nil, err
 			}
 		}
 	}
-
 	return r, nil
 }
 
@@ -376,7 +311,6 @@ func (fo fetchOps) String() string {
 	case fetchOpsDownloadZip:
 		return "download zip"
 	}
-
 	return "invalid"
 }
 
@@ -414,17 +348,12 @@ func (fr *fetchResult) Open() (io.ReadSeekCloser, error) {
 	case fetchOpsDownloadZip:
 		return os.Open(fr.Zip)
 	}
-
 	return nil, errors.New("invalid fetch operation")
 }
 
 // marshalInfo marshals the version and t as info.
 func marshalInfo(version string, t time.Time) string {
-	return fmt.Sprintf(
-		`{"Version":%q,"Time":%q}`,
-		version,
-		t.UTC().Format(time.RFC3339Nano),
-	)
+	return fmt.Sprintf(`{"Version":%q,"Time":%q}`, version, t.UTC().Format(time.RFC3339Nano))
 }
 
 // unmarshalInfo unmarshals the s as info and returns version and time.
@@ -433,7 +362,6 @@ func unmarshalInfo(s string) (string, time.Time, error) {
 		Version string
 		Time    time.Time
 	}
-
 	if err := json.Unmarshal([]byte(s), &info); err != nil {
 		return "", time.Time{}, err
 	} else if !semver.IsValid(info.Version) {
@@ -441,7 +369,6 @@ func unmarshalInfo(s string) (string, time.Time, error) {
 	} else if info.Time.IsZero() {
 		return "", time.Time{}, errors.New("zero time")
 	}
-
 	return info.Version, info.Time, nil
 }
 
@@ -451,16 +378,13 @@ func checkAndFormatInfoFile(name string) error {
 	if err != nil {
 		return err
 	}
-
 	infoVersion, infoTime, err := unmarshalInfo(string(b))
 	if err != nil {
 		return notFoundError(fmt.Sprintf("invalid info file: %v", err))
 	}
-
 	if info := marshalInfo(infoVersion, infoTime); info != string(b) {
 		return os.WriteFile(name, []byte(info), 0o600)
 	}
-
 	return nil
 }
 
@@ -474,14 +398,10 @@ func checkModFile(name string) error {
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		if strings.HasPrefix(
-			strings.TrimSpace(scanner.Text()),
-			"module",
-		) {
+		if strings.HasPrefix(strings.TrimSpace(scanner.Text()), "module") {
 			return nil
 		}
 	}
-
 	if err := scanner.Err(); err != nil {
 		return err
 	}
@@ -491,45 +411,20 @@ func checkModFile(name string) error {
 
 // verifyModFile uses the sumdbClient to verify the mod file targeted by the
 // name with the modulePath and moduleVersion.
-func verifyModFile(
-	sumdbClient *sumdb.Client,
-	name string,
-	modulePath string,
-	moduleVersion string,
-) error {
-	gosumLines, err := sumdbClient.Lookup(
-		modulePath,
-		moduleVersion+"/go.mod",
-	)
+func verifyModFile(sumdbClient *sumdb.Client, name, modulePath, moduleVersion string) error {
+	gosumLines, err := sumdbClient.Lookup(modulePath, moduleVersion+"/go.mod")
 	if err != nil {
 		return err
 	}
 
-	modHash, err := dirhash.DefaultHash(
-		[]string{"go.mod"},
-		func(string) (io.ReadCloser, error) {
-			return os.Open(name)
-		},
-	)
+	modHash, err := dirhash.DefaultHash([]string{"go.mod"}, func(string) (io.ReadCloser, error) {
+		return os.Open(name)
+	})
 	if err != nil {
 		return err
 	}
-
-	if !stringSliceContains(
-		gosumLines,
-		fmt.Sprintf(
-			"%s %s/go.mod %s",
-			modulePath,
-			moduleVersion,
-			modHash,
-		),
-	) {
-		return notFoundError(fmt.Sprintf(
-			"%s@%s: invalid version: untrusted revision %s",
-			modulePath,
-			moduleVersion,
-			moduleVersion,
-		))
+	if !stringSliceContains(gosumLines, fmt.Sprintf("%s %s/go.mod %s", modulePath, moduleVersion, modHash)) {
+		return notFoundError(fmt.Sprintf("%s@%s: invalid version: untrusted revision %s", modulePath, moduleVersion, moduleVersion))
 	}
 
 	return nil
@@ -538,27 +433,15 @@ func verifyModFile(
 // checkZipFile checks the zip file targeted by the name with the modulePath and
 // moduleVersion.
 func checkZipFile(name, modulePath, moduleVersion string) error {
-	if _, err := zip.CheckZip(
-		module.Version{
-			Path:    modulePath,
-			Version: moduleVersion,
-		},
-		name,
-	); err != nil {
+	if _, err := zip.CheckZip(module.Version{Path: modulePath, Version: moduleVersion}, name); err != nil {
 		return notFoundError(fmt.Sprintf("invalid zip file: %v", err))
 	}
-
 	return nil
 }
 
 // verifyZipFile uses the sumdbClient to verify the zip file targeted by the
 // name with the modulePath and moduleVersion.
-func verifyZipFile(
-	sumdbClient *sumdb.Client,
-	name string,
-	modulePath string,
-	moduleVersion string,
-) error {
+func verifyZipFile(sumdbClient *sumdb.Client, name, modulePath, moduleVersion string) error {
 	gosumLines, err := sumdbClient.Lookup(modulePath, moduleVersion)
 	if err != nil {
 		return err
@@ -568,17 +451,8 @@ func verifyZipFile(
 	if err != nil {
 		return err
 	}
-
-	if !stringSliceContains(
-		gosumLines,
-		fmt.Sprintf("%s %s %s", modulePath, moduleVersion, zipHash),
-	) {
-		return notFoundError(fmt.Sprintf(
-			"%s@%s: invalid version: untrusted revision %s",
-			modulePath,
-			moduleVersion,
-			moduleVersion,
-		))
+	if !stringSliceContains(gosumLines, fmt.Sprintf("%s %s %s", modulePath, moduleVersion, zipHash)) {
+		return notFoundError(fmt.Sprintf("%s@%s: invalid version: untrusted revision %s", modulePath, moduleVersion, moduleVersion))
 	}
 
 	return nil

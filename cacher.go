@@ -8,8 +8,7 @@ import (
 	"path/filepath"
 )
 
-// Cacher defines a set of intuitive methods used to cache module files for the
-// [Goproxy].
+// Cacher defines a set of intuitive methods used to cache module files for the [Goproxy].
 type Cacher interface {
 	// Get gets the matched cache for the name. It returns the
 	// [fs.ErrNotExist] if not found.
@@ -39,20 +38,15 @@ type Cacher interface {
 type DirCacher string
 
 // Get implements the [Cacher].
-func (dc DirCacher) Get(
-	ctx context.Context,
-	name string,
-) (io.ReadCloser, error) {
+func (dc DirCacher) Get(ctx context.Context, name string) (io.ReadCloser, error) {
 	f, err := os.Open(filepath.Join(string(dc), filepath.FromSlash(name)))
 	if err != nil {
 		return nil, err
 	}
-
 	fi, err := f.Stat()
 	if err != nil {
 		return nil, err
 	}
-
 	return &struct {
 		*os.File
 		os.FileInfo
@@ -60,11 +54,7 @@ func (dc DirCacher) Get(
 }
 
 // Put implements the [Cacher].
-func (dc DirCacher) Put(
-	ctx context.Context,
-	name string,
-	content io.ReadSeeker,
-) error {
+func (dc DirCacher) Put(ctx context.Context, name string, content io.ReadSeeker) error {
 	file := filepath.Join(string(dc), filepath.FromSlash(name))
 
 	dir := filepath.Dir(file)
@@ -72,19 +62,14 @@ func (dc DirCacher) Put(
 		return err
 	}
 
-	f, err := os.CreateTemp(dir, fmt.Sprintf(
-		".%s.tmp*",
-		filepath.Base(file),
-	))
+	f, err := os.CreateTemp(dir, fmt.Sprintf(".%s.tmp*", filepath.Base(file)))
 	if err != nil {
 		return err
 	}
 	defer os.Remove(f.Name())
-
 	if _, err := io.Copy(f, content); err != nil {
 		return err
 	}
-
 	if err := f.Close(); err != nil {
 		return err
 	}

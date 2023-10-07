@@ -30,59 +30,36 @@ func TestDirCacher(t *testing.T) {
 
 	dirCacher := DirCacher(tempDir)
 
-	if rc, err := dirCacher.Get(
-		context.Background(),
-		"a/b/c",
-	); !errors.Is(err, fs.ErrNotExist) {
+	if rc, err := dirCacher.Get(context.Background(), "a/b/c"); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("got error %q, want error %q", err, fs.ErrNotExist)
 	} else if rc != nil {
 		t.Errorf("got %v, want nil", rc)
 	}
 
-	if err := dirCacher.Put(
-		context.Background(),
-		"a/b/c",
-		strings.NewReader("foobar"),
-	); err != nil {
+	if err := dirCacher.Put(context.Background(), "a/b/c", strings.NewReader("foobar")); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 
-	rc, err := dirCacher.Get(context.Background(), "a/b/c")
-	if err != nil {
+	if rc, err := dirCacher.Get(context.Background(), "a/b/c"); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if rc == nil {
 		t.Fatal("unexpected nil")
-	}
-
-	if b, err := io.ReadAll(rc); err != nil {
+	} else if b, err := io.ReadAll(rc); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if want := "foobar"; string(b) != want {
 		t.Errorf("got %q, want %q", b, want)
-	}
-
-	if err := rc.Close(); err != nil {
+	} else if err := rc.Close(); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 
-	if err := dirCacher.Put(
-		context.Background(),
-		"d/e/f",
-		&errorReadSeeker{},
-	); err == nil {
+	if err := dirCacher.Put(context.Background(), "d/e/f", &errorReadSeeker{}); err == nil {
 		t.Fatal("expected error")
 	} else if got, want := err.Error(), "cannot read"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
-	dirCacher = DirCacher(filepath.Join(
-		tempDir,
-		filepath.FromSlash("a/b/c"),
-	))
-	if err := dirCacher.Put(
-		context.Background(),
-		"d/e/f",
-		strings.NewReader("foobar"),
-	); err == nil {
+	dirCacher = DirCacher(filepath.Join(tempDir, filepath.FromSlash("a/b/c")))
+	if err := dirCacher.Put(context.Background(), "d/e/f", strings.NewReader("foobar")); err == nil {
 		t.Fatal("expected error")
 	}
 }
