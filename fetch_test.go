@@ -698,6 +698,7 @@ invalid
 }
 
 func TestFetchDoDirect(t *testing.T) {
+	t.Setenv("GOFLAGS", "-modcacherw")
 	gopathDir := filepath.Join(t.TempDir(), "gopath")
 	staticGOPROXYDir := filepath.Join(t.TempDir(), "static-goproxy")
 	if err := os.MkdirAll(filepath.Join(staticGOPROXYDir, "example.com", "@v"), 0o755); err != nil {

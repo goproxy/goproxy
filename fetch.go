@@ -216,11 +216,11 @@ func (f *fetch) doDirect(ctx context.Context) (*fetchResult, error) {
 	var args []string
 	switch f.ops {
 	case fetchOpsResolve:
-		args = []string{"list", "-modcacherw", "-json", "-m", f.modAtVer}
+		args = []string{"list", "-json", "-m", f.modAtVer}
 	case fetchOpsList:
-		args = []string{"list", "-modcacherw", "-json", "-m", "-versions", f.modAtVer}
+		args = []string{"list", "-json", "-m", "-versions", f.modAtVer}
 	case fetchOpsDownloadInfo, fetchOpsDownloadMod, fetchOpsDownloadZip:
-		args = []string{"mod", "download", "-modcacherw", "-json", f.modAtVer}
+		args = []string{"mod", "download", "-json", f.modAtVer}
 	}
 
 	cmd := exec.CommandContext(ctx, f.g.goBinName, args...)
