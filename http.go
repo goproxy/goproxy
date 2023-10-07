@@ -44,7 +44,7 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 	for attempt := 0; attempt < 10; attempt++ {
 		if attempt > 0 {
 			select {
-			case <-time.After(exponentialBackoffSleep(100*time.Millisecond, time.Second, attempt)):
+			case <-time.After(backoffSleep(100*time.Millisecond, time.Second, attempt)):
 			case <-ctx.Done():
 				return lastError
 			}

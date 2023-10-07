@@ -34,9 +34,9 @@ func TestNotFoundError(t *testing.T) {
 }
 
 func TestHTTPGet(t *testing.T) {
-	savedExponentialBackoffRand := exponentialBackoffRand
-	exponentialBackoffRand = rand.New(rand.NewSource(1))
-	defer func() { exponentialBackoffRand = savedExponentialBackoffRand }()
+	savedBackoffRand := backoffRand
+	backoffRand = rand.New(rand.NewSource(1))
+	defer func() { backoffRand = savedBackoffRand }()
 
 	handlerFunc := func(rw http.ResponseWriter, req *http.Request) {
 		fmt.Fprint(rw, "foobar")

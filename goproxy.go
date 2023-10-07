@@ -575,13 +575,13 @@ func walkGOPROXY(goproxy string, onProxy func(proxy string) error, onDirect, onO
 }
 
 var (
-	exponentialBackoffRand  = rand.New(rand.NewSource(time.Now().UnixNano()))
-	exponentialBackoffMutex sync.Mutex
+	backoffRand      = rand.New(rand.NewSource(time.Now().UnixNano()))
+	backoffRandMutex sync.Mutex
 )
 
-// exponentialBackoffSleep computes the exponential backoff sleep according to
+// backoffSleep computes the exponential backoff sleep according to
 // https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/.
-func exponentialBackoffSleep(base time.Duration, cap time.Duration, attempt int) time.Duration {
+func backoffSleep(base time.Duration, cap time.Duration, attempt int) time.Duration {
 	var pow time.Duration
 	if attempt < 63 {
 		pow = 1 << attempt
@@ -594,9 +594,9 @@ func exponentialBackoffSleep(base time.Duration, cap time.Duration, attempt int)
 		sleep = cap
 	}
 
-	exponentialBackoffMutex.Lock()
-	sleep = time.Duration(exponentialBackoffRand.Int63n(int64(sleep)))
-	exponentialBackoffMutex.Unlock()
+	backoffRandMutex.Lock()
+	sleep = time.Duration(backoffRand.Int63n(int64(sleep)))
+	backoffRandMutex.Unlock()
 
 	return sleep
 }
