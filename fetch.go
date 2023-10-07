@@ -216,11 +216,11 @@ func (f *fetch) doDirect(ctx context.Context) (*fetchResult, error) {
 	var args []string
 	switch f.ops {
 	case fetchOpsResolve:
-		args = []string{"list", "-json", "-m", f.modAtVer}
+		args = []string{"list", "-modcacherw", "-json", "-m", f.modAtVer}
 	case fetchOpsList:
-		args = []string{"list", "-json", "-m", "-versions", f.modAtVer}
+		args = []string{"list", "-modcacherw", "-json", "-m", "-versions", f.modAtVer}
 	case fetchOpsDownloadInfo, fetchOpsDownloadMod, fetchOpsDownloadZip:
-		args = []string{"mod", "download", "-json", f.modAtVer}
+		args = []string{"mod", "download", "-modcacherw", "-json", f.modAtVer}
 	}
 
 	cmd := exec.CommandContext(ctx, f.g.goBinName, args...)
@@ -383,7 +383,7 @@ func checkAndFormatInfoFile(name string) error {
 		return notFoundError(fmt.Sprintf("invalid info file: %v", err))
 	}
 	if info := marshalInfo(infoVersion, infoTime); info != string(b) {
-		return os.WriteFile(name, []byte(info), 0o600)
+		return os.WriteFile(name, []byte(info), 0o644)
 	}
 	return nil
 }
