@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -22,13 +21,7 @@ func (errorReadSeeker) Seek(int64, int) (int64, error) {
 }
 
 func TestDirCacher(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "goproxy.TestDirCacher")
-	if err != nil {
-		t.Fatalf("unexpected error %q", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	dirCacher := DirCacher(tempDir)
+	dirCacher := DirCacher(t.TempDir())
 
 	if rc, err := dirCacher.Get(context.Background(), "a/b/c"); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("got error %q, want error %q", err, fs.ErrNotExist)
@@ -58,7 +51,7 @@ func TestDirCacher(t *testing.T) {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
-	dirCacher = DirCacher(filepath.Join(tempDir, filepath.FromSlash("a/b/c")))
+	dirCacher = DirCacher(filepath.Join(string(dirCacher), filepath.FromSlash("a/b/c")))
 	if err := dirCacher.Put(context.Background(), "d/e/f", strings.NewReader("foobar")); err == nil {
 		t.Fatal("expected error")
 	}

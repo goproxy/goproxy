@@ -260,12 +260,6 @@ func TestNewFetch(t *testing.T) {
 }
 
 func TestFetchDo(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "goproxy.TestFetchDo")
-	if err != nil {
-		t.Fatalf("unexpected error %q", err)
-	}
-	defer os.RemoveAll(tempDir)
-
 	infoTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 	goproxyHandlerFunc := func(rw http.ResponseWriter, req *http.Request) {
 		responseSuccess(rw, req, strings.NewReader(marshalInfo("v1.0.0", infoTime)), "application/json; charset=utf-8", 60)
@@ -282,7 +276,7 @@ func TestFetchDo(t *testing.T) {
 		},
 	}
 	g.init()
-	f, err := newFetch(g, "example.com/@latest", tempDir)
+	f, err := newFetch(g, "example.com/@latest", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -297,7 +291,7 @@ func TestFetchDo(t *testing.T) {
 
 	g = &Goproxy{
 		GoBinEnv: []string{
-			"GOPATH=" + tempDir,
+			"GOPATH=" + t.TempDir(),
 			"GOPROXY=off",
 			"GONOPROXY=example.com",
 			"GOSUMDB=off",
@@ -305,7 +299,7 @@ func TestFetchDo(t *testing.T) {
 	}
 	g.init()
 	g.goBinEnv = append(g.goBinEnv, "GOPROXY=off")
-	f, err = newFetch(g, "example.com/@latest", tempDir)
+	f, err = newFetch(g, "example.com/@latest", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -318,14 +312,14 @@ func TestFetchDo(t *testing.T) {
 	}
 	g = &Goproxy{
 		GoBinEnv: []string{
-			"GOPATH=" + tempDir,
+			"GOPATH=" + t.TempDir(),
 			"GOPROXY=" + goproxyServer.URL + ",direct",
 			"GOSUMDB=off",
 		},
 	}
 	g.init()
 	g.goBinEnv = append(g.goBinEnv, "GOPROXY=off")
-	f, err = newFetch(g, "example.com/@latest", tempDir)
+	f, err = newFetch(g, "example.com/@latest", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -340,7 +334,7 @@ func TestFetchDo(t *testing.T) {
 		},
 	}
 	g.init()
-	f, err = newFetch(g, "example.com/@latest", tempDir)
+	f, err = newFetch(g, "example.com/@latest", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -350,14 +344,7 @@ func TestFetchDo(t *testing.T) {
 }
 
 func TestFetchDoProxy(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "goproxy.TestFetchDoProxy")
-	if err != nil {
-		t.Fatalf("unexpected error %q", err)
-	}
-	defer os.RemoveAll(tempDir)
-
 	now := time.Now()
-
 	handlerFunc := func(rw http.ResponseWriter, req *http.Request) {
 		responseSuccess(rw, req, strings.NewReader(marshalInfo("v1.0.0", now)), "application/json; charset=utf-8", 60)
 	}
@@ -370,7 +357,7 @@ func TestFetchDoProxy(t *testing.T) {
 		GoBinEnv: []string{"GOSUMDB=off"},
 	}
 	g.init()
-	f, err := newFetch(g, "example.com/@latest", tempDir)
+	f, err := newFetch(g, "example.com/@latest", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -392,7 +379,7 @@ func TestFetchDoProxy(t *testing.T) {
 		GoBinEnv: []string{"GOSUMDB=off"},
 	}
 	g.init()
-	f, err = newFetch(g, "example.com/@latest", tempDir)
+	f, err = newFetch(g, "example.com/@latest", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -414,7 +401,7 @@ invalid
 		GoBinEnv: []string{"GOSUMDB=off"},
 	}
 	g.init()
-	f, err = newFetch(g, "example.com/@v/list", tempDir)
+	f, err = newFetch(g, "example.com/@v/list", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -433,7 +420,7 @@ invalid
 		GoBinEnv: []string{"GOSUMDB=off"},
 	}
 	g.init()
-	f, err = newFetch(g, "example.com/@v/v1.0.0.info", tempDir)
+	f, err = newFetch(g, "example.com/@v/v1.0.0.info", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -454,7 +441,7 @@ invalid
 		GoBinEnv: []string{"GOSUMDB=off"},
 	}
 	g.init()
-	f, err = newFetch(g, "example.com/@v/v1.0.0.info", tempDir)
+	f, err = newFetch(g, "example.com/@v/v1.0.0.info", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -471,7 +458,7 @@ invalid
 		GoBinEnv: []string{"GOSUMDB=off"},
 	}
 	g.init()
-	f, err = newFetch(g, "example.com/@v/v1.0.0.mod", tempDir)
+	f, err = newFetch(g, "example.com/@v/v1.0.0.mod", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -485,12 +472,12 @@ invalid
 		t.Errorf("got %q, want %q", got, want)
 	}
 
-	modFile := filepath.Join(tempDir, "go.mod")
-	if err := os.WriteFile(modFile, []byte("module example.com"), 0o600); err != nil {
+	modFile := filepath.Join(t.TempDir(), "go.mod")
+	if err := os.WriteFile(modFile, []byte("module example.com"), 0o644); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 
-	dirHash, err := dirhash.HashDir(tempDir, "example.com@v1.0.0", dirhash.DefaultHash)
+	dirHash, err := dirhash.HashDir(t.TempDir(), "example.com@v1.0.0", dirhash.DefaultHash)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -520,7 +507,7 @@ invalid
 		"GOSUMDB=" + vkey + " " + sumdbServer.URL,
 	}}
 	g.init()
-	f, err = newFetch(g, "example.com/@v/v1.0.0.mod", tempDir)
+	f, err = newFetch(g, "example.com/@v/v1.0.0.mod", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -536,7 +523,7 @@ invalid
 	gosum = func(modulePath, moduleVersion string) ([]byte, error) {
 		return []byte(fmt.Sprintf("%s %s %s\n%s %s/go.mod %s\n", modulePath, "v1.0.0", dirHash, modulePath, "v1.0.0", modHash)), nil
 	}
-	f, err = newFetch(g, "example.com/@v/v1.1.0.mod", tempDir)
+	f, err = newFetch(g, "example.com/@v/v1.1.0.mod", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -553,7 +540,7 @@ invalid
 		GoBinEnv: []string{"GOSUMDB=off"},
 	}
 	g.init()
-	f, err = newFetch(g, "example.com/@v/v1.0.0.mod", tempDir)
+	f, err = newFetch(g, "example.com/@v/v1.0.0.mod", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -563,7 +550,7 @@ invalid
 		t.Errorf("got %q, want %q", got, want)
 	}
 
-	tempFile, err := os.CreateTemp(tempDir, "")
+	tempFile, err := os.CreateTemp(t.TempDir(), "")
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -589,7 +576,7 @@ invalid
 		GoBinEnv: []string{"GOSUMDB=off"},
 	}
 	g.init()
-	f, err = newFetch(g, "example.com/@v/v1.2.0.zip", tempDir)
+	f, err = newFetch(g, "example.com/@v/v1.2.0.zip", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -613,7 +600,7 @@ invalid
 		"GOSUMDB=" + vkey + " " + sumdbServer.URL,
 	}}
 	g.init()
-	f, err = newFetch(g, "example.com/@v/v1.2.0.zip", tempDir)
+	f, err = newFetch(g, "example.com/@v/v1.2.0.zip", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -627,7 +614,7 @@ invalid
 	gosum = func(modulePath, moduleVersion string) ([]byte, error) {
 		return []byte(fmt.Sprintf("%s %s %s\n%s %s/go.mod %s\n", modulePath, "v1.2.0", dirHash, modulePath, "v1.2.0", modHash)), nil
 	}
-	tempFile, err = os.OpenFile(tempFile.Name(), os.O_WRONLY|os.O_TRUNC, 0o600)
+	tempFile, err = os.OpenFile(tempFile.Name(), os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -641,7 +628,7 @@ invalid
 	} else if err := tempFile.Close(); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	f, err = newFetch(g, "example.com/@v/v1.3.0.zip", tempDir)
+	f, err = newFetch(g, "example.com/@v/v1.3.0.zip", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -658,7 +645,7 @@ invalid
 		GoBinEnv: []string{"GOSUMDB=off"},
 	}
 	g.init()
-	f, err = newFetch(g, "example.com/@v/v1.0.0.zip", tempDir)
+	f, err = newFetch(g, "example.com/@v/v1.0.0.zip", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -672,7 +659,7 @@ invalid
 		GoBinEnv: []string{"GOSUMDB=off"},
 	}
 	g.init()
-	f, err = newFetch(g, "example.com/@latest", tempDir)
+	f, err = newFetch(g, "example.com/@latest", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -684,7 +671,7 @@ invalid
 		GoBinEnv: []string{"GOSUMDB=off"},
 	}
 	g.init()
-	f, err = newFetch(g, "example.com/@latest", filepath.Join(tempDir, "_"))
+	f, err = newFetch(g, "example.com/@latest", filepath.Join(t.TempDir(), "_"))
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -699,7 +686,7 @@ invalid
 		GoBinEnv: []string{"GOSUMDB=off"},
 	}
 	g.init()
-	f, err = newFetch(g, "example.com/@latest", tempDir)
+	f, err = newFetch(g, "example.com/@latest", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -711,37 +698,30 @@ invalid
 }
 
 func TestFetchDoDirect(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "goproxy.TestFetchDoDirect")
-	if err != nil {
-		t.Fatalf("unexpected error %q", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	gopathDir := filepath.Join(tempDir, "gopath")
-
-	staticGOPROXYDir := filepath.Join(tempDir, "static-goproxy")
-	if err := os.MkdirAll(filepath.Join(staticGOPROXYDir, "example.com", "@v"), 0o700); err != nil {
+	gopathDir := filepath.Join(t.TempDir(), "gopath")
+	staticGOPROXYDir := filepath.Join(t.TempDir(), "static-goproxy")
+	if err := os.MkdirAll(filepath.Join(staticGOPROXYDir, "example.com", "@v"), 0o755); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 
 	infoTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
-	if err := os.WriteFile(filepath.Join(staticGOPROXYDir, "example.com", "@latest"), []byte(marshalInfo("v1.1.0", infoTime)), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(staticGOPROXYDir, "example.com", "@latest"), []byte(marshalInfo("v1.1.0", infoTime)), 0o644); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	if err := os.WriteFile(filepath.Join(staticGOPROXYDir, "example.com", "@v", "list"), []byte("v1.1.0\nv1.0.0"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(staticGOPROXYDir, "example.com", "@v", "list"), []byte("v1.1.0\nv1.0.0"), 0o644); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	if err := os.WriteFile(filepath.Join(staticGOPROXYDir, "example.com", "@v", "v1.0.0.info"), []byte(marshalInfo("v1.0.0", infoTime)), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(staticGOPROXYDir, "example.com", "@v", "v1.0.0.info"), []byte(marshalInfo("v1.0.0", infoTime)), 0o644); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	if err := os.WriteFile(filepath.Join(staticGOPROXYDir, "example.com", "@v", "v1.1.0.info"), []byte(marshalInfo("v1.1.0", infoTime.Add(time.Hour))), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(staticGOPROXYDir, "example.com", "@v", "v1.1.0.info"), []byte(marshalInfo("v1.1.0", infoTime.Add(time.Hour))), 0o644); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 	mod := "module example.com"
-	if err := os.WriteFile(filepath.Join(staticGOPROXYDir, "example.com", "@v", "v1.0.0.mod"), []byte(mod), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(staticGOPROXYDir, "example.com", "@v", "v1.0.0.mod"), []byte(mod), 0o644); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	if err := os.WriteFile(filepath.Join(staticGOPROXYDir, "example.com", "@v", "v1.1.0.mod"), []byte(mod), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(staticGOPROXYDir, "example.com", "@v", "v1.1.0.mod"), []byte(mod), 0o644); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 	zipFile, err := os.Create(filepath.Join(staticGOPROXYDir, "example.com", "@v", "v1.0.0.zip"))
@@ -762,7 +742,7 @@ func TestFetchDoDirect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	if err := os.WriteFile(filepath.Join(staticGOPROXYDir, "example.com", "@v", "v1.1.0.zip"), zipFileBytes, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(staticGOPROXYDir, "example.com", "@v", "v1.1.0.zip"), zipFileBytes, 0o644); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 
@@ -784,7 +764,7 @@ func TestFetchDoDirect(t *testing.T) {
 	}
 	g.init()
 	g.goBinEnv = append(g.goBinEnv, "GOPROXY="+goproxyServer.URL)
-	f, err := newFetch(g, "example.com/@latest", tempDir)
+	f, err := newFetch(g, "example.com/@latest", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -796,7 +776,7 @@ func TestFetchDoDirect(t *testing.T) {
 	} else if got, want := fr.Time.String(), infoTime.Add(time.Hour).String(); got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	f, err = newFetch(g, "example.com/@v/list", tempDir)
+	f, err = newFetch(g, "example.com/@v/list", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -806,7 +786,7 @@ func TestFetchDoDirect(t *testing.T) {
 	} else if got, want := strings.Join(fr.Versions, "\n"), "v1.0.0\nv1.1.0"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	f, err = newFetch(g, "example.com/@v/v1.0.0.info", tempDir)
+	f, err = newFetch(g, "example.com/@v/v1.0.0.info", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -816,7 +796,7 @@ func TestFetchDoDirect(t *testing.T) {
 	} else if fr.Info == "" {
 		t.Fatal("unexpected empty")
 	}
-	f, err = newFetch(g, "example.com/@v/v1.0.0.mod", tempDir)
+	f, err = newFetch(g, "example.com/@v/v1.0.0.mod", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -826,7 +806,7 @@ func TestFetchDoDirect(t *testing.T) {
 	} else if fr.GoMod == "" {
 		t.Fatal("unexpected empty")
 	}
-	f, err = newFetch(g, "example.com/@v/v1.0.0.zip", tempDir)
+	f, err = newFetch(g, "example.com/@v/v1.0.0.zip", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -836,14 +816,14 @@ func TestFetchDoDirect(t *testing.T) {
 	} else if fr.Zip == "" {
 		t.Fatal("unexpected empty")
 	}
-	f, err = newFetch(g, "example.com/@v/v1.1.0.info", tempDir)
+	f, err = newFetch(g, "example.com/@v/v1.1.0.info", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 	if _, err := f.doDirect(context.Background()); err == nil {
 		t.Fatal("expected error")
 	}
-	f, err = newFetch(g, "example.com/@v/v1.0.0.info", tempDir)
+	f, err = newFetch(g, "example.com/@v/v1.0.0.info", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -852,7 +832,7 @@ func TestFetchDoDirect(t *testing.T) {
 	if _, err := f.doDirect(canceledCtx); err == nil {
 		t.Fatal("expected error")
 	}
-	f, err = newFetch(g, "example.com/@v/v1.0.0.info", tempDir)
+	f, err = newFetch(g, "example.com/@v/v1.0.0.info", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -861,14 +841,14 @@ func TestFetchDoDirect(t *testing.T) {
 	if _, err := f.doDirect(timedOutCtx); err == nil {
 		t.Fatal("expected error")
 	}
-	f, err = newFetch(g, "example.com/@v/v1.2.0.info", tempDir)
+	f, err = newFetch(g, "example.com/@v/v1.2.0.info", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 	if _, err := f.doDirect(context.Background()); err == nil {
 		t.Fatal("expected error")
 	}
-	f, err = newFetch(g, "example.com/@v/v1.0.0.info", tempDir)
+	f, err = newFetch(g, "example.com/@v/v1.0.0.info", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -913,7 +893,7 @@ func TestFetchDoDirect(t *testing.T) {
 	}
 	g.init()
 	g.goBinEnv = append(g.goBinEnv, "GOPROXY="+goproxyServer.URL)
-	f, err = newFetch(g, "example.com/@v/v1.0.0.info", tempDir)
+	f, err = newFetch(g, "example.com/@v/v1.0.0.info", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -938,7 +918,7 @@ func TestFetchDoDirect(t *testing.T) {
 	}
 	g.init()
 	g.goBinEnv = append(g.goBinEnv, "GOPROXY="+goproxyServer.URL)
-	f, err = newFetch(g, "example.com/@v/v1.0.0.info", tempDir)
+	f, err = newFetch(g, "example.com/@v/v1.0.0.info", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -960,7 +940,7 @@ func TestFetchDoDirect(t *testing.T) {
 	}
 	g.init()
 	g.goBinEnv = append(g.goBinEnv, "GOPROXY="+goproxyServer.URL)
-	f, err = newFetch(g, "example.com/@v/v1.0.0.info", tempDir)
+	f, err = newFetch(g, "example.com/@v/v1.0.0.info", t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -1038,11 +1018,10 @@ func TestFetchResultOpen(t *testing.T) {
 		t.Errorf("got %q, want %q", got, versionList)
 	}
 
-	tempFile, err := os.CreateTemp("", "goproxy-test")
+	tempFile, err := os.CreateTemp(t.TempDir(), "")
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	defer os.Remove(tempFile.Name())
 	if _, err := tempFile.WriteString(resolvedInfo); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if err := tempFile.Close(); err != nil {
@@ -1062,7 +1041,7 @@ func TestFetchResultOpen(t *testing.T) {
 		t.Errorf("got %q, want %q", got, resolvedInfo)
 	}
 
-	tempFile, err = os.OpenFile(tempFile.Name(), os.O_RDWR|os.O_TRUNC, 0o600)
+	tempFile, err = os.OpenFile(tempFile.Name(), os.O_RDWR|os.O_TRUNC, 0o644)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if _, err := tempFile.WriteString(goMod); err != nil {
@@ -1084,7 +1063,7 @@ func TestFetchResultOpen(t *testing.T) {
 		t.Errorf("got %q, want %q", got, goMod)
 	}
 
-	tempFile, err = os.OpenFile(tempFile.Name(), os.O_RDWR|os.O_TRUNC, 0o600)
+	tempFile, err = os.OpenFile(tempFile.Name(), os.O_RDWR|os.O_TRUNC, 0o644)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if _, err := tempFile.WriteString("zip"); err != nil {
@@ -1155,11 +1134,10 @@ func TestUnmarshalInfo(t *testing.T) {
 }
 
 func TestCheckAndFormatInfoFile(t *testing.T) {
-	tempFile, err := os.CreateTemp("", "goproxy.TestCheckAndFormatInfoFile")
+	tempFile, err := os.CreateTemp(t.TempDir(), "")
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	defer os.Remove(tempFile.Name())
 	if _, err := tempFile.WriteString("{}"); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if err := tempFile.Close(); err != nil {
@@ -1171,7 +1149,7 @@ func TestCheckAndFormatInfoFile(t *testing.T) {
 	}
 
 	wantInfo := `{"Version":"v1.0.0","Time":"2000-01-01T00:00:00Z"}`
-	if err := os.WriteFile(tempFile.Name(), []byte(wantInfo), 0o600); err != nil {
+	if err := os.WriteFile(tempFile.Name(), []byte(wantInfo), 0o644); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if err := checkAndFormatInfoFile(tempFile.Name()); err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -1181,7 +1159,7 @@ func TestCheckAndFormatInfoFile(t *testing.T) {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
-	if err := os.WriteFile(tempFile.Name(), []byte(`{"Version":"v1.0.0","Time":"2000-01-01T01:00:00+01:00"}`), 0o600); err != nil {
+	if err := os.WriteFile(tempFile.Name(), []byte(`{"Version":"v1.0.0","Time":"2000-01-01T01:00:00+01:00"}`), 0o644); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if err := checkAndFormatInfoFile(tempFile.Name()); err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -1201,11 +1179,10 @@ func TestCheckAndFormatInfoFile(t *testing.T) {
 }
 
 func TestCheckModFile(t *testing.T) {
-	tempFile, err := os.CreateTemp("", "goproxy.TestCheckModFile")
+	tempFile, err := os.CreateTemp(t.TempDir(), "")
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	defer os.Remove(tempFile.Name())
 	if err := tempFile.Close(); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if err := checkModFile(tempFile.Name()); err == nil {
@@ -1214,13 +1191,13 @@ func TestCheckModFile(t *testing.T) {
 		t.Errorf("got %v, want %v", got, want)
 	}
 
-	if err := os.WriteFile(tempFile.Name(), []byte("module"), 0o600); err != nil {
+	if err := os.WriteFile(tempFile.Name(), []byte("module"), 0o644); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if err := checkModFile(tempFile.Name()); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 
-	if err := os.WriteFile(tempFile.Name(), []byte("// foobar\nmodule foobar"), 0o600); err != nil {
+	if err := os.WriteFile(tempFile.Name(), []byte("// foobar\nmodule foobar"), 0o644); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if err := checkModFile(tempFile.Name()); err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -1236,23 +1213,17 @@ func TestCheckModFile(t *testing.T) {
 }
 
 func TestVerifyModFile(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "goproxy.TestVerifyModFile")
-	if err != nil {
-		t.Fatalf("unexpected error %q", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	modFile := filepath.Join(tempDir, "go.mod")
-	if err := os.WriteFile(modFile, []byte("module example.com/foo/bar"), 0o600); err != nil {
+	modFile := filepath.Join(t.TempDir(), "go.mod")
+	if err := os.WriteFile(modFile, []byte("module example.com/foo/bar"), 0o644); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 
-	modFileWrong := filepath.Join(tempDir, "go.mod.wrong")
-	if err := os.WriteFile(modFileWrong, []byte("module example.com/foo/bar/v2"), 0o600); err != nil {
+	modFileWrong := filepath.Join(t.TempDir(), "go.mod.wrong")
+	if err := os.WriteFile(modFileWrong, []byte("module example.com/foo/bar/v2"), 0o644); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 
-	dirHash, err := dirhash.HashDir(tempDir, "example.com/foo/bar@v1.0.0", dirhash.DefaultHash)
+	dirHash, err := dirhash.HashDir(t.TempDir(), "example.com/foo/bar@v1.0.0", dirhash.DefaultHash)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -1309,18 +1280,17 @@ func TestVerifyModFile(t *testing.T) {
 }
 
 func TestCheckZipFile(t *testing.T) {
-	tempFile, err := os.CreateTemp("", "goproxy.TestCheckZipFile")
+	tempFile, err := os.CreateTemp(t.TempDir(), "")
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	defer os.Remove(tempFile.Name())
 	if err := tempFile.Close(); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if err := checkZipFile(tempFile.Name(), "", ""); err == nil {
 		t.Fatal("expected error")
 	}
 
-	tempFile, err = os.OpenFile(tempFile.Name(), os.O_WRONLY|os.O_TRUNC, 0o600)
+	tempFile, err = os.OpenFile(tempFile.Name(), os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -1339,11 +1309,10 @@ func TestCheckZipFile(t *testing.T) {
 }
 
 func TestVerifyZipFile(t *testing.T) {
-	zipFile, err := os.CreateTemp("", "goproxy.TestVerifyZipFile")
+	zipFile, err := os.CreateTemp(t.TempDir(), "")
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	defer os.Remove(zipFile.Name())
 	zipWriter := zip.NewWriter(zipFile)
 	if zfw, err := zipWriter.Create("example.com/foo/bar@v1.0.0/go.mod"); err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -1355,11 +1324,10 @@ func TestVerifyZipFile(t *testing.T) {
 		t.Fatalf("unexpected error %q", err)
 	}
 
-	zipFileWrong, err := os.CreateTemp("", "goproxy.TestVerifyZipFile")
+	zipFileWrong, err := os.CreateTemp(t.TempDir(), "")
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	defer os.Remove(zipFileWrong.Name())
 	zipWrongWriter := zip.NewWriter(zipFileWrong)
 	if zfw, err := zipWrongWriter.Create("example.com/foo/bar/v2@v2.0.0/go.mod"); err != nil {
 		t.Fatalf("unexpected error %q", err)
