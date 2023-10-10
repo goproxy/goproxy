@@ -5,13 +5,11 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 )
 
 func TestSUMDBClientOps(t *testing.T) {
-	var proxyHandler http.HandlerFunc
-	proxyServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) { proxyHandler(rw, req) }))
+	proxyServer, setProxyHandler := newHTTPTestServer()
 	defer proxyServer.Close()
 
 	for _, tt := range []struct {
@@ -94,7 +92,7 @@ func TestSUMDBClientOps(t *testing.T) {
 			wantInitError: "bad upstream",
 		},
 	} {
-		proxyHandler = tt.proxyHandler
+		setProxyHandler(tt.proxyHandler)
 		sco := &sumdbClientOps{
 			envGOPROXY: tt.envGOPROXY,
 			envGOSUMDB: tt.envGOSUMDB,
@@ -282,7 +280,7 @@ func TestSUMDBClientOps(t *testing.T) {
 			wantError: fs.ErrNotExist,
 		},
 	} {
-		proxyHandler = tt.proxyHandler
+		setProxyHandler(tt.proxyHandler)
 		sco := &sumdbClientOps{
 			envGOPROXY: tt.envGOPROXY,
 			envGOSUMDB: "sum.golang.org",

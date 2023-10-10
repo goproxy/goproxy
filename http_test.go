@@ -10,7 +10,6 @@ import (
 	"io/fs"
 	"math/rand"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"syscall"
 	"testing"
@@ -53,13 +52,12 @@ func TestNotFoundError(t *testing.T) {
 }
 
 func TestHTTPGet(t *testing.T) {
+	server, setHandler := newHTTPTestServer()
+	defer server.Close()
+
 	savedBackoffRand := backoffRand
 	backoffRand = rand.New(rand.NewSource(1))
 	defer func() { backoffRand = savedBackoffRand }()
-
-	var handler http.HandlerFunc
-	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) { handler(rw, req) }))
-	defer server.Close()
 
 	for _, tt := range []struct {
 		n             int
@@ -162,7 +160,7 @@ func TestHTTPGet(t *testing.T) {
 			client2.Timeout = tt.clientTimeout
 			client = &client2
 		}
-		handler = tt.handler
+		setHandler(tt.handler)
 		var content bytes.Buffer
 		err := httpGet(ctx, client, server.URL, &content)
 		if tt.wantError != nil {

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -166,8 +167,7 @@ func TestGoproxyInit(t *testing.T) {
 }
 
 func TestGoproxyServeHTTP(t *testing.T) {
-	var proxyHandler http.HandlerFunc
-	proxyServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) { proxyHandler(rw, req) }))
+	proxyServer, setProxyHandler := newHTTPTestServer()
 	defer proxyServer.Close()
 	info := marshalInfo("v1.0.0", time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC))
 	for _, tt := range []struct {
@@ -258,7 +258,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 			wantContent:     "internal server error",
 		},
 	} {
-		proxyHandler = tt.proxyHandler
+		setProxyHandler(tt.proxyHandler)
 		g := &Goproxy{
 			PathPrefix:  tt.pathPrefix,
 			Cacher:      DirCacher(t.TempDir()),
@@ -288,8 +288,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 }
 
 func TestGoproxyServeFetch(t *testing.T) {
-	var proxyHandler http.HandlerFunc
-	proxyServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) { proxyHandler(rw, req) }))
+	proxyServer, setProxyHandler := newHTTPTestServer()
 	defer proxyServer.Close()
 	info := marshalInfo("v1.0.0", time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC))
 	for _, tt := range []struct {
@@ -409,7 +408,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:     "internal server error",
 		},
 	} {
-		proxyHandler = tt.proxyHandler
+		setProxyHandler(tt.proxyHandler)
 		if tt.setupCacher != nil {
 			if err := tt.setupCacher(tt.cacher); err != nil {
 				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
@@ -446,8 +445,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 }
 
 func TestGoproxyServeFetchDownload(t *testing.T) {
-	var proxyHandler http.HandlerFunc
-	proxyServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) { proxyHandler(rw, req) }))
+	proxyServer, setProxyHandler := newHTTPTestServer()
 	defer proxyServer.Close()
 	info := marshalInfo("v1.0.0", time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC))
 	for _, tt := range []struct {
@@ -494,7 +492,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			wantContent:     "internal server error",
 		},
 	} {
-		proxyHandler = tt.proxyHandler
+		setProxyHandler(tt.proxyHandler)
 		g := &Goproxy{
 			Cacher:      tt.cacher,
 			GoBinEnv:    []string{"GOPROXY=" + proxyServer.URL, "GOSUMDB=off"},
@@ -526,8 +524,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 }
 
 func TestGoproxyServeSUMDB(t *testing.T) {
-	var sumdbHandler http.HandlerFunc
-	sumdbServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) { sumdbHandler(rw, req) }))
+	sumdbServer, setSUMDBHandler := newHTTPTestServer()
 	defer sumdbServer.Close()
 	for _, tt := range []struct {
 		n                int
@@ -647,7 +644,7 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 			wantContent:     "internal server error",
 		},
 	} {
-		sumdbHandler = tt.sumdbHandler
+		setSUMDBHandler(tt.sumdbHandler)
 		g := &Goproxy{
 			Cacher:        tt.cacher,
 			ProxiedSUMDBs: []string{"sumdb.example.com " + sumdbServer.URL},
@@ -1064,4 +1061,21 @@ func TestGlobsMatchPath(t *testing.T) {
 			t.Errorf("test(%d): got %v, want %v", tt.n, got, want)
 		}
 	}
+}
+
+func newHTTPTestServer() (server *httptest.Server, setHandler func(http.HandlerFunc)) {
+	var (
+		handler      http.HandlerFunc
+		handlerMutex sync.Mutex
+	)
+	return httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			handlerMutex.Lock()
+			handler(rw, req)
+			handlerMutex.Unlock()
+		})),
+		func(h http.HandlerFunc) {
+			handlerMutex.Lock()
+			handler = h
+			handlerMutex.Unlock()
+		}
 }

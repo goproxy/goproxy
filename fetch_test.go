@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,27 +18,6 @@ import (
 	"golang.org/x/mod/sumdb/dirhash"
 	"golang.org/x/mod/sumdb/note"
 )
-
-func writeZipFile(name string, files map[string][]byte) error {
-	f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
-	if err != nil {
-		return err
-	}
-	zw := zip.NewWriter(f)
-	for k, v := range files {
-		w, err := zw.Create(k)
-		if err != nil {
-			return err
-		}
-		if _, err := w.Write(v); err != nil {
-			return err
-		}
-	}
-	if err := zw.Close(); err != nil {
-		return err
-	}
-	return f.Close()
-}
 
 func TestNewFetch(t *testing.T) {
 	for _, tt := range []struct {
@@ -246,10 +224,9 @@ func TestNewFetch(t *testing.T) {
 }
 
 func TestFetchDo(t *testing.T) {
-	infoTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
-	var proxyHandler http.HandlerFunc
-	proxyServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) { proxyHandler(rw, req) }))
+	proxyServer, setProxyHandler := newHTTPTestServer()
 	defer proxyServer.Close()
+	infoTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 	for _, tt := range []struct {
 		n            int
 		proxyHandler http.HandlerFunc
@@ -317,7 +294,7 @@ func TestFetchDo(t *testing.T) {
 			wantError: notFoundError("module lookup disabled by GOPROXY=off"),
 		},
 	} {
-		proxyHandler = tt.proxyHandler
+		setProxyHandler(tt.proxyHandler)
 		g := &Goproxy{GoBinEnv: tt.env}
 		g.init()
 		if tt.setupGorpoxy != nil {
@@ -361,6 +338,11 @@ func TestFetchDo(t *testing.T) {
 }
 
 func TestFetchDoProxy(t *testing.T) {
+	proxyServer, setProxyHandler := newHTTPTestServer()
+	defer proxyServer.Close()
+	sumdbServer, setSUMDBHandler := newHTTPTestServer()
+	defer sumdbServer.Close()
+
 	infoTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 	modFile := filepath.Join(t.TempDir(), "mod")
 	if err := os.WriteFile(modFile, []byte("module example.com"), 0o644); err != nil {
@@ -379,12 +361,6 @@ func TestFetchDoProxy(t *testing.T) {
 		t.Fatalf("unexpected error %q", err)
 	}
 
-	var proxyHandler http.HandlerFunc
-	proxyServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		proxyHandler(rw, req)
-	}))
-	defer proxyServer.Close()
-
 	dirHash, err := dirhash.HashDir(t.TempDir(), "example.com@v1.0.0", dirhash.DefaultHash)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -399,11 +375,6 @@ func TestFetchDoProxy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	var sumdbHandler http.Handler
-	sumdbServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		sumdbHandler.ServeHTTP(rw, req)
-	}))
-	defer sumdbServer.Close()
 
 	for _, tt := range []struct {
 		n            int
@@ -622,10 +593,10 @@ invalid
 			wantError: fs.ErrNotExist,
 		},
 	} {
-		proxyHandler = tt.proxyHandler
+		setProxyHandler(tt.proxyHandler)
 		envGOSUMDB := "off"
 		if tt.sumdbHandler != nil {
-			sumdbHandler = tt.sumdbHandler
+			setSUMDBHandler(tt.sumdbHandler.ServeHTTP)
 			envGOSUMDB = vkey + " " + sumdbServer.URL
 		}
 		g := &Goproxy{
@@ -674,9 +645,17 @@ invalid
 }
 
 func TestFetchDoDirect(t *testing.T) {
+	proxyServer, setProxyHandler := newHTTPTestServer()
+	defer proxyServer.Close()
+	sumdbServer, setSUMDBHandler := newHTTPTestServer()
+	defer sumdbServer.Close()
+
 	t.Setenv("GOFLAGS", "-modcacherw")
 	gopathDir := filepath.Join(t.TempDir(), "gopath")
 	staticGOPROXYDir := filepath.Join(t.TempDir(), "static-goproxy")
+	setProxyHandler(func(rw http.ResponseWriter, req *http.Request) {
+		http.FileServer(http.Dir(staticGOPROXYDir)).ServeHTTP(rw, req)
+	})
 
 	infoTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 	mod := "module example.com"
@@ -712,11 +691,6 @@ func TestFetchDoDirect(t *testing.T) {
 	modCacheFile2 := filepath.Join(gopathDir, "pkg", "mod", "cache", "download", "example.com", "@v", "v1.1.0.mod")
 	zipCacheFile := filepath.Join(gopathDir, "pkg", "mod", "cache", "download", "example.com", "@v", "v1.0.0.zip")
 
-	proxyServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		http.FileServer(http.Dir(staticGOPROXYDir)).ServeHTTP(rw, req)
-	}))
-	defer proxyServer.Close()
-
 	dirHash, err := dirhash.HashZip(zipFile, dirhash.DefaultHash)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -731,11 +705,6 @@ func TestFetchDoDirect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	var sumdbHandler http.Handler
-	sumdbServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		sumdbHandler.ServeHTTP(rw, req)
-	}))
-	defer sumdbServer.Close()
 
 	for _, tt := range []struct {
 		n            int
@@ -876,7 +845,7 @@ func TestFetchDoDirect(t *testing.T) {
 		}
 		envGOSUMDB := "off"
 		if tt.sumdbHandler != nil {
-			sumdbHandler = tt.sumdbHandler
+			setSUMDBHandler(tt.sumdbHandler.ServeHTTP)
 			envGOSUMDB = vkey + " " + sumdbServer.URL
 		}
 		g := &Goproxy{
@@ -1184,6 +1153,9 @@ func TestCheckModFile(t *testing.T) {
 }
 
 func TestVerifyModFile(t *testing.T) {
+	sumdbServer, setSUMDBHandler := newHTTPTestServer()
+	defer sumdbServer.Close()
+
 	modFile := filepath.Join(t.TempDir(), "mod")
 	if err := os.WriteFile(modFile, []byte("module example.com"), 0o644); err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -1197,7 +1169,7 @@ func TestVerifyModFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	sumdbServer := httptest.NewServer(sumdb.NewServer(sumdb.NewTestServer(skey, func(modulePath, moduleVersion string) ([]byte, error) {
+	setSUMDBHandler(sumdb.NewServer(sumdb.NewTestServer(skey, func(modulePath, moduleVersion string) ([]byte, error) {
 		if modulePath == "example.com" && moduleVersion == "v1.0.0" {
 			dirHash, err := dirhash.HashDir(t.TempDir(), "example.com@v1.0.0", dirhash.DefaultHash)
 			if err != nil {
@@ -1212,8 +1184,7 @@ func TestVerifyModFile(t *testing.T) {
 			return []byte(gosum), nil
 		}
 		return nil, errors.New("unknown module version")
-	})))
-	defer sumdbServer.Close()
+	})).ServeHTTP)
 
 	g := &Goproxy{
 		GoBinEnv: []string{
@@ -1323,6 +1294,9 @@ func TestCheckZipFile(t *testing.T) {
 }
 
 func TestVerifyZipFile(t *testing.T) {
+	sumdbServer, setSUMDBHandler := newHTTPTestServer()
+	defer sumdbServer.Close()
+
 	zipFile := filepath.Join(t.TempDir(), "zip")
 	if err := writeZipFile(zipFile, map[string][]byte{"example.com@v1.0.0/go.mod": []byte("module example.com")}); err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -1336,7 +1310,7 @@ func TestVerifyZipFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	sumdbServer := httptest.NewServer(sumdb.NewServer(sumdb.NewTestServer(skey, func(modulePath, moduleVersion string) ([]byte, error) {
+	setSUMDBHandler(sumdb.NewServer(sumdb.NewTestServer(skey, func(modulePath, moduleVersion string) ([]byte, error) {
 		if modulePath == "example.com" && moduleVersion == "v1.0.0" {
 			dirHash, err := dirhash.HashZip(zipFile, dirhash.DefaultHash)
 			if err != nil {
@@ -1353,8 +1327,7 @@ func TestVerifyZipFile(t *testing.T) {
 			return []byte(gosum), nil
 		}
 		return nil, errors.New("unknown module version")
-	})))
-	defer sumdbServer.Close()
+	})).ServeHTTP)
 
 	g := &Goproxy{
 		GoBinEnv: []string{
@@ -1412,4 +1385,25 @@ func TestVerifyZipFile(t *testing.T) {
 			}
 		}
 	}
+}
+
+func writeZipFile(name string, files map[string][]byte) error {
+	f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	zw := zip.NewWriter(f)
+	for k, v := range files {
+		w, err := zw.Create(k)
+		if err != nil {
+			return err
+		}
+		if _, err := w.Write(v); err != nil {
+			return err
+		}
+	}
+	if err := zw.Close(); err != nil {
+		return err
+	}
+	return f.Close()
 }
