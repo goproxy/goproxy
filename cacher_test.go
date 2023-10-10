@@ -39,10 +39,10 @@ func TestDirCacher(t *testing.T) {
 		t.Fatal("unexpected nil")
 	} else if b, err := io.ReadAll(rc); err != nil {
 		t.Fatalf("unexpected error %q", err)
-	} else if want := "foobar"; string(b) != want {
-		t.Errorf("got %q, want %q", b, want)
 	} else if err := rc.Close(); err != nil {
 		t.Fatalf("unexpected error %q", err)
+	} else if got, want := string(b), "foobar"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	if err := dirCacher.Put(context.Background(), "d/e/f", &errorReadSeeker{}); err == nil {

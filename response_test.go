@@ -1,7 +1,6 @@
 package goproxy
 
 import (
-	"bytes"
 	"errors"
 	"io"
 	"net/http"
@@ -12,261 +11,144 @@ import (
 )
 
 func TestSetResponseCacheControlHeader(t *testing.T) {
-	rec := httptest.NewRecorder()
-	setResponseCacheControlHeader(rec, 60)
-	recr := rec.Result()
-	recrCC := recr.Header.Get("Cache-Control")
-	if want := "public, max-age=60"; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
-	}
-
-	rec = httptest.NewRecorder()
-	setResponseCacheControlHeader(rec, 0)
-	recr = rec.Result()
-	recrCC = recr.Header.Get("Cache-Control")
-	if want := "public, max-age=0"; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
-	}
-
-	rec = httptest.NewRecorder()
-	setResponseCacheControlHeader(rec, -1)
-	recr = rec.Result()
-	recrCC = recr.Header.Get("Cache-Control")
-	if want := "must-revalidate, no-cache, no-store"; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
-	}
-
-	rec = httptest.NewRecorder()
-	setResponseCacheControlHeader(rec, -2)
-	recr = rec.Result()
-	recrCC = recr.Header.Get("Cache-Control")
-	if want := ""; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
+	for _, tt := range []struct {
+		n                int
+		maxAge           int
+		wantCacheControl string
+	}{
+		{1, 60, "public, max-age=60"},
+		{2, 0, "public, max-age=0"},
+		{3, -1, "must-revalidate, no-cache, no-store"},
+		{4, -2, ""},
+	} {
+		rec := httptest.NewRecorder()
+		setResponseCacheControlHeader(rec, tt.maxAge)
+		recr := rec.Result()
+		if got, want := recr.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
+			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+		}
 	}
 }
 
 func TestResponseString(t *testing.T) {
-	req := httptest.NewRequest("", "/", nil)
-	rec := httptest.NewRecorder()
-	responseString(rec, req, http.StatusOK, 60, "foobar")
-	recr := rec.Result()
-	if want := http.StatusOK; recr.StatusCode != want {
-		t.Errorf("got %d, want %d", recr.StatusCode, want)
-	}
-
-	recrCT := recr.Header.Get("Content-Type")
-	if want := "text/plain; charset=utf-8"; recrCT != want {
-		t.Errorf("got %q, want %q", recrCT, want)
-	}
-
-	recrCC := recr.Header.Get("Cache-Control")
-	if want := "public, max-age=60"; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
-	}
-
-	if b, err := io.ReadAll(recr.Body); err != nil {
-		t.Fatalf("unexpected error %q", err)
-	} else if want := "foobar"; string(b) != want {
-		t.Errorf("got %q, want %q", b, want)
+	for _, tt := range []struct {
+		n           int
+		method      string
+		content     string
+		wantContent string
+	}{
+		{
+			n:           1,
+			content:     "foobar",
+			wantContent: "foobar",
+		},
+		{
+			n:       2,
+			method:  http.MethodHead,
+			content: "foobar",
+		},
+	} {
+		rec := httptest.NewRecorder()
+		responseString(rec, httptest.NewRequest(tt.method, "/", nil), http.StatusOK, 60, tt.content)
+		recr := rec.Result()
+		if got, want := recr.StatusCode, http.StatusOK; got != want {
+			t.Errorf("test(%d): got %d, want %d", tt.n, got, want)
+		}
+		if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+		}
+		if got, want := recr.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
+			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+		}
+		if b, err := io.ReadAll(recr.Body); err != nil {
+			t.Fatalf("test(%d): unexpected error %q", tt.n, err)
+		} else if got, want := string(b), tt.wantContent; got != want {
+			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+		}
 	}
 }
 
 func TestResponseNotFound(t *testing.T) {
-	req := httptest.NewRequest("", "/", nil)
-	rec := httptest.NewRecorder()
-	responseNotFound(rec, req, 60)
-	recr := rec.Result()
-	if want := http.StatusNotFound; recr.StatusCode != want {
-		t.Errorf("got %d, want %d", recr.StatusCode, want)
-	}
-
-	recrCT := recr.Header.Get("Content-Type")
-	if want := "text/plain; charset=utf-8"; recrCT != want {
-		t.Errorf("got %q, want %q", recrCT, want)
-	}
-
-	recrCC := recr.Header.Get("Cache-Control")
-	if want := "public, max-age=60"; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
-	}
-
-	if b, err := io.ReadAll(recr.Body); err != nil {
-		t.Fatalf("unexpected error %q", err)
-	} else if want := "not found"; string(b) != want {
-		t.Errorf("got %q, want %q", b, want)
-	}
-
-	rec = httptest.NewRecorder()
-	responseNotFound(rec, req, 60, "foobar")
-	recr = rec.Result()
-	if want := http.StatusNotFound; recr.StatusCode != want {
-		t.Errorf("got %d, want %d", recr.StatusCode, want)
-	}
-
-	recrCT = recr.Header.Get("Content-Type")
-	if want := "text/plain; charset=utf-8"; recrCT != want {
-		t.Errorf("got %q, want %q", recrCT, want)
-	}
-
-	recrCC = recr.Header.Get("Cache-Control")
-	if want := "public, max-age=60"; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
-	}
-
-	if b, err := io.ReadAll(recr.Body); err != nil {
-		t.Fatalf("unexpected error %q", err)
-	} else if want := "not found: foobar"; string(b) != want {
-		t.Errorf("got %q, want %q", b, want)
-	}
-
-	rec = httptest.NewRecorder()
-	responseNotFound(rec, req, 60, "bad request: foobar")
-	recr = rec.Result()
-	if want := http.StatusNotFound; recr.StatusCode != want {
-		t.Errorf("got %d, want %d", recr.StatusCode, want)
-	}
-
-	recrCT = recr.Header.Get("Content-Type")
-	if want := "text/plain; charset=utf-8"; recrCT != want {
-		t.Errorf("got %q, want %q", recrCT, want)
-	}
-
-	recrCC = recr.Header.Get("Cache-Control")
-	if want := "public, max-age=60"; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
-	}
-
-	if b, err := io.ReadAll(recr.Body); err != nil {
-		t.Fatalf("unexpected error %q", err)
-	} else if want := "not found: foobar"; string(b) != want {
-		t.Errorf("got %q, want %q", b, want)
-	}
-
-	rec = httptest.NewRecorder()
-	responseNotFound(rec, req, 60, "not found: foobar")
-	recr = rec.Result()
-	if want := http.StatusNotFound; recr.StatusCode != want {
-		t.Errorf("got %d, want %d", recr.StatusCode, want)
-	}
-
-	recrCT = recr.Header.Get("Content-Type")
-	if want := "text/plain; charset=utf-8"; recrCT != want {
-		t.Errorf("got %q, want %q", recrCT, want)
-	}
-
-	recrCC = recr.Header.Get("Cache-Control")
-	if want := "public, max-age=60"; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
-	}
-
-	if b, err := io.ReadAll(recr.Body); err != nil {
-		t.Fatalf("unexpected error %q", err)
-	} else if want := "not found: foobar"; string(b) != want {
-		t.Errorf("got %q, want %q", b, want)
-	}
-
-	rec = httptest.NewRecorder()
-	responseNotFound(rec, req, 60, "gone: foobar")
-	recr = rec.Result()
-	if want := http.StatusNotFound; recr.StatusCode != want {
-		t.Errorf("got %d, want %d", recr.StatusCode, want)
-	}
-
-	recrCT = recr.Header.Get("Content-Type")
-	if want := "text/plain; charset=utf-8"; recrCT != want {
-		t.Errorf("got %q, want %q", recrCT, want)
-	}
-
-	recrCC = recr.Header.Get("Cache-Control")
-	if want := "public, max-age=60"; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
-	}
-
-	if b, err := io.ReadAll(recr.Body); err != nil {
-		t.Fatalf("unexpected error %q", err)
-	} else if want := "not found: foobar"; string(b) != want {
-		t.Errorf("got %q, want %q", b, want)
-	}
-
-	rec = httptest.NewRecorder()
-	responseNotFound(rec, req, 60, "not found")
-	recr = rec.Result()
-	if want := http.StatusNotFound; recr.StatusCode != want {
-		t.Errorf("got %d, want %d", recr.StatusCode, want)
-	}
-
-	recrCT = recr.Header.Get("Content-Type")
-	if want := "text/plain; charset=utf-8"; recrCT != want {
-		t.Errorf("got %q, want %q", recrCT, want)
-	}
-
-	recrCC = recr.Header.Get("Cache-Control")
-	if want := "public, max-age=60"; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
-	}
-
-	if b, err := io.ReadAll(recr.Body); err != nil {
-		t.Fatalf("unexpected error %q", err)
-	} else if want := "not found"; string(b) != want {
-		t.Errorf("got %q, want %q", b, want)
+	for _, tt := range []struct {
+		n           int
+		msgs        []interface{}
+		wantContent string
+	}{
+		{1, nil, "not found"},
+		{2, []interface{}{}, "not found"},
+		{3, []interface{}{""}, "not found"},
+		{4, []interface{}{"not found"}, "not found"},
+		{5, []interface{}{"not found"}, "not found"},
+		{6, []interface{}{errors.New("not found")}, "not found"},
+		{7, []interface{}{"foobar"}, "not found: foobar"},
+		{8, []interface{}{"foo", "bar"}, "not found: foobar"},
+		{9, []interface{}{errors.New("foo"), "bar"}, "not found: foobar"},
+		{10, []interface{}{"not found: foobar"}, "not found: foobar"},
+		{11, []interface{}{"bad request: foobar"}, "not found: foobar"},
+		{12, []interface{}{"gone: foobar"}, "not found: foobar"},
+	} {
+		rec := httptest.NewRecorder()
+		responseNotFound(rec, httptest.NewRequest("", "/", nil), 60, tt.msgs...)
+		recr := rec.Result()
+		if got, want := recr.StatusCode, http.StatusNotFound; got != want {
+			t.Errorf("test(%d): got %d, want %d", tt.n, got, want)
+		}
+		if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+		}
+		if got, want := recr.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
+			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+		}
+		if b, err := io.ReadAll(recr.Body); err != nil {
+			t.Fatalf("test(%d): unexpected error %q", tt.n, err)
+		} else if got, want := string(b), tt.wantContent; got != want {
+			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+		}
 	}
 }
 
 func TestResponseMethodNotAllowed(t *testing.T) {
-	req := httptest.NewRequest("", "/", nil)
 	rec := httptest.NewRecorder()
-	responseMethodNotAllowed(rec, req, 60)
+	responseMethodNotAllowed(rec, httptest.NewRequest("", "/", nil), 60)
 	recr := rec.Result()
-	if want := http.StatusMethodNotAllowed; recr.StatusCode != want {
-		t.Errorf("got %d, want %d", recr.StatusCode, want)
+	if got, want := recr.StatusCode, http.StatusMethodNotAllowed; got != want {
+		t.Errorf("got %d, want %d", got, want)
 	}
-
-	recrCT := recr.Header.Get("Content-Type")
-	if want := "text/plain; charset=utf-8"; recrCT != want {
-		t.Errorf("got %q, want %q", recrCT, want)
+	if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
-
-	recrCC := recr.Header.Get("Cache-Control")
-	if want := "public, max-age=60"; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
+	if got, want := recr.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
-
 	if b, err := io.ReadAll(recr.Body); err != nil {
 		t.Fatalf("unexpected error %q", err)
-	} else if want := "method not allowed"; string(b) != want {
-		t.Errorf("got %q, want %q", b, want)
+	} else if got, want := string(b), "method not allowed"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }
 
 func TestResponseInternalServerError(t *testing.T) {
-	req := httptest.NewRequest("", "/", nil)
 	rec := httptest.NewRecorder()
-	responseInternalServerError(rec, req)
+	responseInternalServerError(rec, httptest.NewRequest("", "/", nil))
 	recr := rec.Result()
-	if want := http.StatusInternalServerError; recr.StatusCode != want {
-		t.Errorf("got %d, want %d", recr.StatusCode, want)
+	if got, want := recr.StatusCode, http.StatusInternalServerError; got != want {
+		t.Errorf("got %d, want %d", got, want)
 	}
-
-	recrCT := recr.Header.Get("Content-Type")
-	if want := "text/plain; charset=utf-8"; recrCT != want {
-		t.Errorf("got %q, want %q", recrCT, want)
+	if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
-
-	recrCC := recr.Header.Get("Cache-Control")
-	if want := ""; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
+	if got, want := recr.Header.Get("Cache-Control"), ""; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
-
 	if b, err := io.ReadAll(recr.Body); err != nil {
 		t.Fatalf("unexpected error %q", err)
-	} else if want := "internal server error"; string(b) != want {
-		t.Errorf("got %q, want %q", b, want)
+	} else if got, want := string(b), "internal server error"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }
 
 type successResponseBody_LastModified struct {
 	io.Reader
-
 	lastModified time.Time
 }
 
@@ -276,7 +158,6 @@ func (srb successResponseBody_LastModified) LastModified() time.Time {
 
 type successResponseBody_ModTime struct {
 	io.Reader
-
 	modTime time.Time
 }
 
@@ -286,7 +167,6 @@ func (srb successResponseBody_ModTime) ModTime() time.Time {
 
 type successResponseBody_ETag struct {
 	io.Reader
-
 	etag string
 }
 
@@ -295,390 +175,170 @@ func (srb successResponseBody_ETag) ETag() string {
 }
 
 func TestResponseSuccess(t *testing.T) {
-	req := httptest.NewRequest("", "/", nil)
-	rec := httptest.NewRecorder()
-	responseSuccess(rec, req, strings.NewReader("foobar"), "text/plain; charset=utf-8", 60)
-	recr := rec.Result()
-	if want := http.StatusOK; recr.StatusCode != want {
-		t.Errorf("got %d, want %d", recr.StatusCode, want)
-	}
-
-	recrCT := recr.Header.Get("Content-Type")
-	if want := "text/plain; charset=utf-8"; recrCT != want {
-		t.Errorf("got %q, want %q", recrCT, want)
-	}
-
-	recrCC := recr.Header.Get("Cache-Control")
-	if want := "public, max-age=60"; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
-	}
-
-	recrLM := recr.Header.Get("Last-Modified")
-	if want := ""; recrLM != want {
-		t.Errorf("got %q, want %q", recrLM, want)
-	}
-
-	recrET := recr.Header.Get("ETag")
-	if want := ""; recrET != want {
-		t.Errorf("got %q, want %q", recrET, want)
-	}
-
-	if b, err := io.ReadAll(recr.Body); err != nil {
-		t.Fatalf("unexpected error %q", err)
-	} else if want := "foobar"; string(b) != want {
-		t.Errorf("got %q, want %q", b, want)
-	}
-
-	req = httptest.NewRequest(http.MethodHead, "/", nil)
-	rec = httptest.NewRecorder()
-	responseSuccess(rec, req, bytes.NewBuffer([]byte("foobar")), "text/plain; charset=utf-8", 60)
-	recr = rec.Result()
-	if want := http.StatusOK; recr.StatusCode != want {
-		t.Errorf("got %d, want %d", recr.StatusCode, want)
-	}
-
-	recrCT = recr.Header.Get("Content-Type")
-	if want := "text/plain; charset=utf-8"; recrCT != want {
-		t.Errorf("got %q, want %q", recrCT, want)
-	}
-
-	recrCC = recr.Header.Get("Cache-Control")
-	if want := "public, max-age=60"; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
-	}
-
-	recrLM = recr.Header.Get("Last-Modified")
-	if want := ""; recrLM != want {
-		t.Errorf("got %q, want %q", recrLM, want)
-	}
-
-	recrET = recr.Header.Get("ETag")
-	if want := ""; recrET != want {
-		t.Errorf("got %q, want %q", recrET, want)
-	}
-
-	if b, err := io.ReadAll(recr.Body); err != nil {
-		t.Fatalf("unexpected error %q", err)
-	} else if want := ""; string(b) != want {
-		t.Errorf("got %q, want %q", b, want)
-	}
-
-	req = httptest.NewRequest("", "/", nil)
-	rec = httptest.NewRecorder()
-	responseSuccess(rec, req, successResponseBody_LastModified{
-		Reader:       strings.NewReader("foobar"),
-		lastModified: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
-	}, "text/plain; charset=utf-8", 60)
-	recr = rec.Result()
-	if want := http.StatusOK; recr.StatusCode != want {
-		t.Errorf("got %d, want %d", recr.StatusCode, want)
-	}
-
-	recrCT = recr.Header.Get("Content-Type")
-	if want := "text/plain; charset=utf-8"; recrCT != want {
-		t.Errorf("got %q, want %q", recrCT, want)
-	}
-
-	recrCC = recr.Header.Get("Cache-Control")
-	if want := "public, max-age=60"; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
-	}
-
-	recrLM = recr.Header.Get("Last-Modified")
-	if want := "Sat, 01 Jan 2000 00:00:00 GMT"; recrLM != want {
-		t.Errorf("got %q, want %q", recrLM, want)
-	}
-
-	recrET = recr.Header.Get("ETag")
-	if want := ""; recrET != want {
-		t.Errorf("got %q, want %q", recrET, want)
-	}
-
-	if b, err := io.ReadAll(recr.Body); err != nil {
-		t.Fatalf("unexpected error %q", err)
-	} else if want := "foobar"; string(b) != want {
-		t.Errorf("got %q, want %q", b, want)
-	}
-
-	req = httptest.NewRequest("", "/", nil)
-	rec = httptest.NewRecorder()
-	responseSuccess(rec, req, successResponseBody_ModTime{
-		Reader:  strings.NewReader("foobar"),
-		modTime: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
-	}, "text/plain; charset=utf-8", 60)
-	recr = rec.Result()
-	if want := http.StatusOK; recr.StatusCode != want {
-		t.Errorf("got %d, want %d", recr.StatusCode, want)
-	}
-
-	recrCT = recr.Header.Get("Content-Type")
-	if want := "text/plain; charset=utf-8"; recrCT != want {
-		t.Errorf("got %q, want %q", recrCT, want)
-	}
-
-	recrCC = recr.Header.Get("Cache-Control")
-	if want := "public, max-age=60"; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
-	}
-
-	recrLM = recr.Header.Get("Last-Modified")
-	if want := "Sat, 01 Jan 2000 00:00:00 GMT"; recrLM != want {
-		t.Errorf("got %q, want %q", recrLM, want)
-	}
-
-	recrET = recr.Header.Get("ETag")
-	if want := ""; recrET != want {
-		t.Errorf("got %q, want %q", recrET, want)
-	}
-
-	if b, err := io.ReadAll(recr.Body); err != nil {
-		t.Fatalf("unexpected error %q", err)
-	} else if want := "foobar"; string(b) != want {
-		t.Errorf("got %q, want %q", b, want)
-	}
-
-	req = httptest.NewRequest("", "/", nil)
-	rec = httptest.NewRecorder()
-	responseSuccess(rec, req, successResponseBody_ETag{
-		Reader: strings.NewReader("foobar"),
-		etag:   `"foobar"`,
-	}, "text/plain; charset=utf-8", 60)
-	recr = rec.Result()
-	if want := http.StatusOK; recr.StatusCode != want {
-		t.Errorf("got %d, want %d", recr.StatusCode, want)
-	}
-
-	recrCT = recr.Header.Get("Content-Type")
-	if want := "text/plain; charset=utf-8"; recrCT != want {
-		t.Errorf("got %q, want %q", recrCT, want)
-	}
-
-	recrCC = recr.Header.Get("Cache-Control")
-	if want := "public, max-age=60"; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
-	}
-
-	recrLM = recr.Header.Get("Last-Modified")
-	if want := ""; recrLM != want {
-		t.Errorf("got %q, want %q", recrLM, want)
-	}
-
-	recrET = recr.Header.Get("ETag")
-	if want := `"foobar"`; recrET != want {
-		t.Errorf("got %q, want %q", recrET, want)
-	}
-
-	if b, err := io.ReadAll(recr.Body); err != nil {
-		t.Fatalf("unexpected error %q", err)
-	} else if want := "foobar"; string(b) != want {
-		t.Errorf("got %q, want %q", b, want)
-	}
-
-	req = httptest.NewRequest("", "/", nil)
-	rec = httptest.NewRecorder()
-	responseSuccess(rec, req, struct {
-		io.Reader
-		successResponseBody_LastModified
-		successResponseBody_ModTime
-		successResponseBody_ETag
+	for _, tt := range []struct {
+		n                int
+		method           string
+		content          io.Reader
+		wantLastModified string
+		wantETag         string
+		wantContent      string
 	}{
-		strings.NewReader("foobar"),
-		successResponseBody_LastModified{lastModified: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)},
-		successResponseBody_ModTime{modTime: time.Date(2000, 1, 2, 0, 0, 0, 0, time.UTC)},
-		successResponseBody_ETag{etag: `"foobar"`},
-	}, "text/plain; charset=utf-8", 60)
-	recr = rec.Result()
-	if want := http.StatusOK; recr.StatusCode != want {
-		t.Errorf("got %d, want %d", recr.StatusCode, want)
-	}
-
-	recrCT = recr.Header.Get("Content-Type")
-	if want := "text/plain; charset=utf-8"; recrCT != want {
-		t.Errorf("got %q, want %q", recrCT, want)
-	}
-
-	recrCC = recr.Header.Get("Cache-Control")
-	if want := "public, max-age=60"; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
-	}
-
-	recrLM = recr.Header.Get("Last-Modified")
-	if want := "Sat, 01 Jan 2000 00:00:00 GMT"; recrLM != want {
-		t.Errorf("got %q, want %q", recrLM, want)
-	}
-
-	recrET = recr.Header.Get("ETag")
-	if want := `"foobar"`; recrET != want {
-		t.Errorf("got %q, want %q", recrET, want)
-	}
-
-	if b, err := io.ReadAll(recr.Body); err != nil {
-		t.Fatalf("unexpected error %q", err)
-	} else if want := "foobar"; string(b) != want {
-		t.Errorf("got %q, want %q", b, want)
+		{
+			n:           1,
+			content:     strings.NewReader("foobar"),
+			wantContent: "foobar",
+		},
+		{
+			n:       2,
+			method:  http.MethodHead,
+			content: strings.NewReader("foobar"),
+		},
+		{
+			n: 3,
+			content: successResponseBody_LastModified{
+				Reader:       strings.NewReader("foobar"),
+				lastModified: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
+			},
+			wantLastModified: "Sat, 01 Jan 2000 00:00:00 GMT",
+			wantContent:      "foobar",
+		},
+		{
+			n: 4,
+			content: successResponseBody_ModTime{
+				Reader:  strings.NewReader("foobar"),
+				modTime: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
+			},
+			wantLastModified: "Sat, 01 Jan 2000 00:00:00 GMT",
+			wantContent:      "foobar",
+		},
+		{
+			n: 5,
+			content: successResponseBody_ETag{
+				Reader: strings.NewReader("foobar"),
+				etag:   `"foobar"`,
+			},
+			wantETag:    `"foobar"`,
+			wantContent: "foobar",
+		},
+		{
+			n: 6,
+			content: struct {
+				io.Reader
+				successResponseBody_LastModified
+				successResponseBody_ModTime
+				successResponseBody_ETag
+			}{
+				strings.NewReader("foobar"),
+				successResponseBody_LastModified{lastModified: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)},
+				successResponseBody_ModTime{modTime: time.Date(2000, 1, 2, 0, 0, 0, 0, time.UTC)},
+				successResponseBody_ETag{etag: `"foobar"`},
+			},
+			wantLastModified: "Sat, 01 Jan 2000 00:00:00 GMT",
+			wantETag:         `"foobar"`,
+			wantContent:      "foobar",
+		},
+	} {
+		rec := httptest.NewRecorder()
+		responseSuccess(rec, httptest.NewRequest(tt.method, "/", nil), tt.content, "text/plain; charset=utf-8", 60)
+		recr := rec.Result()
+		if got, want := recr.StatusCode, http.StatusOK; got != want {
+			t.Errorf("test(%d): got %d, want %d", tt.n, got, want)
+		}
+		if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+		}
+		if got, want := recr.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
+			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+		}
+		if got, want := recr.Header.Get("Last-Modified"), tt.wantLastModified; got != want {
+			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+		}
+		if got, want := recr.Header.Get("ETag"), tt.wantETag; got != want {
+			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+		}
+		if b, err := io.ReadAll(recr.Body); err != nil {
+			t.Fatalf("test(%d): unexpected error %q", tt.n, err)
+		} else if got, want := string(b), tt.wantContent; got != want {
+			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+		}
 	}
 }
 
 func TestResponseError(t *testing.T) {
-	req := httptest.NewRequest("", "/", nil)
-	rec := httptest.NewRecorder()
-	responseError(rec, req, notFoundError("cache insensitive"), false)
-	recr := rec.Result()
-	if want := http.StatusNotFound; recr.StatusCode != want {
-		t.Errorf("got %d, want %d", recr.StatusCode, want)
-	}
-
-	recrCT := recr.Header.Get("Content-Type")
-	if want := "text/plain; charset=utf-8"; recrCT != want {
-		t.Errorf("got %q, want %q", recrCT, want)
-	}
-
-	recrCC := recr.Header.Get("Cache-Control")
-	if want := "public, max-age=600"; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
-	}
-
-	if b, err := io.ReadAll(recr.Body); err != nil {
-		t.Fatalf("unexpected error %q", err)
-	} else if want := "not found: cache insensitive"; string(b) != want {
-		t.Errorf("got %q, want %q", b, want)
-	}
-
-	rec = httptest.NewRecorder()
-	responseError(rec, req, notFoundError("cache sensitive"), true)
-	recr = rec.Result()
-	if want := http.StatusNotFound; recr.StatusCode != want {
-		t.Errorf("got %d, want %d", recr.StatusCode, want)
-	}
-
-	recrCT = recr.Header.Get("Content-Type")
-	if want := "text/plain; charset=utf-8"; recrCT != want {
-		t.Errorf("got %q, want %q", recrCT, want)
-	}
-
-	recrCC = recr.Header.Get("Cache-Control")
-	if want := "public, max-age=60"; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
-	}
-
-	if b, err := io.ReadAll(recr.Body); err != nil {
-		t.Fatalf("unexpected error %q", err)
-	} else if want := "not found: cache sensitive"; string(b) != want {
-		t.Errorf("got %q, want %q", b, want)
-	}
-
-	rec = httptest.NewRecorder()
-	responseError(rec, req, notFoundError("not found: bad upstream"), false)
-	recr = rec.Result()
-	if want := http.StatusNotFound; recr.StatusCode != want {
-		t.Errorf("got %d, want %d", recr.StatusCode, want)
-	}
-
-	recrCT = recr.Header.Get("Content-Type")
-	if want := "text/plain; charset=utf-8"; recrCT != want {
-		t.Errorf("got %q, want %q", recrCT, want)
-	}
-
-	recrCC = recr.Header.Get("Cache-Control")
-	if want := "must-revalidate, no-cache, no-store"; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
-	}
-
-	if b, err := io.ReadAll(recr.Body); err != nil {
-		t.Fatalf("unexpected error %q", err)
-	} else if want := "not found: bad upstream"; string(b) != want {
-		t.Errorf("got %q, want %q", b, want)
-	}
-
-	rec = httptest.NewRecorder()
-	responseError(rec, req, notFoundError("not found: fetch timed out"), false)
-	recr = rec.Result()
-	if want := http.StatusNotFound; recr.StatusCode != want {
-		t.Errorf("got %d, want %d", recr.StatusCode, want)
-	}
-
-	recrCT = recr.Header.Get("Content-Type")
-	if want := "text/plain; charset=utf-8"; recrCT != want {
-		t.Errorf("got %q, want %q", recrCT, want)
-	}
-
-	recrCC = recr.Header.Get("Cache-Control")
-	if want := "must-revalidate, no-cache, no-store"; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
-	}
-
-	if b, err := io.ReadAll(recr.Body); err != nil {
-		t.Fatalf("unexpected error %q", err)
-	} else if want := "not found: fetch timed out"; string(b) != want {
-		t.Errorf("got %q, want %q", b, want)
-	}
-
-	rec = httptest.NewRecorder()
-	responseError(rec, req, errBadUpstream, false)
-	recr = rec.Result()
-	if want := http.StatusNotFound; recr.StatusCode != want {
-		t.Errorf("got %d, want %d", recr.StatusCode, want)
-	}
-
-	recrCT = recr.Header.Get("Content-Type")
-	if want := "text/plain; charset=utf-8"; recrCT != want {
-		t.Errorf("got %q, want %q", recrCT, want)
-	}
-
-	recrCC = recr.Header.Get("Cache-Control")
-	if want := "must-revalidate, no-cache, no-store"; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
-	}
-
-	if b, err := io.ReadAll(recr.Body); err != nil {
-		t.Fatalf("unexpected error %q", err)
-	} else if want := "not found: bad upstream"; string(b) != want {
-		t.Errorf("got %q, want %q", b, want)
-	}
-
-	rec = httptest.NewRecorder()
-	responseError(rec, req, errFetchTimedOut, false)
-	recr = rec.Result()
-	if want := http.StatusNotFound; recr.StatusCode != want {
-		t.Errorf("got %d, want %d", recr.StatusCode, want)
-	}
-
-	recrCT = recr.Header.Get("Content-Type")
-	if want := "text/plain; charset=utf-8"; recrCT != want {
-		t.Errorf("got %q, want %q", recrCT, want)
-	}
-
-	recrCC = recr.Header.Get("Cache-Control")
-	if want := "must-revalidate, no-cache, no-store"; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
-	}
-
-	if b, err := io.ReadAll(recr.Body); err != nil {
-		t.Fatalf("unexpected error %q", err)
-	} else if want := "not found: fetch timed out"; string(b) != want {
-		t.Errorf("got %q, want %q", b, want)
-	}
-
-	rec = httptest.NewRecorder()
-	responseError(rec, req, errors.New("internal server error"), false)
-	recr = rec.Result()
-	if want := http.StatusInternalServerError; recr.StatusCode != want {
-		t.Errorf("got %d, want %d", recr.StatusCode, want)
-	}
-
-	recrCT = recr.Header.Get("Content-Type")
-	if want := "text/plain; charset=utf-8"; recrCT != want {
-		t.Errorf("got %q, want %q", recrCT, want)
-	}
-
-	recrCC = recr.Header.Get("Cache-Control")
-	if want := ""; recrCC != want {
-		t.Errorf("got %q, want %q", recrCC, want)
-	}
-
-	if b, err := io.ReadAll(recr.Body); err != nil {
-		t.Fatalf("unexpected error %q", err)
-	} else if want := "internal server error"; string(b) != want {
-		t.Errorf("got %q, want %q", b, want)
+	for _, tt := range []struct {
+		n                int
+		err              error
+		cacheSensitive   bool
+		wantStatusCode   int
+		wantCacheControl string
+		wantContent      string
+	}{
+		{
+			n:                1,
+			err:              errNotFound,
+			wantStatusCode:   http.StatusNotFound,
+			wantCacheControl: "public, max-age=600",
+			wantContent:      "not found",
+		},
+		{
+			n:                2,
+			err:              errBadUpstream,
+			wantStatusCode:   http.StatusNotFound,
+			wantCacheControl: "must-revalidate, no-cache, no-store",
+			wantContent:      "not found: bad upstream",
+		},
+		{
+			n:                3,
+			err:              errFetchTimedOut,
+			wantStatusCode:   http.StatusNotFound,
+			wantCacheControl: "must-revalidate, no-cache, no-store",
+			wantContent:      "not found: fetch timed out",
+		},
+		{
+			n:                4,
+			err:              notFoundError("cache sensitive"),
+			cacheSensitive:   true,
+			wantStatusCode:   http.StatusNotFound,
+			wantCacheControl: "public, max-age=60",
+			wantContent:      "not found: cache sensitive",
+		},
+		{
+			n:                5,
+			err:              notFoundError("not found: bad upstream"),
+			wantStatusCode:   http.StatusNotFound,
+			wantCacheControl: "must-revalidate, no-cache, no-store",
+			wantContent:      "not found: bad upstream",
+		},
+		{
+			n:                6,
+			err:              notFoundError("not found: fetch timed out"),
+			wantStatusCode:   http.StatusNotFound,
+			wantCacheControl: "must-revalidate, no-cache, no-store",
+			wantContent:      "not found: fetch timed out",
+		},
+		{
+			n:              7,
+			err:            errors.New("internal server error"),
+			wantStatusCode: http.StatusInternalServerError,
+			wantContent:    "internal server error",
+		},
+	} {
+		rec := httptest.NewRecorder()
+		responseError(rec, httptest.NewRequest("", "/", nil), tt.err, tt.cacheSensitive)
+		recr := rec.Result()
+		if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
+			t.Errorf("test(%d): got %d, want %d", tt.n, got, want)
+		}
+		if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+		}
+		if got, want := recr.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
+			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+		}
+		if b, err := io.ReadAll(recr.Body); err != nil {
+			t.Fatalf("test(%d): unexpected error %q", tt.n, err)
+		} else if got, want := string(b), tt.wantContent; got != want {
+			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+		}
 	}
 }
