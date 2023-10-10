@@ -276,15 +276,20 @@ func TestFetchDo(t *testing.T) {
 			wantTime:    infoTime,
 		},
 		{
-			n: 2,
+			n:            2,
+			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, 60) },
 			env: []string{
 				"GOPATH=" + t.TempDir(),
 				"GOPROXY=off",
 				"GONOPROXY=example.com",
 				"GOSUMDB=off",
 			},
+			setupGorpoxy: func(g *Goproxy) error {
+				g.goBinEnv = append(g.goBinEnv, "GOPROXY="+proxyServer.URL)
+				return nil
+			},
 			name:      "example.com/@latest",
-			wantError: notFoundError(`example.com@latest: unrecognized import path "example.com": parse https://example.com/?go-get=1: no go-import meta tags ()`),
+			wantError: notFoundError(fmt.Sprintf("module example.com: reading %s/example.com/@v/list: 404 Not Found\n\tserver response: not found", proxyServer.URL)),
 		},
 		{
 			n:            3,
@@ -623,7 +628,12 @@ invalid
 			sumdbHandler = tt.sumdbHandler
 			envGOSUMDB = vkey + " " + sumdbServer.URL
 		}
-		g := &Goproxy{GoBinEnv: []string{"GOSUMDB=" + envGOSUMDB}}
+		g := &Goproxy{
+			GoBinEnv: []string{
+				"GOPROXY=off",
+				"GOSUMDB=" + envGOSUMDB,
+			},
+		}
 		g.init()
 		f, err := newFetch(g, tt.name, tt.tempDir)
 		if err != nil {

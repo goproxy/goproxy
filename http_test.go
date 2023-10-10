@@ -62,12 +62,12 @@ func TestHTTPGet(t *testing.T) {
 	defer server.Close()
 
 	for _, tt := range []struct {
-		n           int
-		ctxTimeout  time.Duration
-		httpClient  *http.Client
-		handler     http.HandlerFunc
-		wantContent string
-		wantError   error
+		n             int
+		ctxTimeout    time.Duration
+		clientTimeout time.Duration
+		handler       http.HandlerFunc
+		wantContent   string
+		wantError     error
 	}{
 		{
 			n:           1,
@@ -134,8 +134,8 @@ func TestHTTPGet(t *testing.T) {
 			wantError: io.ErrUnexpectedEOF,
 		},
 		{
-			n:          9,
-			httpClient: &http.Client{Timeout: 50 * time.Millisecond},
+			n:             9,
+			clientTimeout: 50 * time.Millisecond,
 			handler: func(rw http.ResponseWriter, req *http.Request) {
 				time.Sleep(50 * time.Millisecond)
 				rw.WriteHeader(http.StatusInternalServerError)
@@ -156,12 +156,15 @@ func TestHTTPGet(t *testing.T) {
 			ctx, cancel = context.WithTimeout(ctx, tt.ctxTimeout)
 			defer cancel()
 		}
-		if tt.httpClient == nil {
-			tt.httpClient = http.DefaultClient
+		client := http.DefaultClient
+		if tt.clientTimeout != 0 {
+			client2 := *client
+			client2.Timeout = tt.clientTimeout
+			client = &client2
 		}
 		handler = tt.handler
 		var content bytes.Buffer
-		err := httpGet(ctx, tt.httpClient, server.URL, &content)
+		err := httpGet(ctx, client, server.URL, &content)
 		if tt.wantError != nil {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
