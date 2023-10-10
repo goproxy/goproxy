@@ -37,7 +37,7 @@ func responseString(rw http.ResponseWriter, req *http.Request, statusCode, cache
 
 // responseNotFound responses "not found" to the client with the
 // cacheControlMaxAge and optional msgs.
-func responseNotFound(rw http.ResponseWriter, req *http.Request, cacheControlMaxAge int, msgs ...interface{}) {
+func responseNotFound(rw http.ResponseWriter, req *http.Request, cacheControlMaxAge int, msgs ...any) {
 	var msg string
 	if len(msgs) > 0 {
 		msg = strings.TrimPrefix(fmt.Sprint(msgs...), "bad request: ")

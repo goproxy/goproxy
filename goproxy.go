@@ -204,11 +204,6 @@ func (g *Goproxy) init() {
 		g.goBinEnvGOPROXY = "off"
 	}
 
-	g.goBinEnvGOSUMDB = strings.TrimSpace(g.goBinEnvGOSUMDB)
-	if g.goBinEnvGOSUMDB == "" {
-		g.goBinEnvGOSUMDB = "sum.golang.org"
-	}
-
 	if g.goBinEnvGONOPROXY == "" {
 		g.goBinEnvGONOPROXY = goBinEnvGOPRIVATE
 	}
@@ -220,6 +215,11 @@ func (g *Goproxy) init() {
 	}
 	if len(goBinEnvGONOPROXYParts) > 0 {
 		g.goBinEnvGONOPROXY = strings.Join(goBinEnvGONOPROXYParts, ",")
+	}
+
+	g.goBinEnvGOSUMDB = strings.TrimSpace(g.goBinEnvGOSUMDB)
+	if g.goBinEnvGOSUMDB == "" {
+		g.goBinEnvGOSUMDB = "sum.golang.org"
 	}
 
 	if g.goBinEnvGONOSUMDB == "" {
@@ -528,7 +528,7 @@ func (g *Goproxy) putCacheFile(ctx context.Context, name, file string) error {
 }
 
 // logErrorf formats according to the format and logs the v as an error.
-func (g *Goproxy) logErrorf(format string, v ...interface{}) {
+func (g *Goproxy) logErrorf(format string, v ...any) {
 	msg := "goproxy: " + fmt.Sprintf(format, v...)
 	if g.ErrorLogger != nil {
 		g.ErrorLogger.Output(2, msg)
@@ -581,7 +581,7 @@ var (
 
 // backoffSleep computes the exponential backoff sleep according to
 // https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/.
-func backoffSleep(base time.Duration, cap time.Duration, attempt int) time.Duration {
+func backoffSleep(base, cap time.Duration, attempt int) time.Duration {
 	var pow time.Duration
 	if attempt < 63 {
 		pow = 1 << attempt

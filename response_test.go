@@ -71,21 +71,21 @@ func TestResponseString(t *testing.T) {
 func TestResponseNotFound(t *testing.T) {
 	for _, tt := range []struct {
 		n           int
-		msgs        []interface{}
+		msgs        []any
 		wantContent string
 	}{
 		{1, nil, "not found"},
-		{2, []interface{}{}, "not found"},
-		{3, []interface{}{""}, "not found"},
-		{4, []interface{}{"not found"}, "not found"},
-		{5, []interface{}{"not found"}, "not found"},
-		{6, []interface{}{errors.New("not found")}, "not found"},
-		{7, []interface{}{"foobar"}, "not found: foobar"},
-		{8, []interface{}{"foo", "bar"}, "not found: foobar"},
-		{9, []interface{}{errors.New("foo"), "bar"}, "not found: foobar"},
-		{10, []interface{}{"not found: foobar"}, "not found: foobar"},
-		{11, []interface{}{"bad request: foobar"}, "not found: foobar"},
-		{12, []interface{}{"gone: foobar"}, "not found: foobar"},
+		{2, []any{}, "not found"},
+		{3, []any{""}, "not found"},
+		{4, []any{"not found"}, "not found"},
+		{5, []any{"not found"}, "not found"},
+		{6, []any{errors.New("not found")}, "not found"},
+		{7, []any{"foobar"}, "not found: foobar"},
+		{8, []any{"foo", "bar"}, "not found: foobar"},
+		{9, []any{errors.New("foo"), "bar"}, "not found: foobar"},
+		{10, []any{"not found: foobar"}, "not found: foobar"},
+		{11, []any{"bad request: foobar"}, "not found: foobar"},
+		{12, []any{"gone: foobar"}, "not found: foobar"},
 	} {
 		rec := httptest.NewRecorder()
 		responseNotFound(rec, httptest.NewRequest("", "/", nil), 60, tt.msgs...)
