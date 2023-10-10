@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"path"
@@ -16,7 +17,7 @@ import (
 
 var (
 	// errNotFound means something was not found.
-	errNotFound = errors.New("not found")
+	errNotFound = notFoundError("not found")
 
 	// errBadUpstream means an upstream is bad.
 	errBadUpstream = errors.New("bad upstream")
@@ -33,9 +34,13 @@ func (nfe notFoundError) Error() string {
 	return string(nfe)
 }
 
-// Is reports whether the target is [errNotFound].
+// Is reports whether the target is [errNotFound] or [fs.ErrNotExist].
 func (notFoundError) Is(target error) bool {
-	return target == errNotFound
+	switch target {
+	case errNotFound, fs.ErrNotExist:
+		return true
+	}
+	return false
 }
 
 // httpGet gets the content targeted by the url into the dst.

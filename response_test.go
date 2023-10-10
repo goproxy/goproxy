@@ -79,7 +79,7 @@ func TestResponseNotFound(t *testing.T) {
 		{3, []any{""}, "not found"},
 		{4, []any{"not found"}, "not found"},
 		{5, []any{"not found"}, "not found"},
-		{6, []any{errors.New("not found")}, "not found"},
+		{6, []any{errNotFound}, "not found"},
 		{7, []any{"foobar"}, "not found: foobar"},
 		{8, []any{"foo", "bar"}, "not found: foobar"},
 		{9, []any{errors.New("foo"), "bar"}, "not found: foobar"},

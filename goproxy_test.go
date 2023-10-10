@@ -899,7 +899,7 @@ func TestWalkGOPROXY(t *testing.T) {
 		wantOnProxy  string
 		wantOnDirect bool
 		wantOnOff    bool
-		wantError    string
+		wantError    error
 	}{
 		{
 			n:            1,
@@ -934,7 +934,7 @@ func TestWalkGOPROXY(t *testing.T) {
 		{
 			n:            6,
 			goproxy:      "https://example.com,direct",
-			onProxy:      func(proxy string) (string, error) { return proxy, notFoundError("not found") },
+			onProxy:      func(proxy string) (string, error) { return proxy, errNotFound },
 			wantOnProxy:  "https://example.com",
 			wantOnDirect: true,
 		},
@@ -954,14 +954,14 @@ func TestWalkGOPROXY(t *testing.T) {
 			goproxy:     "https://example.com,direct",
 			onProxy:     func(proxy string) (string, error) { return proxy, errors.New("foobar") },
 			wantOnProxy: "https://example.com",
-			wantError:   "foobar",
+			wantError:   errors.New("foobar"),
 		},
 		{
 			n:           9,
 			goproxy:     "https://example.com",
-			onProxy:     func(proxy string) (string, error) { return proxy, notFoundError("not found") },
+			onProxy:     func(proxy string) (string, error) { return proxy, errNotFound },
 			wantOnProxy: "https://example.com",
-			wantError:   "not found",
+			wantError:   errNotFound,
 		},
 	} {
 		var (
@@ -980,11 +980,11 @@ func TestWalkGOPROXY(t *testing.T) {
 			onOff = true
 			return nil
 		})
-		if tt.wantError != "" {
+		if tt.wantError != nil {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
 			}
-			if got, want := err.Error(), tt.wantError; got != want {
+			if got, want := err.Error(), tt.wantError.Error(); got != want && !errors.Is(err, tt.wantError) {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		} else {

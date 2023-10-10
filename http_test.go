@@ -7,11 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -21,12 +21,15 @@ func TestNotFoundError(t *testing.T) {
 	for _, tt := range []struct {
 		n         int
 		nfe       notFoundError
-		wantError string
+		wantError error
 	}{
-		{1, notFoundError(""), ""},
-		{2, notFoundError("foobar"), "foobar"},
+		{1, notFoundError(""), errors.New("")},
+		{2, notFoundError("foobar"), errors.New("foobar")},
+		{3, notFoundError("foobar"), fs.ErrNotExist},
+		{3, notFoundError("foobar"), errNotFound},
+		{3, errNotFound, fs.ErrNotExist},
 	} {
-		if got, want := tt.nfe.Error(), tt.wantError; got != want {
+		if got, want := tt.nfe.Error(), tt.wantError.Error(); got != want && !errors.Is(tt.nfe, tt.wantError) {
 			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 		}
 	}
@@ -59,13 +62,12 @@ func TestHTTPGet(t *testing.T) {
 	defer server.Close()
 
 	for _, tt := range []struct {
-		n                  int
-		ctxTimeout         time.Duration
-		httpClient         *http.Client
-		handler            http.HandlerFunc
-		wantContent        string
-		wantError          string
-		isWantErrorPartial bool
+		n           int
+		ctxTimeout  time.Duration
+		httpClient  *http.Client
+		handler     http.HandlerFunc
+		wantContent string
+		wantError   error
 	}{
 		{
 			n:           1,
@@ -78,7 +80,7 @@ func TestHTTPGet(t *testing.T) {
 				rw.WriteHeader(http.StatusNotFound)
 				fmt.Fprint(rw, "not found")
 			},
-			wantError: "not found",
+			wantError: errNotFound,
 		},
 		{
 			n: 3,
@@ -86,7 +88,7 @@ func TestHTTPGet(t *testing.T) {
 				rw.WriteHeader(http.StatusInternalServerError)
 				fmt.Fprint(rw, "internal server error")
 			},
-			wantError: "bad upstream",
+			wantError: errBadUpstream,
 		},
 		{
 			n: 4,
@@ -94,7 +96,7 @@ func TestHTTPGet(t *testing.T) {
 				rw.WriteHeader(http.StatusGatewayTimeout)
 				fmt.Fprint(rw, "gateway timeout")
 			},
-			wantError: "fetch timed out",
+			wantError: errFetchTimedOut,
 		},
 		{
 			n: 5,
@@ -102,7 +104,7 @@ func TestHTTPGet(t *testing.T) {
 				rw.WriteHeader(http.StatusNotImplemented)
 				fmt.Fprint(rw, "not implemented")
 			},
-			wantError: fmt.Sprintf("GET %s: 501 Not Implemented: not implemented", server.URL),
+			wantError: fmt.Errorf("GET %s: 501 Not Implemented: not implemented", server.URL),
 		},
 		{
 			n:          6,
@@ -111,7 +113,7 @@ func TestHTTPGet(t *testing.T) {
 				rw.WriteHeader(http.StatusInternalServerError)
 				fmt.Fprint(rw, "internal server error")
 			},
-			wantError: "bad upstream",
+			wantError: errBadUpstream,
 		},
 		{
 			n:          7,
@@ -120,8 +122,7 @@ func TestHTTPGet(t *testing.T) {
 				rw.WriteHeader(http.StatusInternalServerError)
 				fmt.Fprint(rw, "internal server error")
 			},
-			wantError:          context.Canceled.Error(),
-			isWantErrorPartial: true,
+			wantError: context.Canceled,
 		},
 		{
 			n: 8,
@@ -130,7 +131,7 @@ func TestHTTPGet(t *testing.T) {
 				rw.(http.Flusher).Flush()
 				server.CloseClientConnections()
 			},
-			wantError: io.ErrUnexpectedEOF.Error(),
+			wantError: io.ErrUnexpectedEOF,
 		},
 		{
 			n:          9,
@@ -140,8 +141,7 @@ func TestHTTPGet(t *testing.T) {
 				rw.WriteHeader(http.StatusInternalServerError)
 				fmt.Fprint(rw, "internal server error")
 			},
-			wantError:          "Client.Timeout exceeded while awaiting headers",
-			isWantErrorPartial: true,
+			wantError: fmt.Errorf("Get %q: context deadline exceeded (Client.Timeout exceeded while awaiting headers)", server.URL),
 		},
 	} {
 		ctx := context.Background()
@@ -162,15 +162,11 @@ func TestHTTPGet(t *testing.T) {
 		handler = tt.handler
 		var content bytes.Buffer
 		err := httpGet(ctx, tt.httpClient, server.URL, &content)
-		if tt.wantError != "" {
+		if tt.wantError != nil {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
 			}
-			if tt.isWantErrorPartial {
-				if !strings.Contains(err.Error(), tt.wantError) {
-					t.Errorf("test(%d): missing %q in %q", tt.n, tt.wantError, err.Error())
-				}
-			} else if got, want := err.Error(), tt.wantError; got != want {
+			if got, want := err.Error(), tt.wantError.Error(); got != want && !errors.Is(err, tt.wantError) {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		} else {

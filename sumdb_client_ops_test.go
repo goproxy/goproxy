@@ -1,6 +1,7 @@
 package goproxy
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -228,7 +229,7 @@ func TestSUMDBClientOps(t *testing.T) {
 		envGOPROXY   string
 		read         func(sco *sumdbClientOps) (string, error)
 		wantContent  string
-		wantError    string
+		wantError    error
 	}{
 		{
 			n: 1,
@@ -256,7 +257,7 @@ func TestSUMDBClientOps(t *testing.T) {
 				b, err := sco.ReadRemote("")
 				return string(b), err
 			},
-			wantError: "bad upstream",
+			wantError: errBadUpstream,
 		},
 		{
 			n:          3,
@@ -283,7 +284,7 @@ func TestSUMDBClientOps(t *testing.T) {
 				b, err := sco.ReadConfig("/")
 				return string(b), err
 			},
-			wantError: "unknown config /",
+			wantError: errors.New("unknown config /"),
 		},
 		{
 			n:          6,
@@ -292,7 +293,7 @@ func TestSUMDBClientOps(t *testing.T) {
 				b, err := sco.ReadCache("")
 				return string(b), err
 			},
-			wantError: fs.ErrNotExist.Error(),
+			wantError: fs.ErrNotExist,
 		},
 	} {
 		proxyHandler = tt.proxyHandler
@@ -306,11 +307,11 @@ func TestSUMDBClientOps(t *testing.T) {
 			t.Fatalf("test(%d): unexpected error %q", tt.n, sco.initError)
 		}
 		b, err := tt.read(sco)
-		if tt.wantError != "" {
+		if tt.wantError != nil {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
 			}
-			if got, want := err.Error(), tt.wantError; got != want {
+			if got, want := err.Error(), tt.wantError.Error(); got != want && !errors.Is(err, tt.wantError) {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		} else {
