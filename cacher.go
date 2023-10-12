@@ -34,7 +34,8 @@ type Cacher interface {
 }
 
 // DirCacher implements [Cacher] using a directory on the local disk. If the
-// directory does not exist, it will be created with 0755 permissions.
+// directory does not exist, it will be created with 0755 permissions. Cache
+// files will be created with 0644 permissions.
 type DirCacher string
 
 // Get implements [Cacher].
@@ -74,5 +75,8 @@ func (dc DirCacher) Put(ctx context.Context, name string, content io.ReadSeeker)
 		return err
 	}
 
+	if err := os.Chmod(f.Name(), 0o644); err != nil {
+		return err
+	}
 	return os.Rename(f.Name(), file)
 }

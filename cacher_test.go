@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -23,14 +24,28 @@ func (errorReadSeeker) Seek(int64, int) (int64, error) {
 func TestDirCacher(t *testing.T) {
 	dirCacher := DirCacher(t.TempDir())
 
-	if rc, err := dirCacher.Get(context.Background(), "a/b/c"); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("got error %q, want error %q", err, fs.ErrNotExist)
+	if rc, err := dirCacher.Get(context.Background(), "a/b/c"); err == nil {
+		t.Fatal("expected error")
+	} else if got, want := err.Error(), fs.ErrNotExist.Error(); got != want && !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("got %q, want %q", got, want)
 	} else if rc != nil {
 		t.Errorf("got %v, want nil", rc)
 	}
 
 	if err := dirCacher.Put(context.Background(), "a/b/c", strings.NewReader("foobar")); err != nil {
 		t.Fatalf("unexpected error %q", err)
+	}
+
+	if fi, err := os.Stat(filepath.Join(string(dirCacher), filepath.FromSlash("a/b"))); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if got, want := fi.Mode().Perm(), os.FileMode(0o755).Perm(); got != want {
+		t.Errorf("got %d, want %d", got, want)
+	}
+
+	if fi, err := os.Stat(filepath.Join(string(dirCacher), filepath.FromSlash("a/b/c"))); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	} else if got, want := fi.Mode().Perm(), os.FileMode(0o644).Perm(); got != want {
+		t.Errorf("got %d, want %d", got, want)
 	}
 
 	if rc, err := dirCacher.Get(context.Background(), "a/b/c"); err != nil {
