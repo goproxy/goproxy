@@ -16,25 +16,25 @@ import (
 )
 
 var (
-	// errNotFound means something was not found.
+	// errNotFound indicates something was not found.
 	errNotFound = notFoundError("not found")
 
-	// errBadUpstream means an upstream is bad.
+	// errBadUpstream indicates an upstream is in a bad state.
 	errBadUpstream = errors.New("bad upstream")
 
-	// errFetchTimedOut means a fetch operation has timed out.
+	// errFetchTimedOut indicates a fetch operation has timed out.
 	errFetchTimedOut = errors.New("fetch timed out")
 )
 
 // notFoundError is an error indicating that something was not found.
 type notFoundError string
 
-// Error implements the error.
+// Error implements [error].
 func (nfe notFoundError) Error() string {
 	return string(nfe)
 }
 
-// Is reports whether the target is [errNotFound] or [fs.ErrNotExist].
+// Is reports whether the target matches [errNotFound] or [fs.ErrNotExist].
 func (notFoundError) Is(target error) bool {
 	switch target {
 	case errNotFound, fs.ErrNotExist:
@@ -43,7 +43,7 @@ func (notFoundError) Is(target error) bool {
 	return false
 }
 
-// httpGet gets the content targeted by the url into the dst.
+// httpGet gets the content from the given url and writes it into the dst.
 func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer) error {
 	var lastError error
 	for attempt := 0; attempt < 10; attempt++ {
@@ -101,7 +101,7 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 }
 
 // isRetryableHTTPClientDoError reports whether the err is a retryable error
-// returned by the [http.Client.Do].
+// returned by [http.Client.Do].
 func isRetryableHTTPClientDoError(err error) bool {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
@@ -135,10 +135,9 @@ func parseRawURL(rawURL string) (*url.URL, error) {
 	return u, nil
 }
 
-// appendURL appends the extraPaths to the u safely and reutrns a new instance
-// of the [url.URL].
+// appendURL appends the extraPaths to the u safely and reutrns a new [url.URL].
 //
-// TODO: Remove the appendURL when the minimum supported Go version is 1.19. See
+// TODO: Remove appendURL when the minimum supported Go version is 1.19. See
 // https://go.dev/doc/go1.19#net/url.
 func appendURL(u *url.URL, extraPaths ...string) *url.URL {
 	nu := *u

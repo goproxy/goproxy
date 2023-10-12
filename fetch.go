@@ -21,7 +21,7 @@ import (
 	"golang.org/x/mod/zip"
 )
 
-// fetch is a module fetch. All its fields are populated only by the [newFetch].
+// fetch is a module fetch. All of its fields are populated only by [newFetch].
 type fetch struct {
 	g                *Goproxy
 	ops              fetchOps
@@ -34,7 +34,7 @@ type fetch struct {
 	contentType      string
 }
 
-// newFetch returns a new instance of the [fetch].
+// newFetch parses the name and returns a new [fetch].
 func newFetch(g *Goproxy, name, tempDir string) (*fetch, error) {
 	f := &fetch{
 		g:       g,
@@ -284,7 +284,7 @@ func (f *fetch) doDirect(ctx context.Context) (*fetchResult, error) {
 	return r, nil
 }
 
-// fetchOps is the operation of the [fetch].
+// fetchOps is the operation of [fetch].
 type fetchOps uint8
 
 // The fetch operations.
@@ -297,7 +297,7 @@ const (
 	fetchOpsDownloadZip
 )
 
-// String implements the [fmt.Stringer].
+// String implements [fmt.Stringer].
 func (fo fetchOps) String() string {
 	switch fo {
 	case fetchOpsResolve:
@@ -314,7 +314,7 @@ func (fo fetchOps) String() string {
 	return "invalid"
 }
 
-// fetchResult is an unified result for the [fetch].
+// fetchResult is a unified result for [fetch].
 type fetchResult struct {
 	f *fetch
 

@@ -15,7 +15,7 @@ import (
 // sumGolangOrgKey is the key for the sum.golang.org.
 const sumGolangOrgKey = "sum.golang.org+033de0ae+Ac4zctda0e5eza+HJyk9SxEdh+s3Ux18htTTAD8OuAn8"
 
-// sumdbClientOps implements the [golang.org/x/mod/sumdb.ClientOps].
+// sumdbClientOps implements [golang.org/x/mod/sumdb.ClientOps].
 type sumdbClientOps struct {
 	initOnce    sync.Once
 	initError   error
@@ -79,7 +79,7 @@ func (sco *sumdbClientOps) init() {
 	}
 }
 
-// ReadRemote implements the [golang.org/x/mod/sumdb.ClientOps].
+// ReadRemote implements [golang.org/x/mod/sumdb.ClientOps].
 func (sco *sumdbClientOps) ReadRemote(path string) ([]byte, error) {
 	if sco.initOnce.Do(sco.init); sco.initError != nil {
 		return nil, sco.initError
@@ -91,7 +91,7 @@ func (sco *sumdbClientOps) ReadRemote(path string) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// ReadConfig implements the [golang.org/x/mod/sumdb.ClientOps].
+// ReadConfig implements [golang.org/x/mod/sumdb.ClientOps].
 func (sco *sumdbClientOps) ReadConfig(file string) ([]byte, error) {
 	if sco.initOnce.Do(sco.init); sco.initError != nil {
 		return nil, sco.initError
@@ -104,13 +104,13 @@ func (sco *sumdbClientOps) ReadConfig(file string) ([]byte, error) {
 	return nil, fmt.Errorf("unknown config %s", file)
 }
 
-// WriteConfig implements the [golang.org/x/mod/sumdb.ClientOps].
+// WriteConfig implements [golang.org/x/mod/sumdb.ClientOps].
 func (sco *sumdbClientOps) WriteConfig(file string, old, new []byte) error {
 	sco.initOnce.Do(sco.init)
 	return sco.initError
 }
 
-// ReadCache implements the [golang.org/x/mod/sumdb.ClientOps].
+// ReadCache implements [golang.org/x/mod/sumdb.ClientOps].
 func (sco *sumdbClientOps) ReadCache(file string) ([]byte, error) {
 	if sco.initOnce.Do(sco.init); sco.initError != nil {
 		return nil, sco.initError
@@ -118,17 +118,17 @@ func (sco *sumdbClientOps) ReadCache(file string) ([]byte, error) {
 	return nil, fs.ErrNotExist
 }
 
-// WriteCache implements the [golang.org/x/mod/sumdb.ClientOps].
+// WriteCache implements [golang.org/x/mod/sumdb.ClientOps].
 func (sco *sumdbClientOps) WriteCache(file string, data []byte) {
 	sco.initOnce.Do(sco.init)
 }
 
-// Log implements the [golang.org/x/mod/sumdb.ClientOps].
+// Log implements [golang.org/x/mod/sumdb.ClientOps].
 func (sco *sumdbClientOps) Log(msg string) {
 	sco.initOnce.Do(sco.init)
 }
 
-// SecurityError implements the [golang.org/x/mod/sumdb.ClientOps].
+// SecurityError implements [golang.org/x/mod/sumdb.ClientOps].
 func (sco *sumdbClientOps) SecurityError(msg string) {
 	sco.initOnce.Do(sco.init)
 }

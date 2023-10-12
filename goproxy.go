@@ -26,96 +26,96 @@ import (
 
 // Goproxy is the top-level struct of this project.
 //
-// Note that the Goproxy will still follow your environment variables. Which
-// means you can set GOPROXY to serve the Goproxy itself under other proxies,
-// and by setting GONOPROXY and GOPRIVATE to instruct which modules the Goproxy
-// should fetch directly instead of using those proxies. And you can also set
-// GOSUMDB, GONOSUMDB and GOPRIVATE to instruct how the Goproxy should verify
-// the modules it just fetched. All of the above environment variables have been
-// built-in support, which means less external command calls and a significant
-// performance boost.
+// Note that Goproxy will still adhere to your environment variables. This means
+// you can set GOPROXY to serve Goproxy itself under other proxies. By setting
+// GONOPROXY and GOPRIVATE, you can instruct Goproxy on which modules to fetch
+// directly, rather than using those proxies. Additionally, you can set GOSUMDB,
+// GONOSUMDB, and GOPRIVATE to specify how Goproxy should verify the modules it
+// has just fetched. Importantly, all of these mentioned environment variables
+// are built-in supported, resulting in fewer external command calls and a
+// significant performance boost.
 //
-// For requests downloading large numbers of modules (e.g. for bulk static
-// analysis), the Goproxy supports a non-standard header, "Disable-Module-Fetch:
-// true" that instructs it to return only cached content.
+// For requests involving the download of a large number of modules (e.g., for
+// bulk static analysis), Goproxy supports a non-standard header,
+// "Disable-Module-Fetch: true", which instructs it to return only cached
+// content.
 //
-// Make sure that all fields of the Goproxy have been finalized before calling
-// any of its methods.
+// Make sure that all fields of Goproxy have been finalized before calling any
+// of its methods.
 type Goproxy struct {
 	// GoBinName is the name of the Go binary.
 	//
-	// If the GoBinName is empty, the "go" is used.
+	// If GoBinName is empty, "go" is used.
 	//
-	// Note that the version of the Go binary targeted by the GoBinName must
-	// be at least v1.11.
+	// Note that the version of the Go binary targeted by GoBinName must be
+	// at least version 1.11.
 	GoBinName string
 
-	// GoBinEnv is the environment of the Go binary. Each entry is of the
+	// GoBinEnv is the environment of the Go binary. Each entry is in the
 	// form "key=value".
 	//
-	// If the GoBinEnv is nil, the [os.Environ] is used.
+	// If GoBinEnv is nil, [os.Environ] is used.
 	//
-	// If the GoBinEnv contains duplicate environment keys, only the last
-	// value in the slice for each duplicate key is used.
+	// If GoBinEnv contains duplicate environment keys, only the last value
+	// in the slice for each duplicate key is used.
 	//
-	// Note that GOPROXY, GONOPROXY, GOSUMDB, GONOSUMDB and GOPRIVATE have
-	// been built-in support. Which means they can be set even the version
-	// of the Go binary targeted by the [Goproxy.GoBinName] is before v1.13.
+	// Note that GOPROXY, GONOPROXY, GOSUMDB, GONOSUMDB, and GOPRIVATE are
+	// built-in supported. This means they can be set, even if the version
+	// of the Go binary targeted by [Goproxy.GoBinName] is before version
+	// 1.13.
 	GoBinEnv []string
 
-	// GoBinMaxWorkers is the maximum number of commands allowed for the Go
-	// binary to execute at the same time.
+	// GoBinMaxWorkers is the maximum number of concurrently executing
+	// commands for the Go binary.
 	//
-	// If the GoBinMaxWorkers is zero, there is no limit.
+	// If GoBinMaxWorkers is zero, there is no limit.
 	GoBinMaxWorkers int
 
-	// PathPrefix is the prefix of all request paths. It will be used to
-	// trim the request paths via the [strings.TrimPrefix].
+	// PathPrefix is the prefix for all request paths. It is used to trim
+	// the request paths using [strings.TrimPrefix].
 	//
-	// If the PathPrefix is not empty, it must start with "/", and usually
-	// should also end with "/".
+	// If PathPrefix is not empty, it must start with "/" and typically end
+	// with "/".
 	PathPrefix string
 
-	// Cacher is the [Cacher] that used to cache module files.
+	// Cacher is used to cache module files.
 	//
-	// If the Cacher is nil, the module files will be temporarily stored on
-	// the local disk and discarded as the request ends.
+	// If Cacher is nil, module files will be temporarily stored on the
+	// local disk and discarded when the request ends.
 	Cacher Cacher
 
-	// CacherMaxCacheBytes is the maximum number of bytes allowed for the
-	// [Goproxy.Cacher] to store a cache.
+	// CacherMaxCacheBytes is the maximum number of bytes allowed for
+	// storing a new module file in [Goproxy.Cacher].
 	//
-	// If the CacherMaxCacheBytes is zero, there is no limit.
+	// If CacherMaxCacheBytes is zero, there is no limit.
 	CacherMaxCacheBytes int
 
-	// ProxiedSUMDBs is the list of proxied checksum databases (see
+	// ProxiedSUMDBs is a list of proxied checksum databases (see
 	// https://go.dev/design/25530-sumdb#proxying-a-checksum-database). Each
-	// entry is of the form "<sumdb-name>" or "<sumdb-name> <sumdb-URL>".
-	// The first form is a shorthand for the second form, in which case the
-	// corresponding <sumdb-URL> will be the <sumdb-name> itself as a host
-	// with an "https" scheme.
+	// entry is in the form "<sumdb-name>" or "<sumdb-name> <sumdb-URL>".
+	// The first form is a shorthand for the second, where the corresponding
+	// <sumdb-URL> will be the <sumdb-name> itself as a host with an "https"
+	// scheme.
 	//
-	// If the ProxiedSUMDBs contains duplicate checksum database names, only
-	// the last value in the slice for each duplicate checksum database name
-	// is used.
+	// If ProxiedSUMDBs contains duplicate checksum database names, only the
+	// last value in the slice for each duplicate checksum database name is
+	// used.
 	ProxiedSUMDBs []string
 
-	// Transport is used to perform all requests except those started by
-	// calling the Go binary targeted by the [Goproxy.GoBinName].
+	// Transport is used to perform all requests except those initiated by
+	// calling the Go binary targeted by [Goproxy.GoBinName].
 	//
-	// If the Transport is nil, the [http.DefaultTransport] is used.
+	// If Transport is nil, [http.DefaultTransport] is used.
 	Transport http.RoundTripper
 
 	// TempDir is the directory for storing temporary files.
 	//
-	// If the TempDir is empty, the [os.TempDir] is used.
+	// If TempDir is empty, [os.TempDir] is used.
 	TempDir string
 
-	// ErrorLogger is the [log.Logger] that logs errors that occur while
-	// proxying.
+	// ErrorLogger is used to log errors that occur during proxying.
 	//
-	// If the ErrorLogger is nil, logging is done via the [log] package's
-	// standard logger.
+	// If ErrorLogger is nil, [log.Default] is used.
 	ErrorLogger *log.Logger
 
 	initOnce          sync.Once
@@ -265,7 +265,7 @@ func (g *Goproxy) init() {
 	})
 }
 
-// ServeHTTP implements the [http.Handler].
+// ServeHTTP implements [http.Handler].
 func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	g.initOnce.Do(g.init)
 
@@ -527,7 +527,7 @@ func (g *Goproxy) putCacheFile(ctx context.Context, name, file string) error {
 	return g.putCache(ctx, name, f)
 }
 
-// logErrorf formats according to the format and logs the v as an error.
+// logErrorf formats according to a format specifier and writes to the g.ErrorLogger.
 func (g *Goproxy) logErrorf(format string, v ...any) {
 	msg := "goproxy: " + fmt.Sprintf(format, v...)
 	if g.ErrorLogger != nil {
@@ -537,7 +537,7 @@ func (g *Goproxy) logErrorf(format string, v ...any) {
 	}
 }
 
-// walkGOPROXY walks the proxy list parsed from the goproxy.
+// walkGOPROXY walks through the proxy list parsed from the goproxy.
 func walkGOPROXY(goproxy string, onProxy func(proxy string) error, onDirect, onOff func() error) error {
 	if goproxy == "" {
 		return errors.New("missing GOPROXY")
@@ -579,8 +579,8 @@ var (
 	backoffRandMutex sync.Mutex
 )
 
-// backoffSleep computes the exponential backoff sleep according to
-// https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/.
+// backoffSleep computes the exponential backoff sleep duration based on the
+// algorithm described in https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/.
 func backoffSleep(base, cap time.Duration, attempt int) time.Duration {
 	var pow time.Duration
 	if attempt < 63 {
@@ -612,8 +612,8 @@ func stringSliceContains(ss []string, s string) bool {
 }
 
 // globsMatchPath reports whether any path prefix of target matches one of the
-// glob patterns (as defined by the [path.Match]) in the comma-separated globs
-// list. It ignores any empty or malformed patterns in the list.
+// glob patterns (as defined by [path.Match]) in the comma-separated globs list.
+// It ignores any empty or malformed patterns in the list.
 func globsMatchPath(globs, target string) bool {
 	for globs != "" {
 		// Extract next non-empty glob in comma-separated list.

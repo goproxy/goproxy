@@ -8,36 +8,36 @@ import (
 	"path/filepath"
 )
 
-// Cacher defines a set of intuitive methods used to cache module files for the [Goproxy].
+// Cacher defines a set of intuitive methods used to cache module files for [Goproxy].
 type Cacher interface {
-	// Get gets the matched cache for the name. It returns the
-	// [fs.ErrNotExist] if not found.
+	// Get gets the matched cache for the name. It returns [fs.ErrNotExist]
+	// if not found.
 	//
 	// Note that the returned [io.ReadCloser] can optionally implement the
 	// following interfaces:
-	//  1. [io.Seeker], mostly for the Range request header.
-	//  2. interface{ LastModified() time.Time }, mostly for the
+	//  1. [io.Seeker], mainly for the Range request header.
+	//  2. interface{ LastModified() time.Time }, mainly for the
 	//     Last-Modified response header. Also for the If-Unmodified-Since,
-	//     If-Modified-Since and If-Range request headers when 1 is
+	//     If-Modified-Since, and If-Range request headers when 1 is
 	//     implemented.
-	//  3. interface{ ModTime() time.Time }, same as 2, but with lower
+	//  3. interface{ ModTime() time.Time }, same as 2 but with lower
 	//     priority.
-	//  4. interface{ ETag() string }, mostly for the ETag response header.
-	//     Also for the If-Match, If-None-Match and If-Range request headers
-	//     when 1 is implemented. Note that the return value will be assumed
-	//     to have complied with RFC 7232, section 2.3, so it will be used
-	//     directly without further processing.
+	//  4. interface{ ETag() string }, mainly for the ETag response header.
+	//     Also for the If-Match, If-None-Match, and If-Range request
+	//     headers when 1 is implemented. Note that the return value will be
+	//     assumed to have complied with RFC 7232, section 2.3, so it will
+	//     be used directly without further processing.
 	Get(ctx context.Context, name string) (io.ReadCloser, error)
 
 	// Put puts a cache for the name with the content.
 	Put(ctx context.Context, name string, content io.ReadSeeker) error
 }
 
-// DirCacher implements the [Cacher] using a directory on the local disk. If the
+// DirCacher implements [Cacher] using a directory on the local disk. If the
 // directory does not exist, it will be created with 0755 permissions.
 type DirCacher string
 
-// Get implements the [Cacher].
+// Get implements [Cacher].
 func (dc DirCacher) Get(ctx context.Context, name string) (io.ReadCloser, error) {
 	f, err := os.Open(filepath.Join(string(dc), filepath.FromSlash(name)))
 	if err != nil {
@@ -53,7 +53,7 @@ func (dc DirCacher) Get(ctx context.Context, name string) (io.ReadCloser, error)
 	}{f, fi}, nil
 }
 
-// Put implements the [Cacher].
+// Put implements [Cacher].
 func (dc DirCacher) Put(ctx context.Context, name string, content io.ReadSeeker) error {
 	file := filepath.Join(string(dc), filepath.FromSlash(name))
 
