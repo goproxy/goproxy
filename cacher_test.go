@@ -26,7 +26,7 @@ func TestDirCacher(t *testing.T) {
 
 	if rc, err := dirCacher.Get(context.Background(), "a/b/c"); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := err.Error(), fs.ErrNotExist.Error(); got != want && !errors.Is(err, fs.ErrNotExist) {
+	} else if got, want := err, fs.ErrNotExist; !errors.Is(got, want) && got.Error() != want.Error() {
 		t.Fatalf("got %q, want %q", got, want)
 	} else if rc != nil {
 		t.Errorf("got %v, want nil", rc)

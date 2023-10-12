@@ -28,7 +28,7 @@ func TestNotFoundError(t *testing.T) {
 		{3, notFoundError("foobar"), errNotFound},
 		{3, errNotFound, fs.ErrNotExist},
 	} {
-		if got, want := tt.nfe.Error(), tt.wantError.Error(); got != want && !errors.Is(tt.nfe, tt.wantError) {
+		if got, want := tt.nfe, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
 			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 		}
 	}
@@ -167,7 +167,7 @@ func TestHTTPGet(t *testing.T) {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
 			}
-			if got, want := err.Error(), tt.wantError.Error(); got != want && !errors.Is(err, tt.wantError) {
+			if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		} else {

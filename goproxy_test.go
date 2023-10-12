@@ -759,16 +759,16 @@ func TestGoproxyCache(t *testing.T) {
 	}
 	if _, err := g.cache(context.Background(), "bar"); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := errors.Is(err, fs.ErrNotExist), true; got != want {
-		t.Errorf("got %v, want %v", got, want)
+	} else if got, want := err, fs.ErrNotExist; !errors.Is(got, want) && got.Error() != want.Error() {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	g = &Goproxy{}
 	g.init()
 	if _, err := g.cache(context.Background(), ""); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := errors.Is(err, fs.ErrNotExist), true; got != want {
-		t.Errorf("got %v, want %v", got, want)
+	} else if got, want := err, fs.ErrNotExist; !errors.Is(got, want) && got.Error() != want.Error() {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }
 
@@ -827,8 +827,8 @@ func TestGoproxyPutCache(t *testing.T) {
 		t.Fatalf("unexpected error %q", err)
 	} else if _, err := os.ReadFile(filepath.Join(string(dc), "foobar")); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := errors.Is(err, fs.ErrNotExist), true; got != want {
-		t.Errorf("got %v, want %v", got, want)
+	} else if got, want := err, fs.ErrNotExist; !errors.Is(got, want) && got.Error() != want.Error() {
+		t.Errorf("got %q, want %q", got, want)
 	}
 
 	g = &Goproxy{}
@@ -858,8 +858,8 @@ func TestGoproxyPutCacheFile(t *testing.T) {
 
 	if err := g.putCacheFile(context.Background(), "bar", filepath.Join(string(dc), "bar-sourcel")); err == nil {
 		t.Fatal("expected error")
-	} else if got, want := errors.Is(err, fs.ErrNotExist), true; got != want {
-		t.Errorf("got %v, want %v", got, want)
+	} else if got, want := err, fs.ErrNotExist; !errors.Is(got, want) && got.Error() != want.Error() {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }
 
@@ -981,7 +981,7 @@ func TestWalkGOPROXY(t *testing.T) {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
 			}
-			if got, want := err.Error(), tt.wantError.Error(); got != want && !errors.Is(err, tt.wantError) {
+			if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		} else {

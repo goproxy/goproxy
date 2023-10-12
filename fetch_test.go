@@ -188,7 +188,7 @@ func TestNewFetch(t *testing.T) {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
 			}
-			if got, want := err.Error(), tt.wantError.Error(); got != want && !errors.Is(err, tt.wantError) {
+			if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		} else {
@@ -311,7 +311,7 @@ func TestFetchDo(t *testing.T) {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
 			}
-			if got, want := err.Error(), tt.wantError.Error(); got != want && !errors.Is(err, tt.wantError) {
+			if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		} else {
@@ -615,7 +615,7 @@ invalid
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
 			}
-			if got, want := err.Error(), tt.wantError.Error(); got != want && !errors.Is(err, tt.wantError) {
+			if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		} else {
@@ -873,7 +873,7 @@ func TestFetchDoDirect(t *testing.T) {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
 			}
-			if got, want := err.Error(), tt.wantError.Error(); got != want && !errors.Is(err, tt.wantError) {
+			if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		} else {
@@ -983,7 +983,7 @@ func TestFetchResultOpen(t *testing.T) {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
 			}
-			if got, want := err.Error(), tt.wantError.Error(); got != want && !errors.Is(err, tt.wantError) {
+			if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		} else {
@@ -1047,7 +1047,7 @@ func TestUnmarshalInfo(t *testing.T) {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
 			}
-			if got, want := err.Error(), tt.wantError.Error(); got != want && !errors.Is(err, tt.wantError) {
+			if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		} else {
@@ -1103,7 +1103,7 @@ func TestCheckAndFormatInfoFile(t *testing.T) {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
 			}
-			if got, want := err.Error(), tt.wantError.Error(); got != want && !errors.Is(err, tt.wantError) {
+			if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		} else {
@@ -1141,7 +1141,7 @@ func TestCheckModFile(t *testing.T) {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
 			}
-			if got, want := err.Error(), tt.wantError.Error(); got != want && !errors.Is(err, tt.wantError) {
+			if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		} else {
@@ -1233,7 +1233,7 @@ func TestVerifyModFile(t *testing.T) {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
 			}
-			if got, want := err.Error(), tt.wantError.Error(); got != want && !errors.Is(err, tt.wantError) {
+			if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		} else {
@@ -1282,7 +1282,7 @@ func TestCheckZipFile(t *testing.T) {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
 			}
-			if got, want := err.Error(), tt.wantError.Error(); got != want && !errors.Is(err, tt.wantError) {
+			if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		} else {
@@ -1376,7 +1376,7 @@ func TestVerifyZipFile(t *testing.T) {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
 			}
-			if got, want := err.Error(), tt.wantError.Error(); got != want && !errors.Is(err, tt.wantError) {
+			if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		} else {
