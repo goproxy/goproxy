@@ -77,12 +77,6 @@ type Goproxy struct {
 	// local disk and discarded when the request ends.
 	Cacher Cacher
 
-	// CacherMaxCacheBytes is the maximum number of bytes allowed for
-	// storing a new module file in [Goproxy.Cacher].
-	//
-	// If CacherMaxCacheBytes is zero, there is no limit.
-	CacherMaxCacheBytes int
-
 	// ProxiedSUMDBs is a list of proxied checksum databases (see
 	// https://go.dev/design/25530-sumdb#proxying-a-checksum-database). Each
 	// entry is in the form "<sumdb-name>" or "<sumdb-name> <sumdb-URL>".
@@ -492,15 +486,6 @@ func (g *Goproxy) cache(ctx context.Context, name string) (io.ReadCloser, error)
 func (g *Goproxy) putCache(ctx context.Context, name string, content io.ReadSeeker) error {
 	if g.Cacher == nil {
 		return nil
-	}
-	if g.CacherMaxCacheBytes != 0 {
-		if size, err := content.Seek(0, io.SeekEnd); err != nil {
-			return err
-		} else if size > int64(g.CacherMaxCacheBytes) {
-			return nil
-		} else if _, err := content.Seek(0, io.SeekStart); err != nil {
-			return err
-		}
 	}
 	return g.Cacher.Put(ctx, name, content)
 }

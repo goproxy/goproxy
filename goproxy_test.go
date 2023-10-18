@@ -790,32 +790,9 @@ func TestGoproxyCache(t *testing.T) {
 	}
 }
 
-type testReaderSeeker struct {
-	io.ReadSeeker
-	cannotSeekStart bool
-	cannotSeekEnd   bool
-}
-
-func (trs *testReaderSeeker) Seek(offset int64, whence int) (int64, error) {
-	switch whence {
-	case io.SeekStart:
-		if trs.cannotSeekStart {
-			return 0, errors.New("cannot seek start")
-		}
-	case io.SeekEnd:
-		if trs.cannotSeekEnd {
-			return 0, errors.New("cannot seek end")
-		}
-	}
-	return trs.ReadSeeker.Seek(offset, whence)
-}
-
 func TestGoproxyPutCache(t *testing.T) {
 	dc := DirCacher(t.TempDir())
-	g := &Goproxy{
-		Cacher:              dc,
-		CacherMaxCacheBytes: 5,
-	}
+	g := &Goproxy{Cacher: dc}
 	g.init()
 	if err := g.putCache(context.Background(), "foo", strings.NewReader("bar")); err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -823,29 +800,6 @@ func TestGoproxyPutCache(t *testing.T) {
 	if b, err := os.ReadFile(filepath.Join(string(dc), "foo")); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	} else if got, want := string(b), "bar"; got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-	if err := g.putCache(context.Background(), "foo", &testReaderSeeker{
-		ReadSeeker:      strings.NewReader("bar"),
-		cannotSeekStart: true,
-	}); err == nil {
-		t.Fatal("expected error")
-	} else if got, want := err.Error(), "cannot seek start"; got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-	if err := g.putCache(context.Background(), "foo", &testReaderSeeker{
-		ReadSeeker:    strings.NewReader("bar"),
-		cannotSeekEnd: true,
-	}); err == nil {
-		t.Fatal("expected error")
-	} else if got, want := err.Error(), "cannot seek end"; got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-	if err := g.putCache(context.Background(), "foobar", strings.NewReader("foobar")); err != nil {
-		t.Fatalf("unexpected error %q", err)
-	} else if _, err := os.ReadFile(filepath.Join(string(dc), "foobar")); err == nil {
-		t.Fatal("expected error")
-	} else if got, want := err, fs.ErrNotExist; !errors.Is(got, want) && got.Error() != want.Error() {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
