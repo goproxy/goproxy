@@ -64,12 +64,6 @@ type Goproxy struct {
 	// If MaxDirectFetches is zero, there is no limit.
 	MaxDirectFetches int
 
-	// Cacher is used to cache module files.
-	//
-	// If Cacher is nil, module files will be temporarily stored on the
-	// local disk and discarded when the request ends.
-	Cacher Cacher
-
 	// ProxiedSUMDBs is a list of proxied checksum databases (see
 	// https://go.dev/design/25530-sumdb#proxying-a-checksum-database). Each
 	// entry is in the form "<sumdb-name>" or "<sumdb-name> <sumdb-URL>".
@@ -82,16 +76,22 @@ type Goproxy struct {
 	// used.
 	ProxiedSUMDBs []string
 
-	// Transport is used to perform all requests except those initiated by
-	// calling the Go binary targeted by [Goproxy.GoBinName].
+	// Cacher is used to cache module files.
 	//
-	// If Transport is nil, [http.DefaultTransport] is used.
-	Transport http.RoundTripper
+	// If Cacher is nil, module files will be temporarily stored on the
+	// local disk and discarded when the request ends.
+	Cacher Cacher
 
 	// TempDir is the directory for storing temporary files.
 	//
 	// If TempDir is empty, [os.TempDir] is used.
 	TempDir string
+
+	// Transport is used to perform all requests except those initiated by
+	// calling the Go binary targeted by [Goproxy.GoBinName].
+	//
+	// If Transport is nil, [http.DefaultTransport] is used.
+	Transport http.RoundTripper
 
 	// ErrorLogger is used to log errors that occur during proxying.
 	//

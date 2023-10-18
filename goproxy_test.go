@@ -137,20 +137,18 @@ func TestGoproxyInit(t *testing.T) {
 		}
 	}
 
-	g := &Goproxy{}
-	g.MaxDirectFetches = 1
+	g := &Goproxy{MaxDirectFetches: 1}
 	g.init()
 	if g.directFetchWorkerPool == nil {
 		t.Fatal("unexpected nil")
 	}
 
-	g = &Goproxy{}
-	g.ProxiedSUMDBs = []string{
+	g = &Goproxy{ProxiedSUMDBs: []string{
 		"sum.golang.google.cn",
 		"sum.golang.org https://sum.golang.google.cn",
 		"",
 		"example.com ://invalid",
-	}
+	}}
 	g.init()
 	if got, want := len(g.proxiedSUMDBs), 2; got != want {
 		t.Errorf("got %d, want %d", got, want)
@@ -664,8 +662,8 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 	} {
 		setSUMDBHandler(tt.sumdbHandler)
 		g := &Goproxy{
-			Cacher:        tt.cacher,
 			ProxiedSUMDBs: []string{"sumdb.example.com " + sumdbServer.URL},
+			Cacher:        tt.cacher,
 			ErrorLogger:   log.New(io.Discard, "", 0),
 		}
 		g.init()

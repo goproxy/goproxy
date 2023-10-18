@@ -23,8 +23,8 @@ var (
 	pathPrefix       = flag.String("path-prefix", "", "prefix for all request paths")
 	goBinName        = flag.String("go-bin-name", "go", "name of the Go binary")
 	maxDirectFetches = flag.Int("max-direct-fetches", 0, "maximum number (0 means no limit) of concurrent direct fetches")
-	cacherDir        = flag.String("cacher-dir", "caches", "directory that used to cache module files")
 	proxiedSUMDBs    = flag.String("proxied-sumdbs", "", "comma-separated list of proxied checksum databases")
+	cacherDir        = flag.String("cacher-dir", "caches", "directory that used to cache module files")
 	tempDir          = flag.String("temp-dir", os.TempDir(), "directory for storing temporary files")
 	insecure         = flag.Bool("insecure", false, "allow insecure TLS connections")
 	connectTimeout   = flag.Duration("connect-timeout", 30*time.Second, "maximum amount of time (0 means no limit) will wait for an outgoing connection to establish")
@@ -58,10 +58,10 @@ func main() {
 	g := &goproxy.Goproxy{
 		GoBinName:        *goBinName,
 		MaxDirectFetches: *maxDirectFetches,
-		Cacher:           goproxy.DirCacher(*cacherDir),
 		ProxiedSUMDBs:    strings.Split(*proxiedSUMDBs, ","),
-		Transport:        transport,
+		Cacher:           goproxy.DirCacher(*cacherDir),
 		TempDir:          *tempDir,
+		Transport:        transport,
 	}
 
 	handler := http.Handler(g)
