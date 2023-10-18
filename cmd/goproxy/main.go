@@ -21,7 +21,7 @@ var (
 	tlsCertFile      = flag.String("tls-cert-file", "", "path to the TLS certificate file")
 	tlsKeyFile       = flag.String("tls-key-file", "", "path to the TLS key file")
 	pathPrefix       = flag.String("path-prefix", "", "prefix for all request paths")
-	goBinName        = flag.String("go-bin-name", "go", "name of the Go binary")
+	goBinName        = flag.String("go-bin-name", "go", "name of the Go binary that is used to execute direct fetches")
 	maxDirectFetches = flag.Int("max-direct-fetches", 0, "maximum number (0 means no limit) of concurrent direct fetches")
 	proxiedSUMDBs    = flag.String("proxied-sumdbs", "", "comma-separated list of proxied checksum databases")
 	cacheDir         = flag.String("cache-dir", "caches", "directory that used to cache module files")

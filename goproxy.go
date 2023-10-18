@@ -51,7 +51,8 @@ type Goproxy struct {
 	// the slice for each duplicate key is used.
 	Env []string
 
-	// GoBinName is the name of the Go binary.
+	// GoBinName is the name of the Go binary that is used to execute direct
+	// fetches.
 	//
 	// If GoBinName is empty, "go" is used.
 	//
@@ -87,8 +88,8 @@ type Goproxy struct {
 	// If TempDir is empty, [os.TempDir] is used.
 	TempDir string
 
-	// Transport is used to perform all requests except those initiated by
-	// calling the Go binary targeted by [Goproxy.GoBinName].
+	// Transport is used to execute outgoing requests, excluding those
+	// initiated by direct fetches.
 	//
 	// If Transport is nil, [http.DefaultTransport] is used.
 	Transport http.RoundTripper
