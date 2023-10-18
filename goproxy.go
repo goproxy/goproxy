@@ -43,6 +43,14 @@ import (
 // Make sure that all fields of Goproxy have been finalized before calling any
 // of its methods.
 type Goproxy struct {
+	// Env is the environment. Each entry is in the form "key=value".
+	//
+	// If Env is nil, [os.Environ] is used.
+	//
+	// If Env contains duplicate environment keys, only the last value in
+	// the slice for each duplicate key is used.
+	Env []string
+
 	// GoBinName is the name of the Go binary.
 	//
 	// If GoBinName is empty, "go" is used.
@@ -50,20 +58,6 @@ type Goproxy struct {
 	// Note that the version of the Go binary targeted by GoBinName must be
 	// at least version 1.11.
 	GoBinName string
-
-	// GoBinEnv is the environment of the Go binary. Each entry is in the
-	// form "key=value".
-	//
-	// If GoBinEnv is nil, [os.Environ] is used.
-	//
-	// If GoBinEnv contains duplicate environment keys, only the last value
-	// in the slice for each duplicate key is used.
-	//
-	// Note that GOPROXY, GONOPROXY, GOSUMDB, GONOSUMDB, and GOPRIVATE are
-	// built-in supported. This means they can be set, even if the version
-	// of the Go binary targeted by [Goproxy.GoBinName] is before version
-	// 1.13.
-	GoBinEnv []string
 
 	// GoBinMaxWorkers is the maximum number of concurrently executing
 	// commands for the Go binary.
@@ -105,52 +99,47 @@ type Goproxy struct {
 	// If ErrorLogger is nil, [log.Default] is used.
 	ErrorLogger *log.Logger
 
-	initOnce          sync.Once
-	goBinName         string
-	goBinEnv          []string
-	goBinEnvGOPROXY   string
-	goBinEnvGONOPROXY string
-	goBinEnvGOSUMDB   string
-	goBinEnvGONOSUMDB string
-	goBinWorkerChan   chan struct{}
-	proxiedSUMDBs     map[string]*url.URL
-	httpClient        *http.Client
-	sumdbClient       *sumdb.Client
+	initOnce        sync.Once
+	env             []string
+	envGOPROXY      string
+	envGONOPROXY    string
+	envGOSUMDB      string
+	envGONOSUMDB    string
+	goBinName       string
+	goBinWorkerChan chan struct{}
+	proxiedSUMDBs   map[string]*url.URL
+	httpClient      *http.Client
+	sumdbClient     *sumdb.Client
 }
 
 // init initializes the g.
 func (g *Goproxy) init() {
-	g.goBinName = g.GoBinName
-	if g.goBinName == "" {
-		g.goBinName = "go"
+	env := g.Env
+	if env == nil {
+		env = os.Environ()
 	}
-
-	goBinEnv := g.GoBinEnv
-	if goBinEnv == nil {
-		goBinEnv = os.Environ()
-	}
-	var goBinEnvGOPRIVATE string
-	for _, env := range goBinEnv {
+	var envGOPRIVATE string
+	for _, env := range env {
 		if k, v, ok := strings.Cut(env, "="); ok {
 			switch strings.TrimSpace(k) {
 			case "GO111MODULE":
 			case "GOPROXY":
-				g.goBinEnvGOPROXY = v
+				g.envGOPROXY = v
 			case "GONOPROXY":
-				g.goBinEnvGONOPROXY = v
+				g.envGONOPROXY = v
 			case "GOSUMDB":
-				g.goBinEnvGOSUMDB = v
+				g.envGOSUMDB = v
 			case "GONOSUMDB":
-				g.goBinEnvGONOSUMDB = v
+				g.envGONOSUMDB = v
 			case "GOPRIVATE":
-				goBinEnvGOPRIVATE = v
+				envGOPRIVATE = v
 			default:
-				g.goBinEnv = append(g.goBinEnv, k+"="+v)
+				g.env = append(g.env, k+"="+v)
 			}
 		}
 	}
-	g.goBinEnv = append(
-		g.goBinEnv,
+	g.env = append(
+		g.env,
 		"GO111MODULE=on",
 		"GOPROXY=direct",
 		"GONOPROXY=",
@@ -159,8 +148,8 @@ func (g *Goproxy) init() {
 		"GOPRIVATE=",
 	)
 
-	var goBinEnvGOPROXY string
-	for goproxy := g.goBinEnvGOPROXY; goproxy != ""; {
+	var envGOPROXY string
+	for goproxy := g.envGOPROXY; goproxy != ""; {
 		var proxy, sep string
 		if i := strings.IndexAny(goproxy, ",|"); i >= 0 {
 			proxy = goproxy[:i]
@@ -181,45 +170,50 @@ func (g *Goproxy) init() {
 			sep = ""
 			goproxy = ""
 		}
-		goBinEnvGOPROXY += proxy + sep
+		envGOPROXY += proxy + sep
 	}
-	if goBinEnvGOPROXY != "" {
-		g.goBinEnvGOPROXY = goBinEnvGOPROXY
-	} else if g.goBinEnvGOPROXY == "" {
-		g.goBinEnvGOPROXY = "https://proxy.golang.org,direct"
+	if envGOPROXY != "" {
+		g.envGOPROXY = envGOPROXY
+	} else if g.envGOPROXY == "" {
+		g.envGOPROXY = "https://proxy.golang.org,direct"
 	} else {
-		g.goBinEnvGOPROXY = "off"
+		g.envGOPROXY = "off"
 	}
 
-	if g.goBinEnvGONOPROXY == "" {
-		g.goBinEnvGONOPROXY = goBinEnvGOPRIVATE
+	if g.envGONOPROXY == "" {
+		g.envGONOPROXY = envGOPRIVATE
 	}
-	var goBinEnvGONOPROXYParts []string
-	for _, noproxy := range strings.Split(g.goBinEnvGONOPROXY, ",") {
+	var noproxies []string
+	for _, noproxy := range strings.Split(g.envGONOPROXY, ",") {
 		if noproxy = strings.TrimSpace(noproxy); noproxy != "" {
-			goBinEnvGONOPROXYParts = append(goBinEnvGONOPROXYParts, noproxy)
+			noproxies = append(noproxies, noproxy)
 		}
 	}
-	if len(goBinEnvGONOPROXYParts) > 0 {
-		g.goBinEnvGONOPROXY = strings.Join(goBinEnvGONOPROXYParts, ",")
+	if len(noproxies) > 0 {
+		g.envGONOPROXY = strings.Join(noproxies, ",")
 	}
 
-	g.goBinEnvGOSUMDB = strings.TrimSpace(g.goBinEnvGOSUMDB)
-	if g.goBinEnvGOSUMDB == "" {
-		g.goBinEnvGOSUMDB = "sum.golang.org"
+	g.envGOSUMDB = strings.TrimSpace(g.envGOSUMDB)
+	if g.envGOSUMDB == "" {
+		g.envGOSUMDB = "sum.golang.org"
 	}
 
-	if g.goBinEnvGONOSUMDB == "" {
-		g.goBinEnvGONOSUMDB = goBinEnvGOPRIVATE
+	if g.envGONOSUMDB == "" {
+		g.envGONOSUMDB = envGOPRIVATE
 	}
-	var goBinEnvGONOSUMDBParts []string
-	for _, nosumdb := range strings.Split(g.goBinEnvGONOSUMDB, ",") {
+	var nosumdbs []string
+	for _, nosumdb := range strings.Split(g.envGONOSUMDB, ",") {
 		if nosumdb = strings.TrimSpace(nosumdb); nosumdb != "" {
-			goBinEnvGONOSUMDBParts = append(goBinEnvGONOSUMDBParts, nosumdb)
+			nosumdbs = append(nosumdbs, nosumdb)
 		}
 	}
-	if len(goBinEnvGONOSUMDBParts) > 0 {
-		g.goBinEnvGONOSUMDB = strings.Join(goBinEnvGONOSUMDBParts, ",")
+	if len(nosumdbs) > 0 {
+		g.envGONOSUMDB = strings.Join(nosumdbs, ",")
+	}
+
+	g.goBinName = g.GoBinName
+	if g.goBinName == "" {
+		g.goBinName = "go"
 	}
 
 	if g.GoBinMaxWorkers != 0 {
@@ -246,8 +240,8 @@ func (g *Goproxy) init() {
 
 	g.httpClient = &http.Client{Transport: g.Transport}
 	g.sumdbClient = sumdb.NewClient(&sumdbClientOps{
-		envGOPROXY: g.goBinEnvGOPROXY,
-		envGOSUMDB: g.goBinEnvGOSUMDB,
+		envGOPROXY: g.envGOPROXY,
+		envGOSUMDB: g.envGOSUMDB,
 		httpClient: g.httpClient,
 	})
 }

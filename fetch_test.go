@@ -181,7 +181,7 @@ func TestNewFetch(t *testing.T) {
 			wantError: errors.New(`invalid escaped version "!!v1.0.0"`),
 		},
 	} {
-		g := &Goproxy{GoBinEnv: tt.env}
+		g := &Goproxy{Env: tt.env}
 		g.init()
 		f, err := newFetch(g, tt.name, "tempDir")
 		if tt.wantError != nil {
@@ -262,7 +262,7 @@ func TestFetchDo(t *testing.T) {
 				"GOSUMDB=off",
 			},
 			setupGorpoxy: func(g *Goproxy) error {
-				g.goBinEnv = append(g.goBinEnv, "GOPROXY="+proxyServer.URL)
+				g.env = append(g.env, "GOPROXY="+proxyServer.URL)
 				return nil
 			},
 			name:      "example.com/@latest",
@@ -277,7 +277,7 @@ func TestFetchDo(t *testing.T) {
 				"GOSUMDB=off",
 			},
 			setupGorpoxy: func(g *Goproxy) error {
-				g.goBinEnv = append(g.goBinEnv, "GOPROXY=off")
+				g.env = append(g.env, "GOPROXY=off")
 				return nil
 			},
 			name:      "example.com/@latest",
@@ -295,7 +295,7 @@ func TestFetchDo(t *testing.T) {
 		},
 	} {
 		setProxyHandler(tt.proxyHandler)
-		g := &Goproxy{GoBinEnv: tt.env}
+		g := &Goproxy{Env: tt.env}
 		g.init()
 		if tt.setupGorpoxy != nil {
 			if err := tt.setupGorpoxy(g); err != nil {
@@ -600,7 +600,7 @@ invalid
 			envGOSUMDB = vkey + " " + sumdbServer.URL
 		}
 		g := &Goproxy{
-			GoBinEnv: []string{
+			Env: []string{
 				"GOPROXY=off",
 				"GOSUMDB=" + envGOSUMDB,
 			},
@@ -849,16 +849,16 @@ func TestFetchDoDirect(t *testing.T) {
 			envGOSUMDB = vkey + " " + sumdbServer.URL
 		}
 		g := &Goproxy{
-			GoBinMaxWorkers: 1,
-			GoBinEnv: append(
+			Env: append(
 				os.Environ(),
 				"GOPATH="+gopathDir,
 				"GOPROXY=off",
 				"GOSUMDB="+envGOSUMDB,
 			),
+			GoBinMaxWorkers: 1,
 		}
 		g.init()
-		g.goBinEnv = append(g.goBinEnv, "GOPROXY="+proxyServer.URL)
+		g.env = append(g.env, "GOPROXY="+proxyServer.URL)
 		f, err := newFetch(g, tt.name, t.TempDir())
 		if err != nil {
 			t.Fatalf("test(%d): unexpected error %q", tt.n, err)
@@ -1187,7 +1187,7 @@ func TestVerifyModFile(t *testing.T) {
 	})).ServeHTTP)
 
 	g := &Goproxy{
-		GoBinEnv: []string{
+		Env: []string{
 			"GOPROXY=off",
 			"GOSUMDB=" + vkey + " " + sumdbServer.URL,
 		},
@@ -1330,7 +1330,7 @@ func TestVerifyZipFile(t *testing.T) {
 	})).ServeHTTP)
 
 	g := &Goproxy{
-		GoBinEnv: []string{
+		Env: []string{
 			"GOPROXY=off",
 			"GOSUMDB=" + vkey + " " + sumdbServer.URL,
 		},

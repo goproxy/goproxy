@@ -112,27 +112,27 @@ func TestGoproxyInit(t *testing.T) {
 			wantEnvGONOSUMDB: "alt2.example.com",
 		},
 	} {
-		g := &Goproxy{GoBinEnv: tt.env}
+		g := &Goproxy{Env: tt.env}
 		g.init()
 		if got, want := g.goBinName, "go"; got != want {
 			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 		}
-		if got, want := getenv(g.goBinEnv, "PATH"), os.Getenv("PATH"); got != want {
+		if got, want := getenv(g.env, "PATH"), os.Getenv("PATH"); got != want {
 			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 		}
-		if got, want := g.goBinEnvGOPROXY, tt.wantEnvGOPROXY; got != want {
+		if got, want := g.envGOPROXY, tt.wantEnvGOPROXY; got != want {
 			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 		}
-		if got, want := g.goBinEnvGONOPROXY, tt.wantEnvGONOPROXY; got != want {
+		if got, want := g.envGONOPROXY, tt.wantEnvGONOPROXY; got != want {
 			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 		}
-		if got, want := g.goBinEnvGOSUMDB, tt.wantEnvGOSUMDB; got != want {
+		if got, want := g.envGOSUMDB, tt.wantEnvGOSUMDB; got != want {
 			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 		}
-		if got, want := g.goBinEnvGONOSUMDB, tt.wantEnvGONOSUMDB; got != want {
+		if got, want := g.envGONOSUMDB, tt.wantEnvGONOSUMDB; got != want {
 			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 		}
-		if got, want := getenv(g.goBinEnv, "GOPRIVATE"), ""; got != want {
+		if got, want := getenv(g.env, "GOPRIVATE"), ""; got != want {
 			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 		}
 	}
@@ -279,8 +279,8 @@ func TestGoproxyServeHTTP(t *testing.T) {
 	} {
 		setProxyHandler(tt.proxyHandler)
 		g := &Goproxy{
+			Env:         []string{"GOPROXY=" + proxyServer.URL, "GOSUMDB=off"},
 			Cacher:      DirCacher(t.TempDir()),
-			GoBinEnv:    []string{"GOPROXY=" + proxyServer.URL, "GOSUMDB=off"},
 			TempDir:     tt.tempDir,
 			ErrorLogger: log.New(io.Discard, "", 0),
 		}
@@ -433,8 +433,8 @@ func TestGoproxyServeFetch(t *testing.T) {
 			}
 		}
 		g := &Goproxy{
+			Env:         []string{"GOPROXY=" + proxyServer.URL, "GOSUMDB=off"},
 			Cacher:      tt.cacher,
-			GoBinEnv:    []string{"GOPROXY=" + proxyServer.URL, "GOSUMDB=off"},
 			ErrorLogger: log.New(io.Discard, "", 0),
 		}
 		g.init()
@@ -512,8 +512,8 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 	} {
 		setProxyHandler(tt.proxyHandler)
 		g := &Goproxy{
+			Env:         []string{"GOPROXY=" + proxyServer.URL, "GOSUMDB=off"},
 			Cacher:      tt.cacher,
-			GoBinEnv:    []string{"GOPROXY=" + proxyServer.URL, "GOSUMDB=off"},
 			ErrorLogger: log.New(io.Discard, "", 0),
 		}
 		g.init()

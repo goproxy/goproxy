@@ -102,17 +102,17 @@ func newFetch(g *Goproxy, name, tempDir string) (*fetch, error) {
 		return nil, err
 	}
 	f.modAtVer = f.modulePath + "@" + f.moduleVersion
-	f.requiredToVerify = g.goBinEnvGOSUMDB != "off" && !globsMatchPath(g.goBinEnvGONOSUMDB, f.modulePath)
+	f.requiredToVerify = g.envGOSUMDB != "off" && !globsMatchPath(g.envGONOSUMDB, f.modulePath)
 	return f, nil
 }
 
 // do executes the f.
 func (f *fetch) do(ctx context.Context) (*fetchResult, error) {
-	if globsMatchPath(f.g.goBinEnvGONOPROXY, f.modulePath) {
+	if globsMatchPath(f.g.envGONOPROXY, f.modulePath) {
 		return f.doDirect(ctx)
 	}
 	var r *fetchResult
-	if err := walkGOPROXY(f.g.goBinEnvGOPROXY, func(proxy string) error {
+	if err := walkGOPROXY(f.g.envGOPROXY, func(proxy string) error {
 		var err error
 		r, err = f.doProxy(ctx, proxy)
 		return err
@@ -224,7 +224,7 @@ func (f *fetch) doDirect(ctx context.Context) (*fetchResult, error) {
 	}
 
 	cmd := exec.CommandContext(ctx, f.g.goBinName, args...)
-	cmd.Env = f.g.goBinEnv
+	cmd.Env = f.g.env
 	cmd.Dir = f.tempDir
 	stdout, err := cmd.Output()
 	if err != nil {
