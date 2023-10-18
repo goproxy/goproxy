@@ -28,25 +28,8 @@ var (
 	tempDir          = flag.String("temp-dir", os.TempDir(), "directory for storing temporary files")
 	insecure         = flag.Bool("insecure", false, "allow insecure TLS connections")
 	connectTimeout   = flag.Duration("connect-timeout", 30*time.Second, "maximum amount of time (0 means no limit) will wait for an outgoing connection to establish")
-	fetchTimeout     = flag.Duration("fetch-timeout", 0, "maximum amount of time (0 means no limit) will wait for a fetch to complete")
+	fetchTimeout     = flag.Duration("fetch-timeout", 10*time.Minute, "maximum amount of time (0 means no limit) will wait for a fetch to complete")
 )
-
-type httpDirFS struct{}
-
-func (fs httpDirFS) Open(name string) (http.File, error) {
-	name = filepath.FromSlash(name)
-	if filepath.Separator == '\\' {
-		name = name[1:]
-		volumeName := filepath.VolumeName(name)
-		if volumeName == "" || strings.HasPrefix(volumeName, `\\`) {
-			return nil, errors.New("file URL missing drive letter")
-		}
-	}
-	if !filepath.IsAbs(name) {
-		return nil, errors.New("path is not absolute")
-	}
-	return os.Open(name)
-}
 
 func main() {
 	flag.Parse()
@@ -89,4 +72,21 @@ func main() {
 		log.Printf("http server error: %v\n", err)
 		return
 	}
+}
+
+type httpDirFS struct{}
+
+func (fs httpDirFS) Open(name string) (http.File, error) {
+	name = filepath.FromSlash(name)
+	if filepath.Separator == '\\' {
+		name = name[1:]
+		volumeName := filepath.VolumeName(name)
+		if volumeName == "" || strings.HasPrefix(volumeName, `\\`) {
+			return nil, errors.New("file URL missing drive letter")
+		}
+	}
+	if !filepath.IsAbs(name) {
+		return nil, errors.New("path is not absolute")
+	}
+	return os.Open(name)
 }
