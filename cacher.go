@@ -57,13 +57,12 @@ func (dc DirCacher) Get(ctx context.Context, name string) (io.ReadCloser, error)
 // Put implements [Cacher].
 func (dc DirCacher) Put(ctx context.Context, name string, content io.ReadSeeker) error {
 	file := filepath.Join(string(dc), filepath.FromSlash(name))
-
 	dir := filepath.Dir(file)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 
-	f, err := os.CreateTemp(dir, fmt.Sprintf(".%s.tmp*", filepath.Base(file)))
+	f, err := os.CreateTemp(dir, fmt.Sprintf(".%s.tmp.*", filepath.Base(file)))
 	if err != nil {
 		return err
 	}

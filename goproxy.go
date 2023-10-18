@@ -288,7 +288,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		name = strings.TrimPrefix(name, "/")
 	}
 
-	tempDir, err := os.MkdirTemp(g.TempDir, "goproxy")
+	tempDir, err := os.MkdirTemp(g.TempDir, "goproxy.tmp.*")
 	if err != nil {
 		g.logErrorf("failed to create temporary directory: %v", err)
 		responseInternalServerError(rw, req)
@@ -542,7 +542,7 @@ func walkGOPROXY(goproxy string, onProxy func(proxy string) error, onDirect, onO
 	if goproxy == "" {
 		return errors.New("missing GOPROXY")
 	}
-	var proxyError error
+	var lastError error
 	for goproxy != "" {
 		var (
 			proxy           string
@@ -564,14 +564,14 @@ func walkGOPROXY(goproxy string, onProxy func(proxy string) error, onDirect, onO
 		}
 		if err := onProxy(proxy); err != nil {
 			if fallBackOnError || errors.Is(err, errNotFound) {
-				proxyError = err
+				lastError = err
 				continue
 			}
 			return err
 		}
 		return nil
 	}
-	return proxyError
+	return lastError
 }
 
 var (
