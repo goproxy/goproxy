@@ -24,7 +24,7 @@ var (
 	goBinName        = flag.String("go-bin-name", "go", "name of the Go binary")
 	maxDirectFetches = flag.Int("max-direct-fetches", 0, "maximum number (0 means no limit) of concurrent direct fetches")
 	proxiedSUMDBs    = flag.String("proxied-sumdbs", "", "comma-separated list of proxied checksum databases")
-	cacherDir        = flag.String("cacher-dir", "caches", "directory that used to cache module files")
+	cacheDir         = flag.String("cache-dir", "caches", "directory that used to cache module files")
 	tempDir          = flag.String("temp-dir", os.TempDir(), "directory for storing temporary files")
 	insecure         = flag.Bool("insecure", false, "allow insecure TLS connections")
 	connectTimeout   = flag.Duration("connect-timeout", 30*time.Second, "maximum amount of time (0 means no limit) will wait for an outgoing connection to establish")
@@ -59,7 +59,7 @@ func main() {
 		GoBinName:        *goBinName,
 		MaxDirectFetches: *maxDirectFetches,
 		ProxiedSUMDBs:    strings.Split(*proxiedSUMDBs, ","),
-		Cacher:           goproxy.DirCacher(*cacherDir),
+		Cacher:           goproxy.DirCacher(*cacheDir),
 		TempDir:          *tempDir,
 		Transport:        transport,
 	}
