@@ -250,8 +250,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 		{
 			n:               7,
 			proxyHandler:    func(rw http.ResponseWriter, req *http.Request) {},
-			path:            "/prefix/example.com/@latest",
-			pathPrefix:      "/prefix/",
+			path:            "/example.com/@latest",
 			tempDir:         filepath.Join(t.TempDir(), "404"),
 			wantStatusCode:  http.StatusInternalServerError,
 			wantContentType: "text/plain; charset=utf-8",
@@ -260,7 +259,6 @@ func TestGoproxyServeHTTP(t *testing.T) {
 	} {
 		setProxyHandler(tt.proxyHandler)
 		g := &Goproxy{
-			PathPrefix:  tt.pathPrefix,
 			Cacher:      DirCacher(t.TempDir()),
 			GoBinEnv:    []string{"GOPROXY=" + proxyServer.URL, "GOSUMDB=off"},
 			TempDir:     tt.tempDir,

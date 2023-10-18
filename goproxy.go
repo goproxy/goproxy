@@ -71,13 +71,6 @@ type Goproxy struct {
 	// If GoBinMaxWorkers is zero, there is no limit.
 	GoBinMaxWorkers int
 
-	// PathPrefix is the prefix for all request paths. It is used to trim
-	// the request paths using [strings.TrimPrefix].
-	//
-	// If PathPrefix is not empty, it must start with "/" and typically end
-	// with "/".
-	PathPrefix string
-
 	// Cacher is used to cache module files.
 	//
 	// If Cacher is nil, module files will be temporarily stored on the
@@ -281,12 +274,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		responseNotFound(rw, req, 86400)
 		return
 	}
-	name = path.Clean(name)
-	if g.PathPrefix != "" {
-		name = strings.TrimPrefix(name, g.PathPrefix)
-	} else {
-		name = strings.TrimPrefix(name, "/")
-	}
+	name = path.Clean(name)[1:]
 
 	tempDir, err := os.MkdirTemp(g.TempDir, "goproxy.tmp.*")
 	if err != nil {

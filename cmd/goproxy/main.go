@@ -20,9 +20,9 @@ var (
 	address             = flag.String("address", "localhost:8080", "TCP address that the HTTP server listens on")
 	tlsCertFile         = flag.String("tls-cert-file", "", "path to the TLS certificate file")
 	tlsKeyFile          = flag.String("tls-key-file", "", "path to the TLS key file")
+	pathPrefix          = flag.String("path-prefix", "", "prefix for all request paths")
 	goBinName           = flag.String("go-bin-name", "go", "name of the Go binary")
 	goBinMaxWorkers     = flag.Int("go-bin-max-workers", 0, "maximum number (0 means no limit) of concurrently executing commands for the Go binary")
-	pathPrefix          = flag.String("path-prefix", "", "prefix for all request paths")
 	cacherDir           = flag.String("cacher-dir", "caches", "directory that used to cache module files")
 	cacherMaxCacheBytes = flag.Int("cacher-max-cache-bytes", 0, "maximum number (0 means no limit) of bytes allowed for storing a new module file in cacher")
 	proxiedSUMDBs       = flag.String("proxied-sumdbs", "", "comma-separated list of proxied checksum databases")
@@ -59,7 +59,6 @@ func main() {
 	g := &goproxy.Goproxy{
 		GoBinName:           *goBinName,
 		GoBinMaxWorkers:     *goBinMaxWorkers,
-		PathPrefix:          *pathPrefix,
 		Cacher:              goproxy.DirCacher(*cacherDir),
 		CacherMaxCacheBytes: *cacherMaxCacheBytes,
 		ProxiedSUMDBs:       strings.Split(*proxiedSUMDBs, ","),
@@ -67,14 +66,21 @@ func main() {
 		TempDir:             *tempDir,
 	}
 
-	server := &http.Server{Addr: *address, Handler: g}
-	if *fetchTimeout > 0 {
-		server.Handler = http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-			ctx, cancel := context.WithTimeout(req.Context(), *fetchTimeout)
-			g.ServeHTTP(rw, req.WithContext(ctx))
-			cancel()
-		})
+	handler := http.Handler(g)
+	if *pathPrefix != "" {
+		handler = http.StripPrefix(*pathPrefix, handler)
 	}
+	if *fetchTimeout > 0 {
+		handler = func(h http.Handler) http.Handler {
+			return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+				ctx, cancel := context.WithTimeout(req.Context(), *fetchTimeout)
+				h.ServeHTTP(rw, req.WithContext(ctx))
+				cancel()
+			})
+		}(handler)
+	}
+
+	server := &http.Server{Addr: *address, Handler: handler}
 	var err error
 	if *tlsCertFile != "" && *tlsKeyFile != "" {
 		err = server.ListenAndServeTLS(*tlsCertFile, *tlsKeyFile)
