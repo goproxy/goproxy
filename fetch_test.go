@@ -855,7 +855,7 @@ func TestFetchDoDirect(t *testing.T) {
 				"GOPROXY=off",
 				"GOSUMDB="+envGOSUMDB,
 			),
-			GoBinMaxWorkers: 1,
+			MaxDirectFetches: 1,
 		}
 		g.init()
 		g.env = append(g.env, "GOPROXY="+proxyServer.URL)

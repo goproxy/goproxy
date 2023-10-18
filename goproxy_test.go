@@ -138,9 +138,9 @@ func TestGoproxyInit(t *testing.T) {
 	}
 
 	g := &Goproxy{}
-	g.GoBinMaxWorkers = 1
+	g.MaxDirectFetches = 1
 	g.init()
-	if g.goBinWorkerChan == nil {
+	if g.directFetchWorkerPool == nil {
 		t.Fatal("unexpected nil")
 	}
 

@@ -59,11 +59,10 @@ type Goproxy struct {
 	// at least version 1.11.
 	GoBinName string
 
-	// GoBinMaxWorkers is the maximum number of concurrently executing
-	// commands for the Go binary.
+	// MaxDirectFetches is the maximum number of concurrent direct fetches.
 	//
-	// If GoBinMaxWorkers is zero, there is no limit.
-	GoBinMaxWorkers int
+	// If MaxDirectFetches is zero, there is no limit.
+	MaxDirectFetches int
 
 	// Cacher is used to cache module files.
 	//
@@ -99,17 +98,17 @@ type Goproxy struct {
 	// If ErrorLogger is nil, [log.Default] is used.
 	ErrorLogger *log.Logger
 
-	initOnce        sync.Once
-	env             []string
-	envGOPROXY      string
-	envGONOPROXY    string
-	envGOSUMDB      string
-	envGONOSUMDB    string
-	goBinName       string
-	goBinWorkerChan chan struct{}
-	proxiedSUMDBs   map[string]*url.URL
-	httpClient      *http.Client
-	sumdbClient     *sumdb.Client
+	initOnce              sync.Once
+	env                   []string
+	envGOPROXY            string
+	envGONOPROXY          string
+	envGOSUMDB            string
+	envGONOSUMDB          string
+	goBinName             string
+	directFetchWorkerPool chan struct{}
+	proxiedSUMDBs         map[string]*url.URL
+	httpClient            *http.Client
+	sumdbClient           *sumdb.Client
 }
 
 // init initializes the g.
@@ -216,8 +215,8 @@ func (g *Goproxy) init() {
 		g.goBinName = "go"
 	}
 
-	if g.GoBinMaxWorkers != 0 {
-		g.goBinWorkerChan = make(chan struct{}, g.GoBinMaxWorkers)
+	if g.MaxDirectFetches > 0 {
+		g.directFetchWorkerPool = make(chan struct{}, g.MaxDirectFetches)
 	}
 
 	g.proxiedSUMDBs = map[string]*url.URL{}

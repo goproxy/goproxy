@@ -208,9 +208,9 @@ func (f *fetch) doProxy(ctx context.Context, proxy string) (*fetchResult, error)
 
 // doDirect executes the f directly using the local go command.
 func (f *fetch) doDirect(ctx context.Context) (*fetchResult, error) {
-	if f.g.goBinWorkerChan != nil {
-		f.g.goBinWorkerChan <- struct{}{}
-		defer func() { <-f.g.goBinWorkerChan }()
+	if f.g.directFetchWorkerPool != nil {
+		f.g.directFetchWorkerPool <- struct{}{}
+		defer func() { <-f.g.directFetchWorkerPool }()
 	}
 
 	var args []string

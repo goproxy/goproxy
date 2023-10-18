@@ -155,7 +155,7 @@ func TestHTTPGet(t *testing.T) {
 			defer cancel()
 		}
 		client := http.DefaultClient
-		if tt.clientTimeout != 0 {
+		if tt.clientTimeout > 0 {
 			client2 := *client
 			client2.Timeout = tt.clientTimeout
 			client = &client2
