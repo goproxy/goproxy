@@ -230,7 +230,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 		{
 			n:                5,
 			proxyHandler:     func(rw http.ResponseWriter, req *http.Request) {},
-			path:             "/../example.com/@latest",
+			path:             "/.",
 			tempDir:          t.TempDir(),
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -240,6 +240,26 @@ func TestGoproxyServeHTTP(t *testing.T) {
 		{
 			n:                6,
 			proxyHandler:     func(rw http.ResponseWriter, req *http.Request) {},
+			path:             "/../example.com/@latest",
+			tempDir:          t.TempDir(),
+			wantStatusCode:   http.StatusNotFound,
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "public, max-age=86400",
+			wantContent:      "not found",
+		},
+		{
+			n:                7,
+			proxyHandler:     func(rw http.ResponseWriter, req *http.Request) {},
+			path:             "/example.com/@v/list/",
+			tempDir:          t.TempDir(),
+			wantStatusCode:   http.StatusNotFound,
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "public, max-age=86400",
+			wantContent:      "not found",
+		},
+		{
+			n:                8,
+			proxyHandler:     func(rw http.ResponseWriter, req *http.Request) {},
 			path:             "/sumdb/sumdb.example.com/supported",
 			tempDir:          t.TempDir(),
 			wantStatusCode:   http.StatusNotFound,
@@ -248,7 +268,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 			wantContent:      "not found",
 		},
 		{
-			n:               7,
+			n:               9,
 			proxyHandler:    func(rw http.ResponseWriter, req *http.Request) {},
 			path:            "/example.com/@latest",
 			tempDir:         filepath.Join(t.TempDir(), "404"),
@@ -881,6 +901,27 @@ func TestGoproxyLogErrorf(t *testing.T) {
 		}
 		g.logErrorf("not found: %s", "invalid version")
 		if got, want := errorLoggerBuffer.String(), fmt.Sprintf("%s goproxy: not found: invalid version\n", time.Now().Format("2006/01/02")); got != want {
+			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+		}
+	}
+}
+
+func TestCleanPath(t *testing.T) {
+	for _, tt := range []struct {
+		n        int
+		path     string
+		wantPath string
+	}{
+		{1, "", "/"},
+		{2, ".", "/"},
+		{3, "..", "/"},
+		{4, "/.", "/"},
+		{5, "/..", "/"},
+		{6, "//", "/"},
+		{7, "/foo//bar", "/foo/bar"},
+		{8, "/foo//bar/", "/foo/bar/"},
+	} {
+		if got, want := cleanPath(tt.path), tt.wantPath; got != want {
 			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 		}
 	}

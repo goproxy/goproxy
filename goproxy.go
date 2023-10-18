@@ -269,12 +269,12 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	name, _ := url.PathUnescape(req.URL.Path)
-	if name == "" || name[0] != '/' || name[len(name)-1] == '/' || strings.Contains(name, "..") {
+	path := cleanPath(req.URL.Path)
+	if path != req.URL.Path || path[len(path)-1] == '/' {
 		responseNotFound(rw, req, 86400)
 		return
 	}
-	name = path.Clean(name)[1:]
+	name := path[1:]
 
 	tempDir, err := os.MkdirTemp(g.TempDir, "goproxy.tmp.*")
 	if err != nil {
@@ -523,6 +523,24 @@ func (g *Goproxy) logErrorf(format string, v ...any) {
 	} else {
 		log.Output(2, msg)
 	}
+}
+
+// cleanPath returns the canonical path for the p.
+func cleanPath(p string) string {
+	if p == "" {
+		return "/"
+	}
+	if p[0] != '/' {
+		p = "/" + p
+	}
+	np := path.Clean(p)
+	if p[len(p)-1] == '/' && np != "/" {
+		if len(p) == len(np)+1 && strings.HasPrefix(p, np) {
+			return p
+		}
+		return np + "/"
+	}
+	return np
 }
 
 // walkGOPROXY walks through the proxy list parsed from the goproxy.
