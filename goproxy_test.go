@@ -515,7 +515,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			ErrorLogger: log.New(io.Discard, "", 0),
 		}
 		g.init()
-		f, err := newFetch(g, tt.name, t.TempDir())
+		f, err := g.Fetcher.NewFetch(g, tt.name, t.TempDir())
 		if err != nil {
 			t.Fatalf("test(%d): unexpected error %q", tt.n, err)
 		}

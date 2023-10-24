@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -183,7 +184,7 @@ func TestNewFetch(t *testing.T) {
 	} {
 		g := &Goproxy{Env: tt.env}
 		g.init()
-		f, err := newFetch(g, tt.name, "tempDir")
+		f, err := g.Fetcher.NewFetch(g, tt.name, "tempDir")
 		if tt.wantError != nil {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
@@ -195,29 +196,32 @@ func TestNewFetch(t *testing.T) {
 			if err != nil {
 				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
 			}
-			if got, want := f.ops, tt.wantOps; got != want {
+			// Check public fields
+			if got, want := f.Ops(), tt.wantOps; got != want {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
-			if got, want := f.name, tt.name; got != want {
+			if got, want := f.Name(), tt.name; got != want {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
-			if got, want := f.tempDir, "tempDir"; got != want {
+			if got, want := f.ContentType(), tt.wantContentType; got != want {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
-			if got, want := f.modulePath, tt.wantModulePath; got != want {
+			// Check private fields by reflection
+			v := reflect.ValueOf(f).Interface().(*BuiltinFetch)
+			if got, want := v.tempDir, "tempDir"; got != want {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
-			if got, want := f.moduleVersion, tt.wantModuleVersion; got != want {
+			if got, want := v.modulePath, tt.wantModulePath; got != want {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
-			if got, want := f.modAtVer, tt.wantModAtVer; got != want {
+			if got, want := v.moduleVersion, tt.wantModuleVersion; got != want {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
-			if got, want := f.requiredToVerify, tt.wantRequiredToVerify; got != want {
+			if got, want := v.modAtVer, tt.wantModAtVer; got != want {
+				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+			}
+			if got, want := v.requiredToVerify, tt.wantRequiredToVerify; got != want {
 				t.Errorf("test(%d): got %v, want %v", tt.n, got, want)
-			}
-			if got, want := f.contentType, tt.wantContentType; got != want {
-				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		}
 	}
@@ -302,11 +306,11 @@ func TestFetchDo(t *testing.T) {
 				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
 			}
 		}
-		f, err := newFetch(g, tt.name, t.TempDir())
+		f, err := g.Fetcher.NewFetch(g, tt.name, t.TempDir())
 		if err != nil {
 			t.Fatalf("test(%d): unexpected error %q", tt.n, err)
 		}
-		fr, err := f.do(context.Background())
+		fr, err := f.Do(context.Background())
 		if tt.wantError != nil {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
@@ -606,11 +610,14 @@ invalid
 			},
 		}
 		g.init()
-		f, err := newFetch(g, tt.name, tt.tempDir)
+		f, err := g.Fetcher.NewFetch(g, tt.name, tt.tempDir)
 		if err != nil {
 			t.Fatalf("test(%d): unexpected error %q", tt.n, err)
 		}
-		fr, err := f.doProxy(context.Background(), tt.proxy)
+		// Must use reflection to call the private method "doProxy"
+		// Note that this is only relevant for BuiltinFetch
+		fr, err := reflect.ValueOf(f).Interface().(*BuiltinFetch).doProxy(context.Background(), tt.proxy)
+
 		if tt.wantError != nil {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
@@ -711,7 +718,7 @@ func TestFetchDoDirect(t *testing.T) {
 		ctxTimeout   time.Duration
 		sumdbHandler http.Handler
 		name         string
-		setupFetch   func(f *fetch) error
+		setupFetch   func(f *BuiltinFetch) error
 		wantContent  string
 		wantVersion  string
 		wantTime     time.Time
@@ -790,8 +797,9 @@ func TestFetchDoDirect(t *testing.T) {
 		{
 			n:    10,
 			name: "example.com/@v/v1.0.0.info",
-			setupFetch: func(f *fetch) error {
-				f.modAtVer = "invalid"
+			setupFetch: func(f *BuiltinFetch) error {
+				f.modAtVer = "invald"
+				//reflect.ValueOf(*f).FieldByName("modAtVer").SetString("invalid")
 				return nil
 			},
 			wantError: errNotFound,
@@ -859,16 +867,19 @@ func TestFetchDoDirect(t *testing.T) {
 		}
 		g.init()
 		g.env = append(g.env, "GOPROXY="+proxyServer.URL)
-		f, err := newFetch(g, tt.name, t.TempDir())
+		f, err := g.Fetcher.NewFetch(g, tt.name, t.TempDir())
 		if err != nil {
 			t.Fatalf("test(%d): unexpected error %q", tt.n, err)
 		}
+		// Must use reflection to call the private method "doDirect"
+		// Note that this is only relevant for BuiltinFetch
+		v := reflect.ValueOf(f).Interface().(*BuiltinFetch)
 		if tt.setupFetch != nil {
-			if err := tt.setupFetch(f); err != nil {
+			if err := tt.setupFetch(v); err != nil {
 				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
 			}
 		}
-		fr, err := f.doDirect(ctx)
+		fr, err := v.doDirect(ctx)
 		if tt.wantError != nil {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
@@ -941,36 +952,36 @@ func TestFetchResultOpen(t *testing.T) {
 	}{
 		{
 			n:           1,
-			fr:          &FetchResult{f: &Fetch{ops: FetchOpsResolve}, Version: "v1.0.0", Time: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)},
+			fr:          &FetchResult{F: &BuiltinFetch{ops: FetchOpsResolve}, Version: "v1.0.0", Time: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)},
 			wantContent: `{"Version":"v1.0.0","Time":"2000-01-01T00:00:00Z"}`,
 		},
 		{
 			n:           2,
-			fr:          &FetchResult{f: &Fetch{ops: FetchOpsList}, Versions: []string{"v1.0.0", "v1.1.0"}},
+			fr:          &FetchResult{F: &BuiltinFetch{ops: FetchOpsList}, Versions: []string{"v1.0.0", "v1.1.0"}},
 			wantContent: "v1.0.0\nv1.1.0",
 		},
 		{
 			n:                3,
-			fr:               &FetchResult{f: &Fetch{ops: FetchOpsDownloadInfo}, Info: filepath.Join(t.TempDir(), "info")},
+			fr:               &FetchResult{F: &BuiltinFetch{ops: FetchOpsDownloadInfo}, Info: filepath.Join(t.TempDir(), "info")},
 			setupFetchResult: func(fr *FetchResult) error { return os.WriteFile(fr.Info, []byte("info"), 0o644) },
 			wantContent:      "info",
 		},
 		{
 			n:                4,
-			fr:               &FetchResult{f: &Fetch{ops: FetchOpsDownloadMod}, GoMod: filepath.Join(t.TempDir(), "mod")},
+			fr:               &FetchResult{F: &BuiltinFetch{ops: FetchOpsDownloadMod}, GoMod: filepath.Join(t.TempDir(), "mod")},
 			setupFetchResult: func(fr *FetchResult) error { return os.WriteFile(fr.GoMod, []byte("mod"), 0o644) },
 			wantContent:      "mod",
 		},
 		{
 			n:                5,
-			fr:               &FetchResult{f: &Fetch{ops: FetchOpsDownloadZip}, Zip: filepath.Join(t.TempDir(), "zip")},
+			fr:               &FetchResult{F: &BuiltinFetch{ops: FetchOpsDownloadZip}, Zip: filepath.Join(t.TempDir(), "zip")},
 			setupFetchResult: func(fr *FetchResult) error { return os.WriteFile(fr.Zip, []byte("zip"), 0o644) },
 			wantContent:      "zip",
 		},
 		{
 			n:         6,
-			fr:        &FetchResult{f: &Fetch{ops: FetchOpsInvalid}},
-			wantError: errors.New("invalid fetch operation"),
+			fr:        &FetchResult{F: &BuiltinFetch{ops: FetchOpsInvalid}},
+			wantError: errors.New("invalid BuiltinFetch operation"),
 		},
 	} {
 		if tt.setupFetchResult != nil {
