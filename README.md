@@ -88,7 +88,7 @@ Refer to the [Installation](#installation) section to download the binary.
 Then run it:
 
 ```bash
-goproxy --address localhost:8080
+goproxy server --address localhost:8080
 ```
 
 Finally, set `GOPROXY` to try it out:
@@ -112,7 +112,7 @@ Refer to the [Installation](#installation) section to pull the image.
 Then run it:
 
 ```bash
-docker run -p 8080:8080 ghcr.io/goproxy/goproxy --address :8080
+docker run -p 8080:8080 ghcr.io/goproxy/goproxy server --address :8080
 ```
 
 Finally, set `GOPROXY` to try it out:

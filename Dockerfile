@@ -19,4 +19,4 @@ WORKDIR /goproxy
 VOLUME /goproxy
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/goproxy"]
-CMD ["--address", ":8080"]
+CMD ["server", "--address", ":8080"]
