@@ -7,8 +7,10 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/goproxy/goproxy"
@@ -45,13 +47,14 @@ type serverCmdConfig struct {
 	insecure         bool
 	connectTimeout   time.Duration
 	fetchTimeout     time.Duration
+	shutdownTimeout  time.Duration
 }
 
 // newServerCmdConfig creates a new [serverCmdConfig].
 func newServerCmdConfig(cmd *cobra.Command) *serverCmdConfig {
 	cfg := &serverCmdConfig{}
 	fs := cmd.Flags()
-	fs.StringVar(&cfg.address, "address", "localhost:8080", "TCP address that the HTTP server listens on")
+	fs.StringVar(&cfg.address, "address", "localhost:8080", "TCP address that the server listens on")
 	fs.StringVar(&cfg.tlsCertFile, "tls-cert-file", "", "path to the TLS certificate file")
 	fs.StringVar(&cfg.tlsKeyFile, "tls-key-file", "", "path to the TLS key file")
 	fs.StringVar(&cfg.pathPrefix, "path-prefix", "", "prefix for all request paths")
@@ -63,6 +66,7 @@ func newServerCmdConfig(cmd *cobra.Command) *serverCmdConfig {
 	fs.BoolVar(&cfg.insecure, "insecure", false, "allow insecure TLS connections")
 	fs.DurationVar(&cfg.connectTimeout, "connect-timeout", 30*time.Second, "maximum amount of time (0 means no limit) will wait for an outgoing connection to establish")
 	fs.DurationVar(&cfg.fetchTimeout, "fetch-timeout", 10*time.Minute, "maximum amount of time (0 means no limit) will wait for a fetch to complete")
+	fs.DurationVar(&cfg.shutdownTimeout, "shutdown-timeout", 10*time.Second, "maximum amount of time (0 means no limit) will wait for the server to shutdown")
 	return cfg
 }
 
@@ -100,16 +104,29 @@ func runServerCmd(cmd *cobra.Command, args []string, cfg *serverCmdConfig) error
 		Handler:     handler,
 		BaseContext: func(_ net.Listener) context.Context { return cmd.Context() },
 	}
-	var err error
-	if cfg.tlsCertFile != "" && cfg.tlsKeyFile != "" {
-		err = server.ListenAndServeTLS(cfg.tlsCertFile, cfg.tlsKeyFile)
-	} else {
-		err = server.ListenAndServe()
+	stopCtx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	var serverError error
+	go func() {
+		if cfg.tlsCertFile != "" && cfg.tlsKeyFile != "" {
+			serverError = server.ListenAndServeTLS(cfg.tlsCertFile, cfg.tlsKeyFile)
+		} else {
+			serverError = server.ListenAndServe()
+		}
+		stop()
+	}()
+	<-stopCtx.Done()
+	if serverError != nil && !errors.Is(serverError, http.ErrServerClosed) {
+		return serverError
 	}
-	if err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return err
+
+	shutdownCtx := context.Background()
+	if cfg.shutdownTimeout > 0 {
+		var cancel context.CancelFunc
+		shutdownCtx, cancel = context.WithTimeout(shutdownCtx, cfg.shutdownTimeout)
+		defer cancel()
 	}
-	return nil
+	return server.Shutdown(shutdownCtx)
 }
 
 // httpDirFS implements [http.FileSystem] for the local file system.
