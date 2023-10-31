@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -42,7 +43,9 @@ type serverCmdConfig struct {
 	goBinName        string
 	maxDirectFetches int
 	proxiedSUMDBs    []string
-	cacheDir         string
+	cacher           string
+	cacherDir        string
+	s3CacherOpts     s3CacherOptions
 	tempDir          string
 	insecure         bool
 	connectTimeout   time.Duration
@@ -61,7 +64,16 @@ func newServerCmdConfig(cmd *cobra.Command) *serverCmdConfig {
 	fs.StringVar(&cfg.goBinName, "go-bin-name", "go", "name of the Go binary that is used to execute direct fetches")
 	fs.IntVar(&cfg.maxDirectFetches, "max-direct-fetches", 0, "maximum number (0 means no limit) of concurrent direct fetches")
 	fs.StringSliceVar(&cfg.proxiedSUMDBs, "proxied-sumdbs", nil, "list of proxied checksum databases")
-	fs.StringVar(&cfg.cacheDir, "cache-dir", "caches", "directory that used to cache module files")
+	fs.StringVar(&cfg.cacher, "cacher", "dir", "cacher to use (valid values: dir, s3)")
+	fs.StringVar(&cfg.cacherDir, "cacher-dir", "caches", "directory for the dir cacher")
+	fs.StringVar(&cfg.s3CacherOpts.accessKeyID, "cacher-s3-access-key-id", "", "access key ID for the S3 cacher")
+	fs.StringVar(&cfg.s3CacherOpts.secretAccessKey, "cacher-s3-secret-access-key", "", "secret access key for the S3 cacher")
+	fs.StringVar(&cfg.s3CacherOpts.endpoint, "cacher-s3-endpoint", "s3.amazonaws.com", "endpoint for the S3 cacher")
+	fs.BoolVar(&cfg.s3CacherOpts.disableTLS, "cacher-s3-disable-tls", false, "disable TLS for the S3 cacher")
+	fs.StringVar(&cfg.s3CacherOpts.region, "cacher-s3-region", "us-east-1", "region for the S3 cacher")
+	fs.StringVar(&cfg.s3CacherOpts.bucket, "cacher-s3-bucket", "", "bucket name for the S3 cacher")
+	fs.BoolVar(&cfg.s3CacherOpts.forcePathStyle, "cacher-s3-force-path-style", false, "force path-style addressing for the S3 cacher")
+	fs.Int64Var(&cfg.s3CacherOpts.partSize, "cacher-s3-part-size", 100<<20, "multipart upload part size for the S3 cacher")
 	fs.StringVar(&cfg.tempDir, "temp-dir", os.TempDir(), "directory for storing temporary files")
 	fs.BoolVar(&cfg.insecure, "insecure", false, "allow insecure TLS connections")
 	fs.DurationVar(&cfg.connectTimeout, "connect-timeout", 30*time.Second, "maximum amount of time (0 means no limit) will wait for an outgoing connection to establish")
@@ -80,9 +92,22 @@ func runServerCmd(cmd *cobra.Command, args []string, cfg *serverCmdConfig) error
 		GoBinName:        cfg.goBinName,
 		MaxDirectFetches: cfg.maxDirectFetches,
 		ProxiedSUMDBs:    cfg.proxiedSUMDBs,
-		Cacher:           goproxy.DirCacher(cfg.cacheDir),
 		TempDir:          cfg.tempDir,
 		Transport:        transport,
+	}
+	switch cfg.cacher {
+	case "dir":
+		g.Cacher = goproxy.DirCacher(cfg.cacherDir)
+	case "s3":
+		s3CacherOpts := cfg.s3CacherOpts
+		s3CacherOpts.transport = transport
+		s3c, err := newS3Cacher(s3CacherOpts)
+		if err != nil {
+			return err
+		}
+		g.Cacher = s3c
+	default:
+		return fmt.Errorf("invalid --cacher: %q", cfg.cacher)
 	}
 
 	handler := http.Handler(g)
