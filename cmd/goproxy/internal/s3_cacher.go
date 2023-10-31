@@ -129,5 +129,8 @@ func (s3c *s3Cache) LastModified() time.Time {
 
 // ETag implements [github.com/goproxy/goproxy.Cacher.Get].
 func (s3c *s3Cache) ETag() string {
-	return strconv.Quote(s3c.ObjectInfo.ETag)
+	if s3c.ObjectInfo.ETag != "" {
+		return strconv.Quote(s3c.ObjectInfo.ETag)
+	}
+	return ""
 }
