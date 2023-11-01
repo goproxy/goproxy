@@ -522,24 +522,24 @@ func cleanPath(p string) string {
 	return np
 }
 
-// walkGOPROXY walks through the proxy list parsed from the goproxy.
-func walkGOPROXY(goproxy string, onProxy func(proxy string) error, onDirect, onOff func() error) error {
-	if goproxy == "" {
+// walkEnvGOPROXY walks through the proxy list parsed from the envGOPROXY.
+func walkEnvGOPROXY(envGOPROXY string, onProxy func(proxy string) error, onDirect, onOff func() error) error {
+	if envGOPROXY == "" {
 		return errors.New("missing GOPROXY")
 	}
 	var lastError error
-	for goproxy != "" {
+	for envGOPROXY != "" {
 		var (
 			proxy           string
 			fallBackOnError bool
 		)
-		if i := strings.IndexAny(goproxy, ",|"); i >= 0 {
-			proxy = goproxy[:i]
-			fallBackOnError = goproxy[i] == '|'
-			goproxy = goproxy[i+1:]
+		if i := strings.IndexAny(envGOPROXY, ",|"); i >= 0 {
+			proxy = envGOPROXY[:i]
+			fallBackOnError = envGOPROXY[i] == '|'
+			envGOPROXY = envGOPROXY[i+1:]
 		} else {
-			proxy = goproxy
-			goproxy = ""
+			proxy = envGOPROXY
+			envGOPROXY = ""
 		}
 		switch proxy {
 		case "direct":

@@ -112,7 +112,7 @@ func (f *fetch) do(ctx context.Context) (*fetchResult, error) {
 		return f.doDirect(ctx)
 	}
 	var r *fetchResult
-	if err := walkGOPROXY(f.g.envGOPROXY, func(proxy string) error {
+	if err := walkEnvGOPROXY(f.g.envGOPROXY, func(proxy string) error {
 		var err error
 		r, err = f.doProxy(ctx, proxy)
 		return err

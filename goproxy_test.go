@@ -879,10 +879,10 @@ func TestCleanPath(t *testing.T) {
 	}
 }
 
-func TestWalkGOPROXY(t *testing.T) {
+func TestWalkEnvGOPROXY(t *testing.T) {
 	for _, tt := range []struct {
 		n            int
-		goproxy      string
+		envGOPROXY   string
 		onProxy      func(proxy string) (string, error)
 		wantOnProxy  string
 		wantOnDirect bool
@@ -891,44 +891,44 @@ func TestWalkGOPROXY(t *testing.T) {
 	}{
 		{
 			n:            1,
-			goproxy:      "direct",
+			envGOPROXY:   "direct",
 			onProxy:      func(proxy string) (string, error) { return proxy, nil },
 			wantOnDirect: true,
 		},
 		{
-			n:         2,
-			goproxy:   "off",
-			onProxy:   func(proxy string) (string, error) { return proxy, nil },
-			wantOnOff: true,
+			n:          2,
+			envGOPROXY: "off",
+			onProxy:    func(proxy string) (string, error) { return proxy, nil },
+			wantOnOff:  true,
 		},
 		{
 			n:            3,
-			goproxy:      "direct,off",
+			envGOPROXY:   "direct,off",
 			onProxy:      func(proxy string) (string, error) { return proxy, nil },
 			wantOnDirect: true,
 		},
 		{
-			n:         4,
-			goproxy:   "off,direct",
-			onProxy:   func(proxy string) (string, error) { return proxy, nil },
-			wantOnOff: true,
+			n:          4,
+			envGOPROXY: "off,direct",
+			onProxy:    func(proxy string) (string, error) { return proxy, nil },
+			wantOnOff:  true,
 		},
 		{
 			n:           5,
-			goproxy:     "https://example.com,direct",
+			envGOPROXY:  "https://example.com,direct",
 			onProxy:     func(proxy string) (string, error) { return proxy, nil },
 			wantOnProxy: "https://example.com",
 		},
 		{
 			n:            6,
-			goproxy:      "https://example.com,direct",
+			envGOPROXY:   "https://example.com,direct",
 			onProxy:      func(proxy string) (string, error) { return proxy, errNotFound },
 			wantOnProxy:  "https://example.com",
 			wantOnDirect: true,
 		},
 		{
-			n:       7,
-			goproxy: "https://example.com|https://alt.example.com",
+			n:          7,
+			envGOPROXY: "https://example.com|https://alt.example.com",
 			onProxy: func(proxy string) (string, error) {
 				if proxy == "https://alt.example.com" {
 					return proxy, nil
@@ -939,14 +939,14 @@ func TestWalkGOPROXY(t *testing.T) {
 		},
 		{
 			n:           8,
-			goproxy:     "https://example.com,direct",
+			envGOPROXY:  "https://example.com,direct",
 			onProxy:     func(proxy string) (string, error) { return proxy, errors.New("foobar") },
 			wantOnProxy: "https://example.com",
 			wantError:   errors.New("foobar"),
 		},
 		{
 			n:           9,
-			goproxy:     "https://example.com",
+			envGOPROXY:  "https://example.com",
 			onProxy:     func(proxy string) (string, error) { return proxy, errNotFound },
 			wantOnProxy: "https://example.com",
 			wantError:   errNotFound,
@@ -957,7 +957,7 @@ func TestWalkGOPROXY(t *testing.T) {
 			onDirect bool
 			onOff    bool
 		)
-		err := walkGOPROXY(tt.goproxy, func(proxy string) error {
+		err := walkEnvGOPROXY(tt.envGOPROXY, func(proxy string) error {
 			var err error
 			onProxy, err = tt.onProxy(proxy)
 			return err
@@ -991,7 +991,7 @@ func TestWalkGOPROXY(t *testing.T) {
 		}
 	}
 
-	if err := walkGOPROXY("", nil, nil, nil); err == nil {
+	if err := walkEnvGOPROXY("", nil, nil, nil); err == nil {
 		t.Fatal("expected error")
 	} else if got, want := err.Error(), "missing GOPROXY"; got != want {
 		t.Errorf("got %q, want %q", got, want)

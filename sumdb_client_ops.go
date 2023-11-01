@@ -58,7 +58,7 @@ func (sco *sumdbClientOps) init() {
 	if sco.initError != nil {
 		return
 	}
-	if err := walkGOPROXY(sco.envGOPROXY, func(proxy string) error {
+	if err := walkEnvGOPROXY(sco.envGOPROXY, func(proxy string) error {
 		proxyURL, err := parseRawURL(proxy)
 		if err != nil {
 			return err
