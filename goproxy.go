@@ -55,9 +55,6 @@ type Goproxy struct {
 	// fetches.
 	//
 	// If GoBinName is empty, "go" is used.
-	//
-	// Note that the version of the Go binary targeted by GoBinName must be
-	// at least version 1.11.
 	GoBinName string
 
 	// MaxDirectFetches is the maximum number of concurrent direct fetches.
