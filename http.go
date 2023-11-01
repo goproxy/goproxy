@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/http"
 	"net/url"
 	"path"
@@ -17,7 +16,7 @@ import (
 
 var (
 	// errNotFound indicates something was not found.
-	errNotFound = notFoundError("not found")
+	errNotFound = errors.New("not found")
 
 	// errBadUpstream indicates an upstream is in a bad state.
 	errBadUpstream = errors.New("bad upstream")
@@ -26,21 +25,25 @@ var (
 	errFetchTimedOut = errors.New("fetch timed out")
 )
 
-// notFoundError is an error indicating that something was not found.
-type notFoundError string
+// notFoundError is an error that indicates something was not found. It is used
+// to wrap other errors into an equivalent to [errNotFound].
+//
+// NOTE: Do not use [notFoundError] directly, use [notFoundErrorf] instead.
+type notFoundError struct{ err error }
 
 // Error implements [error].
-func (nfe notFoundError) Error() string {
-	return string(nfe)
-}
+func (nfe *notFoundError) Error() string { return nfe.err.Error() }
 
-// Is reports whether the target matches [errNotFound] or [fs.ErrNotExist].
-func (notFoundError) Is(target error) bool {
-	switch target {
-	case errNotFound, fs.ErrNotExist:
-		return true
-	}
-	return false
+// Unwrap returns the underlying error.
+func (nfe *notFoundError) Unwrap() error { return nfe.err }
+
+// Is reports whether the target is [errNotFound].
+func (notFoundError) Is(target error) bool { return target == errNotFound }
+
+// notFoundErrorf formats according to a format specifier and returns the string
+// as a value that satisfies error that is equivalent to [errNotFound].
+func notFoundErrorf(format string, v ...interface{}) error {
+	return &notFoundError{err: fmt.Errorf(format, v...)}
 }
 
 // httpGet gets the content from the given url and writes it into the dst.
@@ -85,7 +88,7 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 		case http.StatusBadRequest,
 			http.StatusNotFound,
 			http.StatusGone:
-			return notFoundError(respBody)
+			return notFoundErrorf(string(respBody))
 		case http.StatusTooManyRequests,
 			http.StatusInternalServerError,
 			http.StatusBadGateway,

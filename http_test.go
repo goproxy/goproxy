@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -19,21 +18,19 @@ import (
 func TestNotFoundError(t *testing.T) {
 	for _, tt := range []struct {
 		n         int
-		nfe       notFoundError
+		err       error
 		wantError error
 	}{
-		{1, notFoundError(""), errors.New("")},
-		{2, notFoundError("foobar"), errors.New("foobar")},
-		{3, notFoundError("foobar"), fs.ErrNotExist},
-		{3, notFoundError("foobar"), errNotFound},
-		{3, errNotFound, fs.ErrNotExist},
+		{1, notFoundErrorf(""), errors.New("")},
+		{2, notFoundErrorf("foobar"), errors.New("foobar")},
+		{3, notFoundErrorf("foobar"), errNotFound},
 	} {
-		if got, want := tt.nfe, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
+		if got, want := tt.err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
 			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 		}
 	}
 
-	var nfe notFoundError
+	nfe := &notFoundError{err: errors.New("foobar")}
 	for _, tt := range []struct {
 		n      int
 		err    error

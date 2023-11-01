@@ -266,7 +266,7 @@ func TestFetchDo(t *testing.T) {
 				return nil
 			},
 			name:      "example.com/@latest",
-			wantError: notFoundError(fmt.Sprintf("module example.com: reading %s/example.com/@v/list: 404 Not Found\n\tserver response: not found", proxyServer.URL)),
+			wantError: notFoundErrorf("module example.com: reading %s/example.com/@v/list: 404 Not Found\n\tserver response: not found", proxyServer.URL),
 		},
 		{
 			n:            3,
@@ -281,7 +281,7 @@ func TestFetchDo(t *testing.T) {
 				return nil
 			},
 			name:      "example.com/@latest",
-			wantError: notFoundError("example.com@latest: module lookup disabled by GOPROXY=off"),
+			wantError: notFoundErrorf("example.com@latest: module lookup disabled by GOPROXY=off"),
 		},
 		{
 			n:            4,
@@ -291,7 +291,7 @@ func TestFetchDo(t *testing.T) {
 				"GOSUMDB=off",
 			},
 			name:      "example.com/@latest",
-			wantError: notFoundError("module lookup disabled by GOPROXY=off"),
+			wantError: notFoundErrorf("module lookup disabled by GOPROXY=off"),
 		},
 	} {
 		setProxyHandler(tt.proxyHandler)
@@ -409,7 +409,7 @@ func TestFetchDoProxy(t *testing.T) {
 			name:      "example.com/@latest",
 			tempDir:   t.TempDir(),
 			proxy:     proxyServer.URL,
-			wantError: notFoundError("invalid info response: zero time"),
+			wantError: notFoundErrorf("invalid info response: zero time"),
 		},
 		{
 			n: 3,
@@ -445,7 +445,7 @@ invalid
 			name:      "example.com/@v/v1.0.0.info",
 			tempDir:   t.TempDir(),
 			proxy:     proxyServer.URL,
-			wantError: notFoundError("invalid info file: zero time"),
+			wantError: notFoundErrorf("invalid info file: zero time"),
 		},
 		{
 			n: 6,
@@ -485,7 +485,7 @@ invalid
 			name:      "example.com/@v/v1.1.0.mod",
 			tempDir:   t.TempDir(),
 			proxy:     proxyServer.URL,
-			wantError: notFoundError("example.com@v1.1.0: invalid version: untrusted revision v1.1.0"),
+			wantError: notFoundErrorf("example.com@v1.1.0: invalid version: untrusted revision v1.1.0"),
 		},
 		{
 			n: 9,
@@ -495,7 +495,7 @@ invalid
 			name:      "example.com/@v/v1.0.0.mod",
 			tempDir:   t.TempDir(),
 			proxy:     proxyServer.URL,
-			wantError: notFoundError("invalid mod file: missing module directive"),
+			wantError: notFoundErrorf("invalid mod file: missing module directive"),
 		},
 		{
 			n: 10,
@@ -558,7 +558,7 @@ invalid
 			name:      "example.com/@v/v1.3.0.zip",
 			tempDir:   t.TempDir(),
 			proxy:     proxyServer.URL,
-			wantError: notFoundError("example.com@v1.3.0: invalid version: untrusted revision v1.3.0"),
+			wantError: notFoundErrorf("example.com@v1.3.0: invalid version: untrusted revision v1.3.0"),
 		},
 		{
 			n: 13,
@@ -568,7 +568,7 @@ invalid
 			name:      "example.com/@v/v1.0.0.zip",
 			tempDir:   t.TempDir(),
 			proxy:     proxyServer.URL,
-			wantError: notFoundError("invalid zip file: zip: not a valid zip file"),
+			wantError: notFoundErrorf("invalid zip file: zip: not a valid zip file"),
 		},
 		{
 			n:            14,
@@ -768,7 +768,7 @@ func TestFetchDoDirect(t *testing.T) {
 		{
 			n:         6,
 			name:      "example.com/@v/v1.1.0.info",
-			wantError: notFoundError("zip for example.com@v1.1.0 has unexpected file example.com@v1.0.0/go.mod"),
+			wantError: notFoundErrorf("zip for example.com@v1.1.0 has unexpected file example.com@v1.0.0/go.mod"),
 		},
 		{
 			n:          7,
@@ -818,7 +818,7 @@ func TestFetchDoDirect(t *testing.T) {
 				return []byte(gosum), nil
 			})),
 			name:      "example.com/@v/v1.0.0.info",
-			wantError: notFoundError("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
+			wantError: notFoundErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
 		},
 		{
 			n: 13,
@@ -828,7 +828,7 @@ func TestFetchDoDirect(t *testing.T) {
 				return []byte(gosum), nil
 			})),
 			name:      "example.com/@v/v1.0.0.info",
-			wantError: notFoundError("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
+			wantError: notFoundErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
 		},
 	} {
 		ctx := context.Background()
@@ -1074,7 +1074,7 @@ func TestCheckAndFormatInfoFile(t *testing.T) {
 		{
 			n:         1,
 			info:      "{}",
-			wantError: notFoundError("invalid info file: empty version"),
+			wantError: notFoundErrorf("invalid info file: empty version"),
 		},
 		{
 			n:        2,
@@ -1125,7 +1125,7 @@ func TestCheckModFile(t *testing.T) {
 		mod       string
 		wantError error
 	}{
-		{1, "foobar", notFoundError("invalid mod file: missing module directive")},
+		{1, "foobar", notFoundErrorf("invalid mod file: missing module directive")},
 		{2, "module", nil},
 		{3, "// foobar\nmodule foobar", nil},
 		{4, "", fs.ErrNotExist},
@@ -1211,7 +1211,7 @@ func TestVerifyModFile(t *testing.T) {
 			modFile:       modFile,
 			modulePath:    "example.com",
 			moduleVersion: "v1.1.0",
-			wantError:     notFoundError("example.com@v1.1.0/go.mod: bad upstream"),
+			wantError:     notFoundErrorf("example.com@v1.1.0/go.mod: bad upstream"),
 		},
 		{
 			n:             3,
@@ -1225,7 +1225,7 @@ func TestVerifyModFile(t *testing.T) {
 			modFile:       modFile2,
 			modulePath:    "example.com",
 			moduleVersion: "v1.0.0",
-			wantError:     notFoundError("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
+			wantError:     notFoundErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
 		},
 	} {
 		err := verifyModFile(g.sumdbClient, tt.modFile, tt.modulePath, tt.moduleVersion)
@@ -1267,7 +1267,7 @@ func TestCheckZipFile(t *testing.T) {
 			zipFile:       zipFile,
 			modulePath:    "example.com",
 			moduleVersion: "v1.1.0",
-			wantError:     notFoundError(`invalid zip file: example.com@v1.0.0/go.mod: path does not have prefix "example.com@v1.1.0/"`),
+			wantError:     notFoundErrorf(`invalid zip file: example.com@v1.0.0/go.mod: path does not have prefix "example.com@v1.1.0/"`),
 		},
 		{
 			n:             3,
@@ -1354,7 +1354,7 @@ func TestVerifyZipFile(t *testing.T) {
 			zipFile:       zipFile,
 			modulePath:    "example.com",
 			moduleVersion: "v1.1.0",
-			wantError:     notFoundError("example.com@v1.1.0: bad upstream"),
+			wantError:     notFoundErrorf("example.com@v1.1.0: bad upstream"),
 		},
 		{
 			n:             3,
@@ -1368,7 +1368,7 @@ func TestVerifyZipFile(t *testing.T) {
 			zipFile:       zipFile2,
 			modulePath:    "example.com",
 			moduleVersion: "v1.0.0",
-			wantError:     notFoundError("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
+			wantError:     notFoundErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
 		},
 	} {
 		err := verifyZipFile(g.sumdbClient, tt.zipFile, tt.modulePath, tt.moduleVersion)

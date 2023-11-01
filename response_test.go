@@ -296,7 +296,7 @@ func TestResponseError(t *testing.T) {
 		},
 		{
 			n:                4,
-			err:              notFoundError("cache sensitive"),
+			err:              notFoundErrorf("cache sensitive"),
 			cacheSensitive:   true,
 			wantStatusCode:   http.StatusNotFound,
 			wantCacheControl: "public, max-age=60",
@@ -304,14 +304,14 @@ func TestResponseError(t *testing.T) {
 		},
 		{
 			n:                5,
-			err:              notFoundError("not found: bad upstream"),
+			err:              notFoundErrorf("not found: bad upstream"),
 			wantStatusCode:   http.StatusNotFound,
 			wantCacheControl: "must-revalidate, no-cache, no-store",
 			wantContent:      "not found: bad upstream",
 		},
 		{
 			n:                6,
-			err:              notFoundError("not found: fetch timed out"),
+			err:              notFoundErrorf("not found: fetch timed out"),
 			wantStatusCode:   http.StatusNotFound,
 			wantCacheControl: "must-revalidate, no-cache, no-store",
 			wantContent:      "not found: fetch timed out",
