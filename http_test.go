@@ -40,10 +40,10 @@ func TestNotFoundError(t *testing.T) {
 		{2, io.EOF, false},
 	} {
 		if got, want := nfe.Is(tt.err), tt.wantIs; got != want {
-			t.Errorf("test(%d): got %v, want %v", tt.n, got, want)
+			t.Errorf("test(%d): got %t, want %t", tt.n, got, want)
 		}
 		if got, want := errors.Is(nfe, tt.err), tt.wantIs; got != want {
-			t.Errorf("test(%d): got %v, want %v", tt.n, got, want)
+			t.Errorf("test(%d): got %t, want %t", tt.n, got, want)
 		}
 	}
 }
@@ -197,7 +197,7 @@ func TestIsRetryableHTTPClientDoError(t *testing.T) {
 		{7, &url.Error{Err: errors.New("http: server gave HTTP response to HTTPS client")}, false},
 	} {
 		if got, want := isRetryableHTTPClientDoError(tt.err), tt.wantIsRetryable; got != want {
-			t.Errorf("test(%d): got %v, want %v", tt.n, got, want)
+			t.Errorf("test(%d): got %t, want %t", tt.n, got, want)
 		}
 	}
 }

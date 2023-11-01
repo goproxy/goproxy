@@ -29,7 +29,7 @@ func TestDirCacher(t *testing.T) {
 	} else if got, want := err, fs.ErrNotExist; !errors.Is(got, want) && got.Error() != want.Error() {
 		t.Fatalf("got %q, want %q", got, want)
 	} else if rc != nil {
-		t.Errorf("got %v, want nil", rc)
+		t.Errorf("got %#v, want nil", rc)
 	}
 
 	if err := dirCacher.Put(context.Background(), "a/b/c", strings.NewReader("foobar")); err != nil {

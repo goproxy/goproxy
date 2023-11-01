@@ -160,7 +160,7 @@ func TestGoproxyInit(t *testing.T) {
 		t.Errorf("got %q, want %q", got, want)
 	}
 	if got := g.proxiedSUMDBs["example.com"]; got != nil {
-		t.Errorf("got %v, want nil", got)
+		t.Errorf("got %#v, want nil", got)
 	}
 }
 
@@ -984,10 +984,10 @@ func TestWalkEnvGOPROXY(t *testing.T) {
 			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 		}
 		if got, want := onDirect, tt.wantOnDirect; got != want {
-			t.Errorf("test(%d): got %v, want %v", tt.n, got, want)
+			t.Errorf("test(%d): got %t, want %t", tt.n, got, want)
 		}
 		if got, want := onOff, tt.wantOnOff; got != want {
-			t.Errorf("test(%d): got %v, want %v", tt.n, got, want)
+			t.Errorf("test(%d): got %t, want %t", tt.n, got, want)
 		}
 	}
 
@@ -1009,7 +1009,7 @@ func TestBackoffSleep(t *testing.T) {
 		{2, time.Minute, time.Hour, 100},
 	} {
 		if got, want := backoffSleep(tt.base, tt.cap, tt.attempt) <= tt.cap, true; got != want {
-			t.Errorf("test(%d): got %v, want %v", tt.n, got, want)
+			t.Errorf("test(%d): got %t, want %t", tt.n, got, want)
 		}
 	}
 }
@@ -1025,7 +1025,7 @@ func TestStringSliceContains(t *testing.T) {
 		{2, []string{"foo", "bar"}, "foobar", false},
 	} {
 		if got, want := stringSliceContains(tt.ss, tt.s), tt.wantContains; got != want {
-			t.Errorf("test(%d): got %v, want %v", tt.n, got, want)
+			t.Errorf("test(%d): got %t, want %t", tt.n, got, want)
 		}
 	}
 }
@@ -1049,7 +1049,7 @@ func TestGlobsMatchPath(t *testing.T) {
 		{10, "", "foobar", false},
 	} {
 		if got, want := globsMatchPath(tt.globs, tt.target), tt.wantMatch; got != want {
-			t.Errorf("test(%d): got %v, want %v", tt.n, got, want)
+			t.Errorf("test(%d): got %t, want %t", tt.n, got, want)
 		}
 	}
 }

@@ -214,7 +214,7 @@ func TestNewFetch(t *testing.T) {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 			if got, want := f.requiredToVerify, tt.wantRequiredToVerify; got != want {
-				t.Errorf("test(%d): got %v, want %v", tt.n, got, want)
+				t.Errorf("test(%d): got %t, want %t", tt.n, got, want)
 			}
 			if got, want := f.contentType, tt.wantContentType; got != want {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
