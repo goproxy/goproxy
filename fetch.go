@@ -121,7 +121,6 @@ func (f *fetch) do(ctx context.Context) (*fetchResult, error) {
 		r, err = f.doDirect(ctx)
 		return err
 	}, func() error {
-		// go/src/cmd/go/internal/modfetch.errProxyOff
 		return notFoundErrorf("module lookup disabled by GOPROXY=off")
 	}); err != nil {
 		return nil, err
@@ -167,7 +166,6 @@ func (f *fetch) doProxy(ctx context.Context, proxy string) (*fetchResult, error)
 		lines := strings.Split(string(b), "\n")
 		r.Versions = make([]string, 0, len(lines))
 		for _, line := range lines {
-			// go/src/cmd/go/internal/modfetch.proxyRepo.Versions
 			lineParts := strings.Fields(line)
 			if len(lineParts) > 0 && semver.IsValid(lineParts[0]) && !module.IsPseudoVersion(lineParts[0]) {
 				r.Versions = append(r.Versions, lineParts[0])

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"golang.org/x/mod/sumdb"
+	"golang.org/x/mod/sumdb/note"
 )
 
 // Goproxy is the top-level struct of this project.
@@ -116,25 +117,33 @@ func (g *Goproxy) init() {
 		env = os.Environ()
 	}
 	var envGOPRIVATE string
-	for _, env := range env {
-		if k, v, ok := strings.Cut(env, "="); ok {
-			switch strings.TrimSpace(k) {
+	for _, e := range env {
+		if k, v, ok := strings.Cut(e, "="); ok {
+			switch k {
 			case "GO111MODULE":
 			case "GOPROXY":
-				g.envGOPROXY = v
+				g.envGOPROXY = cleanEnvGOPROXY(v)
 			case "GONOPROXY":
 				g.envGONOPROXY = v
 			case "GOSUMDB":
-				g.envGOSUMDB = v
+				g.envGOSUMDB = cleanEnvGOSUMDB(v)
 			case "GONOSUMDB":
 				g.envGONOSUMDB = v
 			case "GOPRIVATE":
 				envGOPRIVATE = v
 			default:
-				g.env = append(g.env, k+"="+v)
+				g.env = append(g.env, e)
 			}
 		}
 	}
+	if g.envGONOPROXY == "" {
+		g.envGONOPROXY = envGOPRIVATE
+	}
+	g.envGONOPROXY = cleanCommaSeparatedList(g.envGONOPROXY)
+	if g.envGONOSUMDB == "" {
+		g.envGONOSUMDB = envGOPRIVATE
+	}
+	g.envGONOSUMDB = cleanCommaSeparatedList(g.envGONOSUMDB)
 	g.env = append(
 		g.env,
 		"GO111MODULE=on",
@@ -144,69 +153,6 @@ func (g *Goproxy) init() {
 		"GONOSUMDB=",
 		"GOPRIVATE=",
 	)
-
-	var envGOPROXY string
-	for goproxy := g.envGOPROXY; goproxy != ""; {
-		var proxy, sep string
-		if i := strings.IndexAny(goproxy, ",|"); i >= 0 {
-			proxy = goproxy[:i]
-			sep = string(goproxy[i])
-			goproxy = goproxy[i+1:]
-			if goproxy == "" {
-				sep = ""
-			}
-		} else {
-			proxy = goproxy
-			goproxy = ""
-		}
-		proxy = strings.TrimSpace(proxy)
-		switch proxy {
-		case "":
-			continue
-		case "direct", "off":
-			sep = ""
-			goproxy = ""
-		}
-		envGOPROXY += proxy + sep
-	}
-	if envGOPROXY != "" {
-		g.envGOPROXY = envGOPROXY
-	} else if g.envGOPROXY == "" {
-		g.envGOPROXY = "https://proxy.golang.org,direct"
-	} else {
-		g.envGOPROXY = "off"
-	}
-
-	if g.envGONOPROXY == "" {
-		g.envGONOPROXY = envGOPRIVATE
-	}
-	var noproxies []string
-	for _, noproxy := range strings.Split(g.envGONOPROXY, ",") {
-		if noproxy = strings.TrimSpace(noproxy); noproxy != "" {
-			noproxies = append(noproxies, noproxy)
-		}
-	}
-	if len(noproxies) > 0 {
-		g.envGONOPROXY = strings.Join(noproxies, ",")
-	}
-
-	g.envGOSUMDB = strings.TrimSpace(g.envGOSUMDB)
-	if g.envGOSUMDB == "" {
-		g.envGOSUMDB = "sum.golang.org"
-	}
-
-	if g.envGONOSUMDB == "" {
-		g.envGONOSUMDB = envGOPRIVATE
-	}
-	var nosumdbs []string
-	for _, nosumdb := range strings.Split(g.envGONOSUMDB, ",") {
-		if nosumdb = strings.TrimSpace(nosumdb); nosumdb != "" {
-			nosumdbs = append(nosumdbs, nosumdb)
-		}
-	}
-	if len(nosumdbs) > 0 {
-		g.envGONOSUMDB = strings.Join(nosumdbs, ",")
-	}
 
 	g.goBinName = g.GoBinName
 	if g.goBinName == "" {
@@ -501,22 +447,43 @@ func (g *Goproxy) logErrorf(format string, v ...any) {
 	}
 }
 
-// cleanPath returns the canonical path for the p.
-func cleanPath(p string) string {
-	if p == "" {
-		return "/"
+const defaultEnvGOPROXY = "https://proxy.golang.org,direct"
+
+// cleanEnvGOPROXY returns the cleaned envGOPROXY.
+func cleanEnvGOPROXY(envGOPROXY string) string {
+	if envGOPROXY == "" || envGOPROXY == defaultEnvGOPROXY {
+		return defaultEnvGOPROXY
 	}
-	if p[0] != '/' {
-		p = "/" + p
-	}
-	np := path.Clean(p)
-	if p[len(p)-1] == '/' && np != "/" {
-		if len(p) == len(np)+1 && strings.HasPrefix(p, np) {
-			return p
+	var cleaned string
+	for envGOPROXY != "" {
+		var proxy, sep string
+		if i := strings.IndexAny(envGOPROXY, ",|"); i >= 0 {
+			proxy = envGOPROXY[:i]
+			sep = string(envGOPROXY[i])
+			envGOPROXY = envGOPROXY[i+1:]
+			if envGOPROXY == "" {
+				sep = ""
+			}
+		} else {
+			proxy = envGOPROXY
+			envGOPROXY = ""
 		}
-		return np + "/"
+		proxy = strings.TrimSpace(proxy)
+		switch proxy {
+		case "":
+			continue
+		case "direct", "off":
+			sep = ""
+			envGOPROXY = ""
+		}
+		cleaned += proxy + sep
 	}
-	return np
+	if cleaned == "" {
+		// An error should probably be reported at this point. Refer to
+		// https://go.dev/cl/234857 for more details.
+		return "off"
+	}
+	return cleaned
 }
 
 // walkEnvGOPROXY walks through the proxy list parsed from the envGOPROXY.
@@ -554,6 +521,92 @@ func walkEnvGOPROXY(envGOPROXY string, onProxy func(proxy string) error, onDirec
 		return nil
 	}
 	return lastError
+}
+
+const defaultEnvGOSUMDB = "sum.golang.org"
+
+// cleanEnvGOSUMDB returns the cleaned envGOSUMDB.
+func cleanEnvGOSUMDB(envGOSUMDB string) string {
+	if envGOSUMDB == "" || envGOSUMDB == defaultEnvGOSUMDB {
+		return defaultEnvGOSUMDB
+	}
+	return envGOSUMDB
+}
+
+const sumGolangOrgKey = "sum.golang.org+033de0ae+Ac4zctda0e5eza+HJyk9SxEdh+s3Ux18htTTAD8OuAn8"
+
+// parseEnvGOSUMDB parses the envGOSUMDB.
+func parseEnvGOSUMDB(envGOSUMDB string) (name string, key []byte, endpoint *url.URL, isDirectEndpoint bool, err error) {
+	parts := strings.Fields(envGOSUMDB)
+	if l := len(parts); l == 0 {
+		return "", nil, nil, false, errors.New("missing GOSUMDB")
+	} else if l > 2 {
+		return "", nil, nil, false, errors.New("invalid GOSUMDB: too many fields")
+	}
+
+	switch parts[0] {
+	case "sum.golang.google.cn":
+		if len(parts) == 1 {
+			parts = append(parts, "https://"+parts[0])
+		}
+		fallthrough
+	case defaultEnvGOSUMDB:
+		parts[0] = sumGolangOrgKey
+	}
+	verifier, err := note.NewVerifier(parts[0])
+	if err != nil {
+		return "", nil, nil, false, fmt.Errorf("invalid GOSUMDB: %w", err)
+	}
+	name = verifier.Name()
+	key = []byte(parts[0])
+
+	endpoint, err = parseRawURL(name)
+	if err != nil ||
+		strings.HasSuffix(name, "/") ||
+		endpoint.Host == "" ||
+		endpoint.RawPath != "" ||
+		*endpoint != (url.URL{Scheme: "https", Host: endpoint.Host, Path: endpoint.Path, RawPath: endpoint.RawPath}) {
+		return "", nil, nil, false, fmt.Errorf("invalid sumdb name (must be host[/path]): %s %+v", name, *endpoint)
+	}
+	isDirectEndpoint = true
+	if len(parts) > 1 {
+		endpoint, err = parseRawURL(parts[1])
+		if err != nil {
+			return "", nil, nil, false, fmt.Errorf("invalid GOSUMDB URL: %w", err)
+		}
+		isDirectEndpoint = false
+	}
+	return
+}
+
+// cleanCommaSeparatedList returns the cleaned comma-separated list.
+func cleanCommaSeparatedList(list string) string {
+	var ss []string
+	for _, s := range strings.Split(list, ",") {
+		s = strings.TrimSpace(s)
+		if s != "" {
+			ss = append(ss, s)
+		}
+	}
+	return strings.Join(ss, ",")
+}
+
+// cleanPath returns the canonical path for the p.
+func cleanPath(p string) string {
+	if p == "" {
+		return "/"
+	}
+	if p[0] != '/' {
+		p = "/" + p
+	}
+	np := path.Clean(p)
+	if p[len(p)-1] == '/' && np != "/" {
+		if len(p) == len(np)+1 && strings.HasPrefix(p, np) {
+			return p
+		}
+		return np + "/"
+	}
+	return np
 }
 
 var (

@@ -116,17 +116,7 @@ func TestNewFetch(t *testing.T) {
 			wantContentType:      "application/zip",
 		},
 		{
-			n:         9,
-			name:      "example.com/@v/v1.0.0.ext",
-			wantError: errors.New(`unexpected extension ".ext"`),
-		},
-		{
-			n:         10,
-			name:      "example.com/@v/latest.info",
-			wantError: errors.New("invalid version"),
-		},
-		{
-			n:                    11,
+			n:                    9,
 			name:                 "example.com/@v/master.info",
 			wantOps:              fetchOpsResolve,
 			wantModulePath:       "example.com",
@@ -136,32 +126,7 @@ func TestNewFetch(t *testing.T) {
 			wantContentType:      "application/json; charset=utf-8",
 		},
 		{
-			n:         12,
-			name:      "example.com/@v/master.mod",
-			wantError: errors.New("unrecognized version"),
-		},
-		{
-			n:         13,
-			name:      "example.com/@v/master.zip",
-			wantError: errors.New("unrecognized version"),
-		},
-		{
-			n:         14,
-			name:      "example.com",
-			wantError: errors.New("missing /@v/"),
-		},
-		{
-			n:         15,
-			name:      "example.com/@v/",
-			wantError: errors.New(`no file extension in filename ""`),
-		},
-		{
-			n:         16,
-			name:      "example.com/@v/main",
-			wantError: errors.New(`no file extension in filename "main"`),
-		},
-		{
-			n:                    17,
+			n:                    10,
 			name:                 "example.com/!foobar/@v/!v1.0.0.info",
 			wantOps:              fetchOpsResolve,
 			wantModulePath:       "example.com/Foobar",
@@ -169,6 +134,41 @@ func TestNewFetch(t *testing.T) {
 			wantModAtVer:         "example.com/Foobar@V1.0.0",
 			wantRequiredToVerify: true,
 			wantContentType:      "application/json; charset=utf-8",
+		},
+		{
+			n:         11,
+			name:      "example.com/@v/v1.0.0.ext",
+			wantError: errors.New(`unexpected extension ".ext"`),
+		},
+		{
+			n:         12,
+			name:      "example.com/@v/latest.info",
+			wantError: errors.New("invalid version"),
+		},
+		{
+			n:         13,
+			name:      "example.com/@v/master.mod",
+			wantError: errors.New("unrecognized version"),
+		},
+		{
+			n:         14,
+			name:      "example.com/@v/master.zip",
+			wantError: errors.New("unrecognized version"),
+		},
+		{
+			n:         15,
+			name:      "example.com",
+			wantError: errors.New("missing /@v/"),
+		},
+		{
+			n:         16,
+			name:      "example.com/@v/",
+			wantError: errors.New(`no file extension in filename ""`),
+		},
+		{
+			n:         17,
+			name:      "example.com/@v/main",
+			wantError: errors.New(`no file extension in filename "main"`),
 		},
 		{
 			n:         18,
@@ -404,16 +404,6 @@ func TestFetchDoProxy(t *testing.T) {
 		{
 			n: 2,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				responseSuccess(rw, req, strings.NewReader(marshalInfo("v1.0.0", time.Time{})), "application/json; charset=utf-8", 60)
-			},
-			name:      "example.com/@latest",
-			tempDir:   t.TempDir(),
-			proxy:     proxyServer.URL,
-			wantError: notFoundErrorf("invalid info response: zero time"),
-		},
-		{
-			n: 3,
-			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				responseSuccess(rw, req, strings.NewReader(`v1.0.0
 v1.1.0
 v1.1.1-0.20200101000000-0123456789ab
@@ -428,7 +418,7 @@ invalid
 			wantVersions: []string{"v1.0.0", "v1.1.0", "v1.2.0"},
 		},
 		{
-			n: 4,
+			n: 3,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				responseSuccess(rw, req, strings.NewReader(marshalInfo("v1.0.0", infoTime)), "application/json; charset=utf-8", 60)
 			},
@@ -438,17 +428,7 @@ invalid
 			wantContent: marshalInfo("v1.0.0", infoTime),
 		},
 		{
-			n: 5,
-			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				responseSuccess(rw, req, strings.NewReader(marshalInfo("v1.0.0", time.Time{})), "application/json; charset=utf-8", 60)
-			},
-			name:      "example.com/@v/v1.0.0.info",
-			tempDir:   t.TempDir(),
-			proxy:     proxyServer.URL,
-			wantError: notFoundErrorf("invalid info file: zero time"),
-		},
-		{
-			n: 6,
+			n: 4,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				responseSuccess(rw, req, strings.NewReader("module example.com"), "text/plain; charset=utf-8", 60)
 			},
@@ -458,7 +438,7 @@ invalid
 			wantContent: "module example.com",
 		},
 		{
-			n: 7,
+			n: 5,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				responseSuccess(rw, req, strings.NewReader("module example.com"), "text/plain; charset=utf-8", 60)
 			},
@@ -473,32 +453,7 @@ invalid
 			wantContent: "module example.com",
 		},
 		{
-			n: 8,
-			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				responseSuccess(rw, req, strings.NewReader("module example.com"), "text/plain; charset=utf-8", 60)
-			},
-			sumdbHandler: sumdb.NewServer(sumdb.NewTestServer(skey, func(modulePath, moduleVersion string) ([]byte, error) {
-				gosum := fmt.Sprintf("%s %s %s\n", modulePath, "v1.0.0", dirHash)
-				gosum += fmt.Sprintf("%s %s/go.mod %s\n", modulePath, "v1.0.0", modHash)
-				return []byte(gosum), nil
-			})),
-			name:      "example.com/@v/v1.1.0.mod",
-			tempDir:   t.TempDir(),
-			proxy:     proxyServer.URL,
-			wantError: notFoundErrorf("example.com@v1.1.0: invalid version: untrusted revision v1.1.0"),
-		},
-		{
-			n: 9,
-			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				responseSuccess(rw, req, strings.NewReader("Go 1.13\n"), "text/plain; charset=utf-8", 60)
-			},
-			name:      "example.com/@v/v1.0.0.mod",
-			tempDir:   t.TempDir(),
-			proxy:     proxyServer.URL,
-			wantError: notFoundErrorf("invalid mod file: missing module directive"),
-		},
-		{
-			n: 10,
+			n: 6,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				f, err := os.Open(zipFile)
 				if err != nil {
@@ -513,7 +468,7 @@ invalid
 			wantContent: string(zip),
 		},
 		{
-			n: 11,
+			n: 7,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				f, err := os.Open(zipFile)
 				if err != nil {
@@ -535,6 +490,51 @@ invalid
 			tempDir:     t.TempDir(),
 			proxy:       proxyServer.URL,
 			wantContent: string(zip),
+		},
+		{
+			n: 8,
+			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
+				responseSuccess(rw, req, strings.NewReader(marshalInfo("v1.0.0", time.Time{})), "application/json; charset=utf-8", 60)
+			},
+			name:      "example.com/@latest",
+			tempDir:   t.TempDir(),
+			proxy:     proxyServer.URL,
+			wantError: notFoundErrorf("invalid info response: zero time"),
+		},
+		{
+			n: 9,
+			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
+				responseSuccess(rw, req, strings.NewReader(marshalInfo("v1.0.0", time.Time{})), "application/json; charset=utf-8", 60)
+			},
+			name:      "example.com/@v/v1.0.0.info",
+			tempDir:   t.TempDir(),
+			proxy:     proxyServer.URL,
+			wantError: notFoundErrorf("invalid info file: zero time"),
+		},
+		{
+			n: 10,
+			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
+				responseSuccess(rw, req, strings.NewReader("module example.com"), "text/plain; charset=utf-8", 60)
+			},
+			sumdbHandler: sumdb.NewServer(sumdb.NewTestServer(skey, func(modulePath, moduleVersion string) ([]byte, error) {
+				gosum := fmt.Sprintf("%s %s %s\n", modulePath, "v1.0.0", dirHash)
+				gosum += fmt.Sprintf("%s %s/go.mod %s\n", modulePath, "v1.0.0", modHash)
+				return []byte(gosum), nil
+			})),
+			name:      "example.com/@v/v1.1.0.mod",
+			tempDir:   t.TempDir(),
+			proxy:     proxyServer.URL,
+			wantError: notFoundErrorf("example.com@v1.1.0: invalid version: untrusted revision v1.1.0"),
+		},
+		{
+			n: 11,
+			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
+				responseSuccess(rw, req, strings.NewReader("Go 1.13\n"), "text/plain; charset=utf-8", 60)
+			},
+			name:      "example.com/@v/v1.0.0.mod",
+			tempDir:   t.TempDir(),
+			proxy:     proxyServer.URL,
+			wantError: notFoundErrorf("invalid mod file: missing module directive"),
 		},
 		{
 			n: 12,
@@ -766,38 +766,7 @@ func TestFetchDoDirect(t *testing.T) {
 			wantZip:     zipCacheFile,
 		},
 		{
-			n:         6,
-			name:      "example.com/@v/v1.1.0.info",
-			wantError: notFoundErrorf("zip for example.com@v1.1.0 has unexpected file example.com@v1.0.0/go.mod"),
-		},
-		{
-			n:          7,
-			ctxTimeout: -1,
-			name:       "example.com/@v/v1.0.0.info",
-			wantError:  context.Canceled,
-		},
-		{
-			n:          8,
-			ctxTimeout: -time.Hour,
-			name:       "example.com/@v/v1.0.0.info",
-			wantError:  context.DeadlineExceeded,
-		},
-		{
-			n:         9,
-			name:      "example.com/@v/v1.2.0.info",
-			wantError: errNotFound,
-		},
-		{
-			n:    10,
-			name: "example.com/@v/v1.0.0.info",
-			setupFetch: func(f *fetch) error {
-				f.modAtVer = "invalid"
-				return nil
-			},
-			wantError: errNotFound,
-		},
-		{
-			n: 11,
+			n: 6,
 			sumdbHandler: sumdb.NewServer(sumdb.NewTestServer(skey, func(modulePath, moduleVersion string) ([]byte, error) {
 				gosum := fmt.Sprintf("%s %s %s\n", modulePath, moduleVersion, dirHash)
 				gosum += fmt.Sprintf("%s %s/go.mod %s\n", modulePath, moduleVersion, modHash)
@@ -809,6 +778,37 @@ func TestFetchDoDirect(t *testing.T) {
 			wantInfo:    infoCacheFile,
 			wantGoMod:   modCacheFile,
 			wantZip:     zipCacheFile,
+		},
+		{
+			n:         7,
+			name:      "example.com/@v/v1.1.0.info",
+			wantError: notFoundErrorf("zip for example.com@v1.1.0 has unexpected file example.com@v1.0.0/go.mod"),
+		},
+		{
+			n:          8,
+			ctxTimeout: -1,
+			name:       "example.com/@v/v1.0.0.info",
+			wantError:  context.Canceled,
+		},
+		{
+			n:          9,
+			ctxTimeout: -time.Hour,
+			name:       "example.com/@v/v1.0.0.info",
+			wantError:  context.DeadlineExceeded,
+		},
+		{
+			n:         10,
+			name:      "example.com/@v/v1.2.0.info",
+			wantError: errNotFound,
+		},
+		{
+			n:    11,
+			name: "example.com/@v/v1.0.0.info",
+			setupFetch: func(f *fetch) error {
+				f.modAtVer = "invalid"
+				return nil
+			},
+			wantError: errNotFound,
 		},
 		{
 			n: 12,
@@ -1016,30 +1016,30 @@ func TestUnmarshalInfo(t *testing.T) {
 		wantError   error
 	}{
 		{
-			n:         1,
-			wantError: errors.New("unexpected end of JSON input"),
-		},
-		{
-			n:         2,
-			info:      "{}",
-			wantError: errors.New("empty version"),
-		},
-		{
-			n:         3,
-			info:      `{"Version":"v1.0.0"}`,
-			wantError: errors.New("zero time"),
-		},
-		{
-			n:           4,
+			n:           1,
 			info:        `{"Version":"v1.0.0","Time":"2000-01-01T00:00:00Z"}`,
 			wantVersion: "v1.0.0",
 			wantTime:    time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
 		},
 		{
-			n:           5,
+			n:           2,
 			info:        `{"Version":"v1.0.0","Time":"2000-01-01T01:00:00+01:00"}`,
 			wantVersion: "v1.0.0",
 			wantTime:    time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			n:         3,
+			wantError: errors.New("unexpected end of JSON input"),
+		},
+		{
+			n:         4,
+			info:      "{}",
+			wantError: errors.New("empty version"),
+		},
+		{
+			n:         5,
+			info:      `{"Version":"v1.0.0"}`,
+			wantError: errors.New("zero time"),
 		},
 	} {
 		infoVersion, infoTime, err := unmarshalInfo(tt.info)
@@ -1072,19 +1072,19 @@ func TestCheckAndFormatInfoFile(t *testing.T) {
 		wantError error
 	}{
 		{
-			n:         1,
-			info:      "{}",
-			wantError: notFoundErrorf("invalid info file: empty version"),
-		},
-		{
-			n:        2,
+			n:        1,
 			info:     `{"Version":"v1.0.0","Time":"2000-01-01T00:00:00Z"}`,
 			wantInfo: `{"Version":"v1.0.0","Time":"2000-01-01T00:00:00Z"}`,
 		},
 		{
-			n:        3,
+			n:        2,
 			info:     `{"Version":"v1.0.0","Time":"2000-01-01T01:00:00+01:00"}`,
 			wantInfo: `{"Version":"v1.0.0","Time":"2000-01-01T00:00:00Z"}`,
+		},
+		{
+			n:         3,
+			info:      "{}",
+			wantError: notFoundErrorf("invalid info file: empty version"),
 		},
 		{
 			n:         4,
@@ -1125,9 +1125,9 @@ func TestCheckModFile(t *testing.T) {
 		mod       string
 		wantError error
 	}{
-		{1, "foobar", notFoundErrorf("invalid mod file: missing module directive")},
-		{2, "module", nil},
-		{3, "// foobar\nmodule foobar", nil},
+		{1, "module", nil},
+		{2, "// foobar\nmodule foobar", nil},
+		{3, "foobar", notFoundErrorf("invalid mod file: missing module directive")},
 		{4, "", fs.ErrNotExist},
 	} {
 		modFile := filepath.Join(t.TempDir(), "mod")

@@ -13,83 +13,77 @@ func TestSUMDBClientOps(t *testing.T) {
 	defer proxyServer.Close()
 
 	for _, tt := range []struct {
-		n               int
-		proxyHandler    http.HandlerFunc
-		envGOPROXY      string
-		envGOSUMDB      string
-		wantInitError   string
-		wantKey         string
-		wantEndpointURL string
+		n             int
+		proxyHandler  http.HandlerFunc
+		envGOPROXY    string
+		envGOSUMDB    string
+		wantKey       string
+		wantEndpoint  string
+		wantInitError error
 	}{
 		{
-			n:             1,
-			wantInitError: "missing GOSUMDB",
+			n:            1,
+			envGOPROXY:   "direct",
+			envGOSUMDB:   defaultEnvGOSUMDB,
+			wantKey:      sumGolangOrgKey,
+			wantEndpoint: "https://" + defaultEnvGOSUMDB,
 		},
 		{
-			n:             2,
-			envGOSUMDB:    "example.com foo bar",
-			wantInitError: "invalid GOSUMDB: too many fields",
+			n:            2,
+			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {},
+			envGOPROXY:   proxyServer.URL,
+			envGOSUMDB:   defaultEnvGOSUMDB,
+			wantKey:      sumGolangOrgKey,
+			wantEndpoint: proxyServer.URL + "/sumdb/" + defaultEnvGOSUMDB,
 		},
 		{
-			n:               3,
-			envGOPROXY:      "direct",
-			envGOSUMDB:      "sum.golang.org",
-			wantKey:         sumGolangOrgKey,
-			wantEndpointURL: "https://sum.golang.org",
-		},
-		{
-			n:               4,
-			envGOPROXY:      "direct",
-			envGOSUMDB:      "sum.golang.google.cn",
-			wantKey:         sumGolangOrgKey,
-			wantEndpointURL: "https://sum.golang.google.cn",
-		},
-		{
-			n:               5,
-			proxyHandler:    func(rw http.ResponseWriter, req *http.Request) {},
-			envGOPROXY:      proxyServer.URL,
-			envGOSUMDB:      "example.com",
-			wantKey:         "example.com",
-			wantEndpointURL: proxyServer.URL + "/sumdb/example.com",
-		},
-		{
-			n: 6,
+			n: 3,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				rw.WriteHeader(http.StatusNotFound)
 			},
-			envGOPROXY:      proxyServer.URL,
-			envGOSUMDB:      "example.com",
-			wantKey:         "example.com",
-			wantEndpointURL: "https://example.com",
+			envGOPROXY:   proxyServer.URL,
+			envGOSUMDB:   defaultEnvGOSUMDB,
+			wantKey:      sumGolangOrgKey,
+			wantEndpoint: "https://" + defaultEnvGOSUMDB,
 		},
 		{
-			n: 7,
+			n: 4,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				rw.WriteHeader(http.StatusNotFound)
 			},
-			envGOPROXY:      proxyServer.URL + ",direct",
-			envGOSUMDB:      "example.com",
-			wantKey:         "example.com",
-			wantEndpointURL: "https://example.com",
+			envGOPROXY:   proxyServer.URL + ",direct",
+			envGOSUMDB:   defaultEnvGOSUMDB,
+			wantKey:      sumGolangOrgKey,
+			wantEndpoint: "https://" + defaultEnvGOSUMDB,
+		},
+		{
+			n: 5,
+			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
+				rw.WriteHeader(http.StatusNotFound)
+			},
+			envGOPROXY:   proxyServer.URL + ",off",
+			envGOSUMDB:   defaultEnvGOSUMDB,
+			wantKey:      sumGolangOrgKey,
+			wantEndpoint: "https://" + defaultEnvGOSUMDB,
+		},
+		{
+			n:             6,
+			wantInitError: errors.New("missing GOSUMDB"),
+		},
+		{
+			n:             7,
+			envGOPROXY:    "://invalid",
+			envGOSUMDB:    defaultEnvGOSUMDB,
+			wantInitError: errors.New(`parse "://invalid": missing protocol scheme`),
 		},
 		{
 			n: 8,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				rw.WriteHeader(http.StatusNotFound)
-			},
-			envGOPROXY:      proxyServer.URL + ",off",
-			envGOSUMDB:      "example.com",
-			wantKey:         "example.com",
-			wantEndpointURL: "https://example.com",
-		},
-		{
-			n: 9,
-			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				rw.WriteHeader(http.StatusInternalServerError)
 			},
 			envGOPROXY:    proxyServer.URL,
-			envGOSUMDB:    "example.com",
-			wantInitError: "bad upstream",
+			envGOSUMDB:    defaultEnvGOSUMDB,
+			wantInitError: errors.New("bad upstream"),
 		},
 	} {
 		setProxyHandler(tt.proxyHandler)
@@ -99,11 +93,11 @@ func TestSUMDBClientOps(t *testing.T) {
 			httpClient: http.DefaultClient,
 		}
 		sco.init()
-		if tt.wantInitError != "" {
+		if tt.wantInitError != nil {
 			if sco.initError == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
 			}
-			if got, want := sco.initError.Error(), tt.wantInitError; got != want {
+			if got, want := sco.initError, tt.wantInitError; !errors.Is(got, want) && got.Error() != want.Error() {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		} else {
@@ -113,22 +107,9 @@ func TestSUMDBClientOps(t *testing.T) {
 			if got, want := string(sco.key), tt.wantKey; got != want {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
-			if got, want := sco.endpointURL.String(), tt.wantEndpointURL; got != want {
+			if got, want := sco.endpoint.String(), tt.wantEndpoint; got != want {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
-		}
-	}
-
-	for _, tt := range []struct {
-		n   int
-		sco *sumdbClientOps
-	}{
-		{1, &sumdbClientOps{envGOSUMDB: "example.com ://invalid"}},
-		{2, &sumdbClientOps{envGOPROXY: "://invalid", envGOSUMDB: "example.com"}},
-	} {
-		tt.sco.init()
-		if tt.sco.initError == nil {
-			t.Fatalf("test(%d): expected error", tt.n)
 		}
 	}
 
@@ -228,9 +209,27 @@ func TestSUMDBClientOps(t *testing.T) {
 			wantContent: "foobar",
 		},
 		{
-			n: 2,
+			n:          2,
+			envGOPROXY: "direct",
+			read: func(sco *sumdbClientOps) (string, error) {
+				b, err := sco.ReadConfig("key")
+				return string(b), err
+			},
+			wantContent: sumGolangOrgKey,
+		},
+		{
+			n:          3,
+			envGOPROXY: "direct",
+			read: func(sco *sumdbClientOps) (string, error) {
+				b, err := sco.ReadConfig("/latest")
+				return string(b), err
+			},
+			wantContent: "",
+		},
+		{
+			n: 4,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				if req.URL.Path == "/sumdb/sum.golang.org/supported" {
+				if req.URL.Path == "/sumdb/"+defaultEnvGOSUMDB+"/supported" {
 					rw.WriteHeader(http.StatusOK)
 				} else {
 					rw.WriteHeader(http.StatusInternalServerError)
@@ -242,24 +241,6 @@ func TestSUMDBClientOps(t *testing.T) {
 				return string(b), err
 			},
 			wantError: errBadUpstream,
-		},
-		{
-			n:          3,
-			envGOPROXY: "direct",
-			read: func(sco *sumdbClientOps) (string, error) {
-				b, err := sco.ReadConfig("key")
-				return string(b), err
-			},
-			wantContent: sumGolangOrgKey,
-		},
-		{
-			n:          4,
-			envGOPROXY: "direct",
-			read: func(sco *sumdbClientOps) (string, error) {
-				b, err := sco.ReadConfig("/latest")
-				return string(b), err
-			},
-			wantContent: "",
 		},
 		{
 			n:          5,
@@ -283,7 +264,7 @@ func TestSUMDBClientOps(t *testing.T) {
 		setProxyHandler(tt.proxyHandler)
 		sco := &sumdbClientOps{
 			envGOPROXY: tt.envGOPROXY,
-			envGOSUMDB: "sum.golang.org",
+			envGOSUMDB: defaultEnvGOSUMDB,
 			httpClient: http.DefaultClient,
 		}
 		sco.init()

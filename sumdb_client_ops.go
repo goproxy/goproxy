@@ -12,70 +12,47 @@ import (
 	"sync"
 )
 
-// sumGolangOrgKey is the key for the sum.golang.org.
-const sumGolangOrgKey = "sum.golang.org+033de0ae+Ac4zctda0e5eza+HJyk9SxEdh+s3Ux18htTTAD8OuAn8"
-
 // sumdbClientOps implements [golang.org/x/mod/sumdb.ClientOps].
 type sumdbClientOps struct {
-	initOnce    sync.Once
-	initError   error
-	key         []byte
-	endpointURL *url.URL
-	envGOPROXY  string
-	envGOSUMDB  string
-	httpClient  *http.Client
+	initOnce   sync.Once
+	initError  error
+	key        []byte
+	endpoint   *url.URL
+	envGOPROXY string
+	envGOSUMDB string
+	httpClient *http.Client
 }
 
 // init initializes the sco.
 func (sco *sumdbClientOps) init() {
-	sumdbParts := strings.Fields(sco.envGOSUMDB)
-	if l := len(sumdbParts); l == 0 {
-		sco.initError = errors.New("missing GOSUMDB")
-		return
-	} else if l > 2 {
-		sco.initError = errors.New("invalid GOSUMDB: too many fields")
-		return
-	}
-	if sumdbParts[0] == "sum.golang.google.cn" {
-		sumdbParts[0] = "sum.golang.org"
-		if len(sumdbParts) == 1 {
-			sumdbParts = append(sumdbParts, "https://sum.golang.google.cn")
-		}
-	}
-	if sumdbParts[0] == "sum.golang.org" {
-		sumdbParts[0] = sumGolangOrgKey
-	}
-	sumdbName := sumdbParts[0]
-	if i := strings.Index(sumdbName, "+"); i >= 0 {
-		sumdbName = sumdbName[:i]
-	}
-	if len(sumdbParts) == 1 {
-		sumdbParts = append(sumdbParts, sumdbName)
-	}
-
-	sco.key = []byte(sumdbParts[0])
-	sco.endpointURL, sco.initError = parseRawURL(sumdbParts[1])
+	var (
+		name             string
+		isDirectEndpoint bool
+	)
+	name, sco.key, sco.endpoint, isDirectEndpoint, sco.initError = parseEnvGOSUMDB(sco.envGOSUMDB)
 	if sco.initError != nil {
 		return
 	}
-	if err := walkEnvGOPROXY(sco.envGOPROXY, func(proxy string) error {
-		proxyURL, err := parseRawURL(proxy)
-		if err != nil {
-			return err
+	if isDirectEndpoint {
+		if err := walkEnvGOPROXY(sco.envGOPROXY, func(proxy string) error {
+			proxyURL, err := parseRawURL(proxy)
+			if err != nil {
+				return err
+			}
+			proxiedEndpoint := appendURL(proxyURL, "sumdb", name)
+			if err := httpGet(context.Background(), sco.httpClient, appendURL(proxiedEndpoint, "/supported").String(), nil); err != nil {
+				return err
+			}
+			sco.endpoint = proxiedEndpoint
+			return nil
+		}, func() error {
+			return nil
+		}, func() error {
+			return nil
+		}); err != nil && !errors.Is(err, errNotFound) {
+			sco.initError = err
+			return
 		}
-		endpointURL := appendURL(proxyURL, "sumdb", sumdbName)
-		if err := httpGet(context.Background(), sco.httpClient, appendURL(endpointURL, "/supported").String(), nil); err != nil {
-			return err
-		}
-		sco.endpointURL = endpointURL
-		return nil
-	}, func() error {
-		return nil
-	}, func() error {
-		return nil
-	}); err != nil && !errors.Is(err, errNotFound) {
-		sco.initError = err
-		return
 	}
 }
 
@@ -85,7 +62,7 @@ func (sco *sumdbClientOps) ReadRemote(path string) ([]byte, error) {
 		return nil, sco.initError
 	}
 	var buf bytes.Buffer
-	if err := httpGet(context.Background(), sco.httpClient, appendURL(sco.endpointURL, path).String(), &buf); err != nil {
+	if err := httpGet(context.Background(), sco.httpClient, appendURL(sco.endpoint, path).String(), &buf); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -99,7 +76,7 @@ func (sco *sumdbClientOps) ReadConfig(file string) ([]byte, error) {
 	if file == "key" {
 		return sco.key, nil
 	} else if strings.HasSuffix(file, "/latest") {
-		return []byte{}, nil // Empty result means empty tree
+		return []byte{}, nil // Empty result means empty tree.
 	}
 	return nil, fmt.Errorf("unknown config %s", file)
 }

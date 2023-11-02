@@ -21,7 +21,7 @@ import (
 func getenv(env []string, key string) string {
 	for _, e := range env {
 		if k, v, ok := strings.Cut(e, "="); ok {
-			if strings.TrimSpace(k) == key {
+			if k == key {
 				return v
 			}
 		}
@@ -51,64 +51,40 @@ func TestGoproxyInit(t *testing.T) {
 	}{
 		{
 			n:              1,
-			wantEnvGOPROXY: "https://proxy.golang.org,direct",
-			wantEnvGOSUMDB: "sum.golang.org",
+			wantEnvGOPROXY: defaultEnvGOPROXY,
+			wantEnvGOSUMDB: defaultEnvGOSUMDB,
 		},
 		{
 			n:              2,
-			env:            append(os.Environ(), "GOPROXY=https://example.com|https://backup.example.com,direct"),
-			wantEnvGOPROXY: "https://example.com|https://backup.example.com,direct",
-			wantEnvGOSUMDB: "sum.golang.org",
+			env:            append(os.Environ(), "GOPROXY=https://example.com"),
+			wantEnvGOPROXY: "https://example.com",
+			wantEnvGOSUMDB: defaultEnvGOSUMDB,
 		},
 		{
 			n:              3,
-			env:            append(os.Environ(), "GOPROXY=https://example.com,direct,https://backup.example.com"),
-			wantEnvGOPROXY: "https://example.com,direct",
-			wantEnvGOSUMDB: "sum.golang.org",
-		},
-		{
-			n:              4,
-			env:            append(os.Environ(), "GOPROXY=https://example.com,off,https://backup.example.com"),
-			wantEnvGOPROXY: "https://example.com,off",
-			wantEnvGOSUMDB: "sum.golang.org",
-		},
-		{
-			n:              5,
-			env:            append(os.Environ(), "GOPROXY=https://example.com|"),
-			wantEnvGOPROXY: "https://example.com",
-			wantEnvGOSUMDB: "sum.golang.org",
-		},
-		{
-			n:              6,
-			env:            append(os.Environ(), "GOPROXY=,"),
-			wantEnvGOPROXY: "off",
-			wantEnvGOSUMDB: "sum.golang.org",
-		},
-		{
-			n:              7,
 			env:            append(os.Environ(), "GOSUMDB=example.com"),
-			wantEnvGOPROXY: "https://proxy.golang.org,direct",
+			wantEnvGOPROXY: defaultEnvGOPROXY,
 			wantEnvGOSUMDB: "example.com",
 		},
 		{
-			n:                8,
+			n:                4,
 			env:              append(os.Environ(), "GOPRIVATE=example.com"),
-			wantEnvGOPROXY:   "https://proxy.golang.org,direct",
+			wantEnvGOPROXY:   defaultEnvGOPROXY,
 			wantEnvGONOPROXY: "example.com",
-			wantEnvGOSUMDB:   "sum.golang.org",
+			wantEnvGOSUMDB:   defaultEnvGOSUMDB,
 			wantEnvGONOSUMDB: "example.com",
 		},
 		{
-			n: 9,
+			n: 5,
 			env: append(
 				os.Environ(),
 				"GOPRIVATE=example.com",
 				"GONOPROXY=alt1.example.com",
 				"GONOSUMDB=alt2.example.com",
 			),
-			wantEnvGOPROXY:   "https://proxy.golang.org,direct",
+			wantEnvGOPROXY:   defaultEnvGOPROXY,
 			wantEnvGONOPROXY: "alt1.example.com",
-			wantEnvGOSUMDB:   "sum.golang.org",
+			wantEnvGOSUMDB:   defaultEnvGOSUMDB,
 			wantEnvGONOSUMDB: "alt2.example.com",
 		},
 	} {
@@ -145,7 +121,7 @@ func TestGoproxyInit(t *testing.T) {
 
 	g = &Goproxy{ProxiedSUMDBs: []string{
 		"sum.golang.google.cn",
-		"sum.golang.org https://sum.golang.google.cn",
+		defaultEnvGOSUMDB + " https://sum.golang.google.cn",
 		"",
 		"example.com ://invalid",
 	}}
@@ -156,7 +132,7 @@ func TestGoproxyInit(t *testing.T) {
 	if got, want := g.proxiedSUMDBs["sum.golang.google.cn"].String(), "https://sum.golang.google.cn"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	if got, want := g.proxiedSUMDBs["sum.golang.org"].String(), "https://sum.golang.google.cn"; got != want {
+	if got, want := g.proxiedSUMDBs[defaultEnvGOSUMDB].String(), "https://sum.golang.google.cn"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 	if got := g.proxiedSUMDBs["example.com"]; got != nil {
@@ -858,22 +834,25 @@ func TestGoproxyLogErrorf(t *testing.T) {
 	}
 }
 
-func TestCleanPath(t *testing.T) {
+func TestCleanEnvGOPROXY(t *testing.T) {
 	for _, tt := range []struct {
-		n        int
-		path     string
-		wantPath string
+		n              int
+		envGOPROXY     string
+		wantEnvGOPROXY string
 	}{
-		{1, "", "/"},
-		{2, ".", "/"},
-		{3, "..", "/"},
-		{4, "/.", "/"},
-		{5, "/..", "/"},
-		{6, "//", "/"},
-		{7, "/foo//bar", "/foo/bar"},
-		{8, "/foo//bar/", "/foo/bar/"},
+		{1, "", defaultEnvGOPROXY},
+		{2, defaultEnvGOPROXY, defaultEnvGOPROXY},
+		{3, "https://example.com", "https://example.com"},
+		{4, "https://example.com,", "https://example.com"},
+		{5, "https://example.com|", "https://example.com"},
+		{6, "https://example.com|https://backup.example.com,direct", "https://example.com|https://backup.example.com,direct"},
+		{7, "https://example.com,direct,https://backup.example.com", "https://example.com,direct"},
+		{8, "https://example.com,off,https://backup.example.com", "https://example.com,off"},
+		{9, ",", "off"},
+		{10, "|", "off"},
+		{11, " ", "off"},
 	} {
-		if got, want := cleanPath(tt.path), tt.wantPath; got != want {
+		if got, want := cleanEnvGOPROXY(tt.envGOPROXY), tt.wantEnvGOPROXY; got != want {
 			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 		}
 	}
@@ -995,6 +974,171 @@ func TestWalkEnvGOPROXY(t *testing.T) {
 		t.Fatal("expected error")
 	} else if got, want := err.Error(), "missing GOPROXY"; got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestCleanEnvGOSUMDB(t *testing.T) {
+	for _, tt := range []struct {
+		n              int
+		envGOSUMDB     string
+		wantEnvGOSUMDB string
+	}{
+		{1, "", defaultEnvGOSUMDB},
+		{2, defaultEnvGOSUMDB, defaultEnvGOSUMDB},
+		{3, "example.com", "example.com"},
+	} {
+		if got, want := cleanEnvGOSUMDB(tt.envGOSUMDB), tt.wantEnvGOSUMDB; got != want {
+			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+		}
+	}
+}
+
+func TestParseEnvGOSUMDB(t *testing.T) {
+	for _, tt := range []struct {
+		n                    int
+		envGOSUMDB           string
+		wantName             string
+		wantKey              string
+		wantEndpoint         string
+		wantIsDirectEndpoint bool
+		wantError            error
+	}{
+		{
+			n:                    1,
+			envGOSUMDB:           defaultEnvGOSUMDB,
+			wantName:             defaultEnvGOSUMDB,
+			wantKey:              sumGolangOrgKey,
+			wantEndpoint:         "https://" + defaultEnvGOSUMDB,
+			wantIsDirectEndpoint: true,
+		},
+		{
+			n:                    2,
+			envGOSUMDB:           sumGolangOrgKey,
+			wantName:             defaultEnvGOSUMDB,
+			wantKey:              sumGolangOrgKey,
+			wantEndpoint:         "https://" + defaultEnvGOSUMDB,
+			wantIsDirectEndpoint: true,
+		},
+		{
+			n:                    3,
+			envGOSUMDB:           sumGolangOrgKey + " https://" + defaultEnvGOSUMDB,
+			wantName:             defaultEnvGOSUMDB,
+			wantKey:              sumGolangOrgKey,
+			wantEndpoint:         "https://" + defaultEnvGOSUMDB,
+			wantIsDirectEndpoint: false,
+		},
+		{
+			n:                    4,
+			envGOSUMDB:           "sum.golang.google.cn",
+			wantName:             defaultEnvGOSUMDB,
+			wantKey:              sumGolangOrgKey,
+			wantEndpoint:         "https://sum.golang.google.cn",
+			wantIsDirectEndpoint: false,
+		},
+		{
+			n:                    5,
+			envGOSUMDB:           "sum.golang.google.cn https://example.com",
+			wantName:             defaultEnvGOSUMDB,
+			wantKey:              sumGolangOrgKey,
+			wantEndpoint:         "https://example.com",
+			wantIsDirectEndpoint: false,
+		},
+		{
+			n:          6,
+			envGOSUMDB: "",
+			wantError:  errors.New("missing GOSUMDB"),
+		},
+		{
+			n:          7,
+			envGOSUMDB: " ",
+			wantError:  errors.New("missing GOSUMDB"),
+		},
+		{
+			n:          8,
+			envGOSUMDB: "a b c",
+			wantError:  errors.New("invalid GOSUMDB: too many fields"),
+		},
+		{
+			n:          9,
+			envGOSUMDB: "example.com",
+			wantError:  errors.New("invalid GOSUMDB: malformed verifier id"),
+		},
+		{
+			n:          10,
+			envGOSUMDB: "example.com/+1a6413ba+AW5WXiP8oUq7RI2AuI4Wh14FJrMqJqnAplQ0kcLbnbqK",
+			wantError:  errors.New("invalid sumdb name (must be host[/path]): example.com/ {Scheme:https Opaque: User: Host:example.com Path:/ RawPath: OmitHost:false ForceQuery:false RawQuery: Fragment: RawFragment:}"),
+		},
+		{
+			n:          11,
+			envGOSUMDB: defaultEnvGOSUMDB + " ://invalid",
+			wantError:  errors.New(`invalid GOSUMDB URL: parse "://invalid": missing protocol scheme`),
+		},
+	} {
+		name, key, endpoint, isDirectEndpoint, err := parseEnvGOSUMDB(tt.envGOSUMDB)
+		if tt.wantError != nil {
+			if err == nil {
+				t.Fatalf("test(%d): expected error", tt.n)
+			}
+			if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
+				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+			}
+		} else {
+			if err != nil {
+				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
+			}
+			if got, want := name, tt.wantName; got != want {
+				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+			}
+			if got, want := string(key), tt.wantKey; got != want {
+				t.Errorf("test(%d): got %x, want %x", tt.n, got, want)
+			}
+			if got, want := endpoint.String(), tt.wantEndpoint; got != want {
+				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+			}
+			if got, want := isDirectEndpoint, tt.wantIsDirectEndpoint; got != want {
+				t.Errorf("test(%d): got %t, want %t", tt.n, got, want)
+			}
+		}
+	}
+}
+
+func TestCleanCommaSeparatedList(t *testing.T) {
+	for _, tt := range []struct {
+		n        int
+		list     string
+		wantList string
+	}{
+		{1, "", ""},
+		{2, ",", ""},
+		{3, "a,", "a"},
+		{4, ",a", "a"},
+		{5, " , a", "a"},
+		{6, "a , b", "a,b"},
+	} {
+		if got, want := cleanCommaSeparatedList(tt.list), tt.wantList; got != want {
+			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+		}
+	}
+}
+
+func TestCleanPath(t *testing.T) {
+	for _, tt := range []struct {
+		n        int
+		path     string
+		wantPath string
+	}{
+		{1, "", "/"},
+		{2, ".", "/"},
+		{3, "..", "/"},
+		{4, "/.", "/"},
+		{5, "/..", "/"},
+		{6, "//", "/"},
+		{7, "/foo//bar", "/foo/bar"},
+		{8, "/foo//bar/", "/foo/bar/"},
+	} {
+		if got, want := cleanPath(tt.path), tt.wantPath; got != want {
+			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+		}
 	}
 }
 
