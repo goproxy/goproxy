@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1066,7 +1067,7 @@ func TestParseEnvGOSUMDB(t *testing.T) {
 		{
 			n:          10,
 			envGOSUMDB: "example.com/+1a6413ba+AW5WXiP8oUq7RI2AuI4Wh14FJrMqJqnAplQ0kcLbnbqK",
-			wantError:  errors.New("invalid sumdb name (must be host[/path]): example.com/ {Scheme:https Opaque: User: Host:example.com Path:/ RawPath: OmitHost:false ForceQuery:false RawQuery: Fragment: RawFragment:}"),
+			wantError:  fmt.Errorf("invalid sumdb name (must be host[/path]): example.com/ %+v", url.URL{Scheme: "https", Host: "example.com", Path: "/"}),
 		},
 		{
 			n:          11,
