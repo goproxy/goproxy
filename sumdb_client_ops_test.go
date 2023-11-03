@@ -114,81 +114,6 @@ func TestSUMDBClientOps(t *testing.T) {
 	}
 
 	for _, tt := range []struct {
-		n               int
-		call            func(sco *sumdbClientOps) error
-		ignoreCallError bool
-	}{
-		{
-			n: 1,
-			call: func(sco *sumdbClientOps) error {
-				_, err := sco.ReadRemote("")
-				return err
-			},
-		},
-		{
-			n: 2,
-			call: func(sco *sumdbClientOps) error {
-				_, err := sco.ReadConfig("")
-				return err
-			},
-		},
-		{
-			n: 3,
-			call: func(sco *sumdbClientOps) error {
-				return sco.WriteConfig("", nil, nil)
-			},
-		},
-		{
-			n: 4,
-			call: func(sco *sumdbClientOps) error {
-				_, err := sco.ReadCache("")
-				return err
-			},
-		},
-		{
-			n: 5,
-			call: func(sco *sumdbClientOps) error {
-				sco.WriteCache("", nil)
-				return nil
-			},
-			ignoreCallError: true,
-		},
-		{
-			n: 6,
-			call: func(sco *sumdbClientOps) error {
-				sco.Log("")
-				return nil
-			},
-			ignoreCallError: true,
-		},
-		{
-			n: 7,
-			call: func(sco *sumdbClientOps) error {
-				sco.SecurityError("")
-				return nil
-			},
-			ignoreCallError: true,
-		},
-	} {
-		sco := &sumdbClientOps{}
-		err := tt.call(sco)
-		if !tt.ignoreCallError {
-			if err == nil {
-				t.Fatalf("test(%d): expected error", tt.n)
-			}
-			if got, want := err.Error(), "missing GOSUMDB"; got != want {
-				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-			}
-		}
-		if sco.initError == nil {
-			t.Fatalf("test(%d): expected error", tt.n)
-		}
-		if got, want := sco.initError.Error(), "missing GOSUMDB"; got != want {
-			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-		}
-	}
-
-	for _, tt := range []struct {
 		n            int
 		proxyHandler http.HandlerFunc
 		envGOPROXY   string
@@ -285,6 +210,79 @@ func TestSUMDBClientOps(t *testing.T) {
 			}
 			if got, want := string(b), tt.wantContent; got != want {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+			}
+		}
+	}
+
+	for _, tt := range []struct {
+		n         int
+		call      func(sco *sumdbClientOps) error
+		wantError error
+	}{
+		{
+			n: 1,
+			call: func(sco *sumdbClientOps) error {
+				return sco.WriteConfig("", nil, nil)
+			},
+		},
+		{
+			n: 2,
+			call: func(sco *sumdbClientOps) error {
+				sco.WriteCache("", nil)
+				return nil
+			},
+		},
+		{
+			n: 3,
+			call: func(sco *sumdbClientOps) error {
+				sco.Log("")
+				return nil
+			},
+		},
+		{
+			n: 4,
+			call: func(sco *sumdbClientOps) error {
+				sco.SecurityError("")
+				return nil
+			},
+		},
+		{
+			n: 5,
+			call: func(sco *sumdbClientOps) error {
+				_, err := sco.ReadRemote("")
+				return err
+			},
+			wantError: errors.New("missing GOSUMDB"),
+		},
+		{
+			n: 6,
+			call: func(sco *sumdbClientOps) error {
+				_, err := sco.ReadConfig("")
+				return err
+			},
+			wantError: errors.New("missing GOSUMDB"),
+		},
+		{
+			n: 7,
+			call: func(sco *sumdbClientOps) error {
+				_, err := sco.ReadCache("")
+				return err
+			},
+			wantError: fs.ErrNotExist,
+		},
+	} {
+		sco := &sumdbClientOps{}
+		err := tt.call(sco)
+		if tt.wantError != nil {
+			if err == nil {
+				t.Fatalf("test(%d): expected error", tt.n)
+			}
+			if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
+				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+			}
+		} else {
+			if err != nil {
+				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
 			}
 		}
 	}
