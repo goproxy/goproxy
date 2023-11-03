@@ -85,9 +85,11 @@ func newFetch(g *Goproxy, name, tempDir string) (*fetch, error) {
 			return nil, err
 		}
 
-		if f.moduleVersion == "latest" {
+		switch f.moduleVersion {
+		case "latest", "upgrade", "patch":
 			return nil, errors.New("invalid version")
-		} else if !semver.IsValid(f.moduleVersion) {
+		}
+		if !semver.IsValid(f.moduleVersion) {
 			if ext == ".info" {
 				f.ops = fetchOpsQuery
 			} else {

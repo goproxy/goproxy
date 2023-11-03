@@ -149,36 +149,46 @@ func TestNewFetch(t *testing.T) {
 		},
 		{
 			n:         13,
+			name:      "example.com/@v/upgrade.info",
+			wantError: errors.New("invalid version"),
+		},
+		{
+			n:         14,
+			name:      "example.com/@v/patch.info",
+			wantError: errors.New("invalid version"),
+		},
+		{
+			n:         15,
 			name:      "example.com/@v/master.mod",
 			wantError: errors.New("unrecognized version"),
 		},
 		{
-			n:         14,
+			n:         16,
 			name:      "example.com/@v/master.zip",
 			wantError: errors.New("unrecognized version"),
 		},
 		{
-			n:         15,
+			n:         17,
 			name:      "example.com",
 			wantError: errors.New("missing /@v/"),
 		},
 		{
-			n:         16,
+			n:         18,
 			name:      "example.com/@v/",
 			wantError: errors.New(`no file extension in filename ""`),
 		},
 		{
-			n:         17,
+			n:         19,
 			name:      "example.com/@v/main",
 			wantError: errors.New(`no file extension in filename "main"`),
 		},
 		{
-			n:         18,
+			n:         20,
 			name:      "example.com/!!foobar/@latest",
 			wantError: errors.New(`invalid escaped module path "example.com/!!foobar"`),
 		},
 		{
-			n:         19,
+			n:         21,
 			name:      "example.com/@v/!!v1.0.0.info",
 			wantError: errors.New(`invalid escaped version "!!v1.0.0"`),
 		},
