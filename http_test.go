@@ -7,9 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"math/rand"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"syscall"
 	"testing"
 	"time"
@@ -179,6 +182,65 @@ func TestHTTPGet(t *testing.T) {
 
 	if err := httpGet(context.Background(), http.DefaultClient, "::", nil); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestHTTPGetTemp(t *testing.T) {
+	server, setHandler := newHTTPTestServer()
+	defer server.Close()
+	for _, tt := range []struct {
+		n           int
+		handler     http.HandlerFunc
+		tempDir     string
+		wantContent string
+		wantError   error
+	}{
+		{
+			n:           1,
+			handler:     func(rw http.ResponseWriter, req *http.Request) { fmt.Fprint(rw, "foobar") },
+			tempDir:     os.TempDir(),
+			wantContent: "foobar",
+		},
+		{
+			n: 2,
+			handler: func(rw http.ResponseWriter, req *http.Request) {
+				rw.WriteHeader(http.StatusNotFound)
+				fmt.Fprint(rw, "not found")
+			},
+			tempDir:   os.TempDir(),
+			wantError: errNotFound,
+		},
+		{
+			n:         3,
+			handler:   func(rw http.ResponseWriter, req *http.Request) {},
+			tempDir:   filepath.Join(os.TempDir(), "404"),
+			wantError: fs.ErrNotExist,
+		},
+	} {
+		setHandler(tt.handler)
+		tempFile, err := httpGetTemp(context.Background(), http.DefaultClient, server.URL, tt.tempDir)
+		if tt.wantError != nil {
+			if err == nil {
+				t.Fatalf("test(%d): expected error", tt.n)
+			}
+			if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
+				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+			}
+			if _, err := os.Stat(tempFile); err == nil {
+				t.Fatalf("test(%d): expected error", tt.n)
+			} else if got, want := err, fs.ErrNotExist; !errors.Is(got, want) && got.Error() != want.Error() {
+				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+			}
+		} else {
+			if err != nil {
+				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
+			}
+			if b, err := os.ReadFile(tempFile); err != nil {
+				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
+			} else if got, want := string(b), tt.wantContent; got != want {
+				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+			}
+		}
 	}
 }
 

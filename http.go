@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -46,7 +47,7 @@ func notFoundErrorf(format string, v ...interface{}) error {
 	return &notFoundError{err: fmt.Errorf(format, v...)}
 }
 
-// httpGet gets the content from the given url and writes it into the dst.
+// httpGet gets the content from the given url and writes it to the dst.
 func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer) error {
 	var lastError error
 	for attempt := 0; attempt < 10; attempt++ {
@@ -101,6 +102,24 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 		}
 	}
 	return lastError
+}
+
+// httpGetTemp is like [httpGet] but writes the content to a new temporary file
+// in tempDir.
+func httpGetTemp(ctx context.Context, client *http.Client, url, tempDir string) (tempFile string, err error) {
+	f, err := os.CreateTemp(tempDir, "")
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if err != nil {
+			os.Remove(f.Name())
+		}
+	}()
+	if err := httpGet(ctx, client, url, f); err != nil {
+		return "", err
+	}
+	return f.Name(), f.Close()
 }
 
 // isRetryableHTTPClientDoError reports whether the err is a retryable error

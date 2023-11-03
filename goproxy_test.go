@@ -516,7 +516,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 	}
 }
 
-func TestGoproxyServeSUMDB(t *testing.T) {
+func TestGoproxyServeSumDB(t *testing.T) {
 	sumdbServer, setSumDBHandler := newHTTPTestServer()
 	defer sumdbServer.Close()
 	for _, tt := range []struct {
@@ -576,7 +576,7 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 			n:                5,
 			sumdbHandler:     func(rw http.ResponseWriter, req *http.Request) {},
 			cacher:           DirCacher(t.TempDir()),
-			name:             "sumdb/sumdb.example.com/404",
+			name:             "sumdb/sumdb.example.com",
 			tempDir:          t.TempDir(),
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -587,7 +587,7 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 			n:                6,
 			sumdbHandler:     func(rw http.ResponseWriter, req *http.Request) {},
 			cacher:           DirCacher(t.TempDir()),
-			name:             "://invalid",
+			name:             "sumdb/sumdb.example.com/404",
 			tempDir:          t.TempDir(),
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -598,6 +598,17 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 			n:                7,
 			sumdbHandler:     func(rw http.ResponseWriter, req *http.Request) {},
 			cacher:           DirCacher(t.TempDir()),
+			name:             "://invalid",
+			tempDir:          t.TempDir(),
+			wantStatusCode:   http.StatusNotFound,
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "public, max-age=86400",
+			wantContent:      "not found",
+		},
+		{
+			n:                8,
+			sumdbHandler:     func(rw http.ResponseWriter, req *http.Request) {},
+			cacher:           DirCacher(t.TempDir()),
 			name:             "sumdb/sumdb2.example.com/supported",
 			tempDir:          t.TempDir(),
 			wantStatusCode:   http.StatusNotFound,
@@ -606,7 +617,7 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 			wantContent:      "not found",
 		},
 		{
-			n:               8,
+			n:               9,
 			sumdbHandler:    func(rw http.ResponseWriter, req *http.Request) {},
 			cacher:          DirCacher(t.TempDir()),
 			name:            "sumdb/sumdb.example.com/latest",
@@ -616,7 +627,7 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 			wantContent:     "internal server error",
 		},
 		{
-			n:                9,
+			n:                10,
 			sumdbHandler:     func(rw http.ResponseWriter, req *http.Request) { rw.WriteHeader(http.StatusNotFound) },
 			cacher:           DirCacher(t.TempDir()),
 			name:             "sumdb/sumdb.example.com/lookup/example.com/v2@v2.0.0",
@@ -627,7 +638,7 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 			wantContent:      "not found",
 		},
 		{
-			n:               10,
+			n:               11,
 			sumdbHandler:    func(rw http.ResponseWriter, req *http.Request) {},
 			cacher:          &errorCacher{},
 			name:            "sumdb/sumdb.example.com/latest",

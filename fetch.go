@@ -135,21 +135,15 @@ func (f *fetch) doProxy(ctx context.Context, proxy string) (*fetchResult, error)
 		return nil, err
 	}
 
-	tempFile, err := os.CreateTemp(f.tempDir, "")
+	tempFile, err := httpGetTemp(ctx, f.g.httpClient, appendURL(proxyURL, f.name).String(), f.tempDir)
 	if err != nil {
-		return nil, err
-	}
-	if err := httpGet(ctx, f.g.httpClient, appendURL(proxyURL, f.name).String(), tempFile); err != nil {
-		return nil, err
-	}
-	if err := tempFile.Close(); err != nil {
 		return nil, err
 	}
 
 	r := &fetchResult{f: f}
 	switch f.ops {
 	case fetchOpsResolve:
-		b, err := os.ReadFile(tempFile.Name())
+		b, err := os.ReadFile(tempFile)
 		if err != nil {
 			return nil, err
 		}
@@ -158,7 +152,7 @@ func (f *fetch) doProxy(ctx context.Context, proxy string) (*fetchResult, error)
 			return nil, notFoundErrorf("invalid info response: %w", err)
 		}
 	case fetchOpsList:
-		b, err := os.ReadFile(tempFile.Name())
+		b, err := os.ReadFile(tempFile)
 		if err != nil {
 			return nil, err
 		}
@@ -176,30 +170,30 @@ func (f *fetch) doProxy(ctx context.Context, proxy string) (*fetchResult, error)
 			return semver.Compare(r.Versions[i], r.Versions[j]) < 0
 		})
 	case fetchOpsDownloadInfo:
-		if err := checkAndFormatInfoFile(tempFile.Name()); err != nil {
+		if err := checkAndFormatInfoFile(tempFile); err != nil {
 			return nil, err
 		}
-		r.Info = tempFile.Name()
+		r.Info = tempFile
 	case fetchOpsDownloadMod:
-		if err := checkModFile(tempFile.Name()); err != nil {
+		if err := checkModFile(tempFile); err != nil {
 			return nil, err
 		}
 		if f.requiredToVerify {
-			if err := verifyModFile(f.g.sumdbClient, tempFile.Name(), f.modulePath, f.moduleVersion); err != nil {
+			if err := verifyModFile(f.g.sumdbClient, tempFile, f.modulePath, f.moduleVersion); err != nil {
 				return nil, err
 			}
 		}
-		r.GoMod = tempFile.Name()
+		r.GoMod = tempFile
 	case fetchOpsDownloadZip:
-		if err := checkZipFile(tempFile.Name(), f.modulePath, f.moduleVersion); err != nil {
+		if err := checkZipFile(tempFile, f.modulePath, f.moduleVersion); err != nil {
 			return nil, err
 		}
 		if f.requiredToVerify {
-			if err := verifyZipFile(f.g.sumdbClient, tempFile.Name(), f.modulePath, f.moduleVersion); err != nil {
+			if err := verifyZipFile(f.g.sumdbClient, tempFile, f.modulePath, f.moduleVersion); err != nil {
 				return nil, err
 			}
 		}
-		r.Zip = tempFile.Name()
+		r.Zip = tempFile
 	}
 	return r, nil
 }

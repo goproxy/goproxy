@@ -360,32 +360,22 @@ func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, name, te
 		return
 	}
 
-	tempFile, err := os.CreateTemp(tempDir, "")
+	tempFile, err := httpGetTemp(req.Context(), g.httpClient, appendURL(sumdbURL, path).String(), tempDir)
 	if err != nil {
-		g.logErrorf("failed to create temporary file: %v", err)
-		responseInternalServerError(rw, req)
-		return
-	}
-	if err := httpGet(req.Context(), g.httpClient, appendURL(sumdbURL, path).String(), tempFile); err != nil {
 		g.serveCache(rw, req, name, contentType, cacheControlMaxAge, func() {
 			g.logErrorf("failed to proxy checksum database: %s: %v", name, err)
 			responseError(rw, req, err, true)
 		})
 		return
 	}
-	if err := tempFile.Close(); err != nil {
-		g.logErrorf("failed to close temporary file: %v", err)
-		responseInternalServerError(rw, req)
-		return
-	}
 
-	if err := g.putCacheFile(req.Context(), name, tempFile.Name()); err != nil {
+	if err := g.putCacheFile(req.Context(), name, tempFile); err != nil {
 		g.logErrorf("failed to cache module file: %s: %v", name, err)
 		responseInternalServerError(rw, req)
 		return
 	}
 
-	content, err := os.Open(tempFile.Name())
+	content, err := os.Open(tempFile)
 	if err != nil {
 		g.logErrorf("failed to open temporary file: %s: %v", name, err)
 		responseInternalServerError(rw, req)
@@ -428,7 +418,7 @@ func (g *Goproxy) putCache(ctx context.Context, name string, content io.ReadSeek
 	return g.Cacher.Put(ctx, name, content)
 }
 
-// putCacheFile puts a cache to the g.Cacher for the name with the targeted local file.
+// putCacheFile is like [putCache] but reads the content from the local file.
 func (g *Goproxy) putCacheFile(ctx context.Context, name, file string) error {
 	f, err := os.Open(file)
 	if err != nil {
