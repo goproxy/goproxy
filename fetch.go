@@ -45,7 +45,7 @@ func newFetch(g *Goproxy, name, tempDir string) (*fetch, error) {
 	var escapedModulePath string
 	if strings.HasSuffix(name, "/@latest") {
 		escapedModulePath = strings.TrimSuffix(name, "/@latest")
-		f.ops = fetchOpsResolve
+		f.ops = fetchOpsQuery
 		f.moduleVersion = "latest"
 		f.contentType = "application/json; charset=utf-8"
 	} else if strings.HasSuffix(name, "/@v/list") {
@@ -89,7 +89,7 @@ func newFetch(g *Goproxy, name, tempDir string) (*fetch, error) {
 			return nil, errors.New("invalid version")
 		} else if !semver.IsValid(f.moduleVersion) {
 			if ext == ".info" {
-				f.ops = fetchOpsResolve
+				f.ops = fetchOpsQuery
 			} else {
 				return nil, errors.New("unrecognized version")
 			}
@@ -137,7 +137,7 @@ func (f *fetch) doProxy(ctx context.Context, proxy string) (*fetchResult, error)
 
 	r := &fetchResult{f: f}
 	switch f.ops {
-	case fetchOpsResolve:
+	case fetchOpsQuery:
 		var info bytes.Buffer
 		if err := httpGet(ctx, f.g.httpClient, u, &info); err != nil {
 			return nil, err
@@ -213,7 +213,7 @@ func (f *fetch) doDirect(ctx context.Context) (*fetchResult, error) {
 
 	var args []string
 	switch f.ops {
-	case fetchOpsResolve:
+	case fetchOpsQuery:
 		args = []string{"list", "-json", "-m", f.modAtVer}
 	case fetchOpsList:
 		args = []string{"list", "-json", "-m", "-versions", f.modAtVer}
@@ -288,7 +288,7 @@ type fetchOps uint8
 // The fetch operations.
 const (
 	fetchOpsInvalid fetchOps = iota
-	fetchOpsResolve
+	fetchOpsQuery
 	fetchOpsList
 	fetchOpsDownload
 )
@@ -296,8 +296,8 @@ const (
 // String implements [fmt.Stringer].
 func (fo fetchOps) String() string {
 	switch fo {
-	case fetchOpsResolve:
-		return "resolve"
+	case fetchOpsQuery:
+		return "query"
 	case fetchOpsList:
 		return "list"
 	case fetchOpsDownload:
@@ -321,7 +321,7 @@ type fetchResult struct {
 // Open opens the content of the fr.
 func (fr *fetchResult) Open() (io.ReadSeekCloser, error) {
 	switch fr.f.ops {
-	case fetchOpsResolve:
+	case fetchOpsQuery:
 		content := strings.NewReader(marshalInfo(fr.Version, fr.Time))
 		return struct {
 			io.ReadCloser

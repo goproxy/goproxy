@@ -37,7 +37,7 @@ func TestNewFetch(t *testing.T) {
 		{
 			n:                    1,
 			name:                 "example.com/@latest",
-			wantOps:              fetchOpsResolve,
+			wantOps:              fetchOpsQuery,
 			wantModulePath:       "example.com",
 			wantModuleVersion:    "latest",
 			wantModAtVer:         "example.com@latest",
@@ -48,7 +48,7 @@ func TestNewFetch(t *testing.T) {
 			n:                    2,
 			env:                  []string{"GOSUMDB=off"},
 			name:                 "example.com/@latest",
-			wantOps:              fetchOpsResolve,
+			wantOps:              fetchOpsQuery,
 			wantModulePath:       "example.com",
 			wantModuleVersion:    "latest",
 			wantModAtVer:         "example.com@latest",
@@ -59,7 +59,7 @@ func TestNewFetch(t *testing.T) {
 			n:                    3,
 			env:                  []string{"GONOSUMDB=example.com"},
 			name:                 "example.com/@latest",
-			wantOps:              fetchOpsResolve,
+			wantOps:              fetchOpsQuery,
 			wantModulePath:       "example.com",
 			wantModuleVersion:    "latest",
 			wantModAtVer:         "example.com@latest",
@@ -70,7 +70,7 @@ func TestNewFetch(t *testing.T) {
 			n:                    4,
 			env:                  []string{"GOPRIVATE=example.com"},
 			name:                 "example.com/@latest",
-			wantOps:              fetchOpsResolve,
+			wantOps:              fetchOpsQuery,
 			wantModulePath:       "example.com",
 			wantModuleVersion:    "latest",
 			wantModAtVer:         "example.com@latest",
@@ -120,7 +120,7 @@ func TestNewFetch(t *testing.T) {
 		{
 			n:                    9,
 			name:                 "example.com/@v/master.info",
-			wantOps:              fetchOpsResolve,
+			wantOps:              fetchOpsQuery,
 			wantModulePath:       "example.com",
 			wantModuleVersion:    "master",
 			wantModAtVer:         "example.com@master",
@@ -130,7 +130,7 @@ func TestNewFetch(t *testing.T) {
 		{
 			n:                    10,
 			name:                 "example.com/!foobar/@v/!v1.0.0.info",
-			wantOps:              fetchOpsResolve,
+			wantOps:              fetchOpsQuery,
 			wantModulePath:       "example.com/Foobar",
 			wantModuleVersion:    "V1.0.0",
 			wantModAtVer:         "example.com/Foobar@V1.0.0",
@@ -983,7 +983,7 @@ func TestFetchOpsString(t *testing.T) {
 		fo           fetchOps
 		wantFetchOps string
 	}{
-		{1, fetchOpsResolve, "resolve"},
+		{1, fetchOpsQuery, "query"},
 		{2, fetchOpsList, "list"},
 		{3, fetchOpsDownload, "download"},
 		{4, fetchOpsInvalid, "invalid"},
@@ -1006,7 +1006,7 @@ func TestFetchResultOpen(t *testing.T) {
 		{
 			n: 1,
 			fr: &fetchResult{
-				f:       &fetch{ops: fetchOpsResolve},
+				f:       &fetch{ops: fetchOpsQuery},
 				Version: "v1.0.0",
 				Time:    time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
 			},
