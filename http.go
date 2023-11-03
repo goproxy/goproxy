@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -135,26 +134,13 @@ func isRetryableHTTPClientDoError(err error) bool {
 			return false
 		}
 		switch e.Error() {
+		// TODO: Use [http.ErrSchemeMismatch] when the minimum supported
+		// Go version is 1.21. See https://go.dev/doc/go1.21#net/http.
 		case "http: server gave HTTP response to HTTPS client":
 			return false
 		}
 	}
 	return true
-}
-
-// parseRawURL parses the rawURL.
-func parseRawURL(rawURL string) (*url.URL, error) {
-	if strings.ContainsAny(rawURL, ".:/") &&
-		!strings.Contains(rawURL, ":/") &&
-		!filepath.IsAbs(rawURL) &&
-		!path.IsAbs(rawURL) {
-		rawURL = "https://" + rawURL
-	}
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return nil, err
-	}
-	return u, nil
 }
 
 // appendURL appends the extraPaths to the u safely and reutrns a new [url.URL].

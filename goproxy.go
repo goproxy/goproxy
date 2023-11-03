@@ -170,11 +170,11 @@ func (g *Goproxy) init() {
 			continue
 		}
 		name := parts[0]
-		rawURL := name
+		rawURL := "https://" + name
 		if len(parts) > 1 {
 			rawURL = parts[1]
 		}
-		u, err := parseRawURL(rawURL)
+		u, err := url.Parse(rawURL)
 		if err != nil {
 			continue
 		}
@@ -549,7 +549,7 @@ func parseEnvGOSUMDB(envGOSUMDB string) (name string, key string, u *url.URL, is
 	name = verifier.Name()
 	key = parts[0]
 
-	u, err = parseRawURL(name)
+	u, err = url.Parse("https://" + name)
 	if err != nil ||
 		strings.HasSuffix(name, "/") ||
 		u.Host == "" ||
@@ -559,7 +559,7 @@ func parseEnvGOSUMDB(envGOSUMDB string) (name string, key string, u *url.URL, is
 	}
 	isDirectURL = true
 	if len(parts) > 1 {
-		u, err = parseRawURL(parts[1])
+		u, err = url.Parse(parts[1])
 		if err != nil {
 			return "", "", nil, false, fmt.Errorf("invalid GOSUMDB URL: %w", err)
 		}

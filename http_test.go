@@ -264,32 +264,6 @@ func TestIsRetryableHTTPClientDoError(t *testing.T) {
 	}
 }
 
-func TestParseRawURL(t *testing.T) {
-	for _, tt := range []struct {
-		n       int
-		rawURL  string
-		wantURL string
-	}{
-		{1, "example.com", "https://example.com"},
-		{2, "http://example.com", "http://example.com"},
-		{3, "https://example.com", "https://example.com"},
-		{4, "file:///passwd", "file:///passwd"},
-		{5, "scheme://example.com", "scheme://example.com"},
-	} {
-		u, err := parseRawURL(tt.rawURL)
-		if err != nil {
-			t.Fatalf("test(%d): unexpected error %q", tt.n, err)
-		}
-		if got, want := u.String(), tt.wantURL; got != want {
-			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-		}
-	}
-
-	if _, err := parseRawURL("\n"); err == nil {
-		t.Fatal("expected error")
-	}
-}
-
 func TestAppendURL(t *testing.T) {
 	u := &url.URL{Scheme: "https", Host: "example.com"}
 	for _, tt := range []struct {
