@@ -2,6 +2,7 @@ package goproxy
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -62,17 +63,15 @@ func newFetch(g *Goproxy, name, tempDir string) (*fetch, error) {
 			return nil, errors.New("missing /@v/")
 		}
 
+		f.ops = fetchOpsDownload
 		ext := path.Ext(base)
 		escapedModuleVersion := strings.TrimSuffix(base, ext)
 		switch ext {
 		case ".info":
-			f.ops = fetchOpsDownloadInfo
 			f.contentType = "application/json; charset=utf-8"
 		case ".mod":
-			f.ops = fetchOpsDownloadMod
 			f.contentType = "text/plain; charset=utf-8"
 		case ".zip":
-			f.ops = fetchOpsDownloadZip
 			f.contentType = "application/zip"
 		case "":
 			return nil, fmt.Errorf("no file extension in filename %q", escapedModuleVersion)
@@ -89,7 +88,7 @@ func newFetch(g *Goproxy, name, tempDir string) (*fetch, error) {
 		if f.moduleVersion == "latest" {
 			return nil, errors.New("invalid version")
 		} else if !semver.IsValid(f.moduleVersion) {
-			if f.ops == fetchOpsDownloadInfo {
+			if ext == ".info" {
 				f.ops = fetchOpsResolve
 			} else {
 				return nil, errors.New("unrecognized version")
@@ -134,30 +133,26 @@ func (f *fetch) doProxy(ctx context.Context, proxy string) (*fetchResult, error)
 	if err != nil {
 		return nil, err
 	}
-
-	tempFile, err := httpGetTemp(ctx, f.g.httpClient, appendURL(proxyURL, f.name).String(), f.tempDir)
-	if err != nil {
-		return nil, err
-	}
+	u := appendURL(proxyURL, f.name).String()
 
 	r := &fetchResult{f: f}
 	switch f.ops {
 	case fetchOpsResolve:
-		b, err := os.ReadFile(tempFile)
-		if err != nil {
+		var info bytes.Buffer
+		if err := httpGet(ctx, f.g.httpClient, u, &info); err != nil {
 			return nil, err
 		}
-		r.Version, r.Time, err = unmarshalInfo(string(b))
+		r.Version, r.Time, err = unmarshalInfo(info.String())
 		if err != nil {
 			return nil, notFoundErrorf("invalid info response: %w", err)
 		}
 	case fetchOpsList:
-		b, err := os.ReadFile(tempFile)
-		if err != nil {
+		var list bytes.Buffer
+		if err := httpGet(ctx, f.g.httpClient, u, &list); err != nil {
 			return nil, err
 		}
 
-		lines := strings.Split(string(b), "\n")
+		lines := strings.Split(list.String(), "\n")
 		r.Versions = make([]string, 0, len(lines))
 		for _, line := range lines {
 			lineParts := strings.Fields(line)
@@ -169,31 +164,42 @@ func (f *fetch) doProxy(ctx context.Context, proxy string) (*fetchResult, error)
 		sort.Slice(r.Versions, func(i, j int) bool {
 			return semver.Compare(r.Versions[i], r.Versions[j]) < 0
 		})
-	case fetchOpsDownloadInfo:
-		if err := checkAndFormatInfoFile(tempFile); err != nil {
+	case fetchOpsDownload:
+		urlWithoutExt := strings.TrimSuffix(u, path.Ext(u))
+
+		r.Info, err = httpGetTemp(ctx, f.g.httpClient, urlWithoutExt+".info", f.tempDir)
+		if err != nil {
 			return nil, err
 		}
-		r.Info = tempFile
-	case fetchOpsDownloadMod:
-		if err := checkModFile(tempFile); err != nil {
+		if err := checkAndFormatInfoFile(r.Info); err != nil {
+			return nil, err
+		}
+
+		r.GoMod, err = httpGetTemp(ctx, f.g.httpClient, urlWithoutExt+".mod", f.tempDir)
+		if err != nil {
+			return nil, err
+		}
+		if err := checkModFile(r.GoMod); err != nil {
 			return nil, err
 		}
 		if f.requiredToVerify {
-			if err := verifyModFile(f.g.sumdbClient, tempFile, f.modulePath, f.moduleVersion); err != nil {
+			if err := verifyModFile(f.g.sumdbClient, r.GoMod, f.modulePath, f.moduleVersion); err != nil {
 				return nil, err
 			}
 		}
-		r.GoMod = tempFile
-	case fetchOpsDownloadZip:
-		if err := checkZipFile(tempFile, f.modulePath, f.moduleVersion); err != nil {
+
+		r.Zip, err = httpGetTemp(ctx, f.g.httpClient, urlWithoutExt+".zip", f.tempDir)
+		if err != nil {
+			return nil, err
+		}
+		if err := checkZipFile(r.Zip, f.modulePath, f.moduleVersion); err != nil {
 			return nil, err
 		}
 		if f.requiredToVerify {
-			if err := verifyZipFile(f.g.sumdbClient, tempFile, f.modulePath, f.moduleVersion); err != nil {
+			if err := verifyZipFile(f.g.sumdbClient, r.Zip, f.modulePath, f.moduleVersion); err != nil {
 				return nil, err
 			}
 		}
-		r.Zip = tempFile
 	}
 	return r, nil
 }
@@ -211,7 +217,7 @@ func (f *fetch) doDirect(ctx context.Context) (*fetchResult, error) {
 		args = []string{"list", "-json", "-m", f.modAtVer}
 	case fetchOpsList:
 		args = []string{"list", "-json", "-m", "-versions", f.modAtVer}
-	case fetchOpsDownloadInfo, fetchOpsDownloadMod, fetchOpsDownloadZip:
+	case fetchOpsDownload:
 		args = []string{"mod", "download", "-json", f.modAtVer}
 	}
 
@@ -260,7 +266,7 @@ func (f *fetch) doDirect(ctx context.Context) (*fetchResult, error) {
 		sort.Slice(r.Versions, func(i, j int) bool {
 			return semver.Compare(r.Versions[i], r.Versions[j]) < 0
 		})
-	case fetchOpsDownloadInfo, fetchOpsDownloadMod, fetchOpsDownloadZip:
+	case fetchOpsDownload:
 		if err := checkAndFormatInfoFile(r.Info); err != nil {
 			return nil, err
 		}
@@ -284,9 +290,7 @@ const (
 	fetchOpsInvalid fetchOps = iota
 	fetchOpsResolve
 	fetchOpsList
-	fetchOpsDownloadInfo
-	fetchOpsDownloadMod
-	fetchOpsDownloadZip
+	fetchOpsDownload
 )
 
 // String implements [fmt.Stringer].
@@ -296,12 +300,8 @@ func (fo fetchOps) String() string {
 		return "resolve"
 	case fetchOpsList:
 		return "list"
-	case fetchOpsDownloadInfo:
-		return "download info"
-	case fetchOpsDownloadMod:
-		return "download mod"
-	case fetchOpsDownloadZip:
-		return "download zip"
+	case fetchOpsDownload:
+		return "download"
 	}
 	return "invalid"
 }
@@ -333,12 +333,15 @@ func (fr *fetchResult) Open() (io.ReadSeekCloser, error) {
 			io.ReadCloser
 			io.Seeker
 		}{io.NopCloser(content), content}, nil
-	case fetchOpsDownloadInfo:
-		return os.Open(fr.Info)
-	case fetchOpsDownloadMod:
-		return os.Open(fr.GoMod)
-	case fetchOpsDownloadZip:
-		return os.Open(fr.Zip)
+	case fetchOpsDownload:
+		switch path.Ext(fr.f.name) {
+		case ".info":
+			return os.Open(fr.Info)
+		case ".mod":
+			return os.Open(fr.GoMod)
+		case ".zip":
+			return os.Open(fr.Zip)
+		}
 	}
 	return nil, errors.New("invalid fetch operation")
 }

@@ -2,6 +2,7 @@ package goproxy
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -88,7 +90,7 @@ func TestNewFetch(t *testing.T) {
 		{
 			n:                    6,
 			name:                 "example.com/@v/v1.0.0.info",
-			wantOps:              fetchOpsDownloadInfo,
+			wantOps:              fetchOpsDownload,
 			wantModulePath:       "example.com",
 			wantModuleVersion:    "v1.0.0",
 			wantModAtVer:         "example.com@v1.0.0",
@@ -98,7 +100,7 @@ func TestNewFetch(t *testing.T) {
 		{
 			n:                    7,
 			name:                 "example.com/@v/v1.0.0.mod",
-			wantOps:              fetchOpsDownloadMod,
+			wantOps:              fetchOpsDownload,
 			wantModulePath:       "example.com",
 			wantModuleVersion:    "v1.0.0",
 			wantModAtVer:         "example.com@v1.0.0",
@@ -108,7 +110,7 @@ func TestNewFetch(t *testing.T) {
 		{
 			n:                    8,
 			name:                 "example.com/@v/v1.0.0.zip",
-			wantOps:              fetchOpsDownloadZip,
+			wantOps:              fetchOpsDownload,
 			wantModulePath:       "example.com",
 			wantModuleVersion:    "v1.0.0",
 			wantModAtVer:         "example.com@v1.0.0",
@@ -343,25 +345,36 @@ func TestFetchDoProxy(t *testing.T) {
 	sumdbServer, setSumDBHandler := newHTTPTestServer()
 	defer sumdbServer.Close()
 
+	infoVersion := "v1.0.0"
 	infoTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	info := marshalInfo(infoVersion, infoTime)
+	mod := "module example.com"
 	modFile := filepath.Join(t.TempDir(), "mod")
-	if err := os.WriteFile(modFile, []byte("module example.com"), 0o644); err != nil {
+	if err := os.WriteFile(modFile, []byte(mod), 0o644); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 	zipFile := filepath.Join(t.TempDir(), "zip")
-	if err := writeZipFile(zipFile, map[string][]byte{"example.com@v1.2.0/go.mod": []byte("module example.com")}); err != nil {
+	if err := writeZipFile(zipFile, map[string][]byte{"example.com@v1.0.0/go.mod": []byte(mod)}); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
 	zip, err := os.ReadFile(zipFile)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	zipFile2 := filepath.Join(t.TempDir(), "zip")
-	if err := writeZipFile(zipFile2, map[string][]byte{"example.com@v1.3.0/go.mod": []byte("module example.com")}); err != nil {
-		t.Fatalf("unexpected error %q", err)
+	proxyHandler := func(rw http.ResponseWriter, req *http.Request) {
+		switch path.Ext(req.URL.Path) {
+		case ".info":
+			responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", 60)
+		case ".mod":
+			responseSuccess(rw, req, strings.NewReader(mod), "text/plain; charset=utf-8", 60)
+		case ".zip":
+			responseSuccess(rw, req, bytes.NewReader(zip), "application/zip", 60)
+		default:
+			responseNotFound(rw, req, 60)
+		}
 	}
 
-	dirHash, err := dirhash.HashDir(t.TempDir(), "example.com@v1.0.0", dirhash.DefaultHash)
+	dirHash, err := dirhash.HashZip(zipFile, dirhash.DefaultHash)
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
@@ -375,6 +388,11 @@ func TestFetchDoProxy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
+	sumdbHandler := sumdb.NewServer(sumdb.NewTestServer(skey, func(modulePath, moduleVersion string) ([]byte, error) {
+		gosum := fmt.Sprintf("%s %s %s\n", modulePath, moduleVersion, dirHash)
+		gosum += fmt.Sprintf("%s %s/go.mod %s\n", modulePath, moduleVersion, modHash)
+		return []byte(gosum), nil
+	}))
 
 	for _, tt := range []struct {
 		n            int
@@ -387,18 +405,20 @@ func TestFetchDoProxy(t *testing.T) {
 		wantVersion  string
 		wantTime     time.Time
 		wantVersions []string
+		wantInfo     string
+		wantGoMod    string
+		wantZip      string
 		wantError    error
 	}{
 		{
 			n: 1,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				responseSuccess(rw, req, strings.NewReader(marshalInfo("v1.0.0", infoTime)), "application/json; charset=utf-8", 60)
+				responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", 60)
 			},
 			name:        "example.com/@latest",
-			tempDir:     t.TempDir(),
 			proxy:       proxyServer.URL,
-			wantContent: marshalInfo("v1.0.0", infoTime),
-			wantVersion: "v1.0.0",
+			wantContent: info,
+			wantVersion: infoVersion,
 			wantTime:    infoTime,
 		},
 		{
@@ -412,99 +432,80 @@ invalid
 `), "text/plain; charset=utf-8", 60)
 			},
 			name:         "example.com/@v/list",
-			tempDir:      t.TempDir(),
 			proxy:        proxyServer.URL,
 			wantContent:  "v1.0.0\nv1.1.0\nv1.2.0",
 			wantVersions: []string{"v1.0.0", "v1.1.0", "v1.2.0"},
 		},
 		{
-			n: 3,
-			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				responseSuccess(rw, req, strings.NewReader(marshalInfo("v1.0.0", infoTime)), "application/json; charset=utf-8", 60)
-			},
-			name:        "example.com/@v/v1.0.0.info",
-			tempDir:     t.TempDir(),
-			proxy:       proxyServer.URL,
-			wantContent: marshalInfo("v1.0.0", infoTime),
+			n:            3,
+			proxyHandler: proxyHandler,
+			name:         "example.com/@v/v1.0.0.info",
+			tempDir:      t.TempDir(),
+			proxy:        proxyServer.URL,
+			wantContent:  info,
+			wantInfo:     info,
+			wantGoMod:    mod,
+			wantZip:      string(zip),
 		},
 		{
-			n: 4,
-			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				responseSuccess(rw, req, strings.NewReader("module example.com"), "text/plain; charset=utf-8", 60)
-			},
-			name:        "example.com/@v/v1.0.0.mod",
-			tempDir:     t.TempDir(),
-			proxy:       proxyServer.URL,
-			wantContent: "module example.com",
+			n:            4,
+			proxyHandler: proxyHandler,
+			name:         "example.com/@v/v1.0.0.mod",
+			tempDir:      t.TempDir(),
+			proxy:        proxyServer.URL,
+			wantContent:  mod,
+			wantInfo:     info,
+			wantGoMod:    mod,
+			wantZip:      string(zip),
 		},
 		{
-			n: 5,
-			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				responseSuccess(rw, req, strings.NewReader("module example.com"), "text/plain; charset=utf-8", 60)
-			},
-			sumdbHandler: sumdb.NewServer(sumdb.NewTestServer(skey, func(modulePath, moduleVersion string) ([]byte, error) {
-				gosum := fmt.Sprintf("%s %s %s\n", modulePath, moduleVersion, dirHash)
-				gosum += fmt.Sprintf("%s %s/go.mod %s\n", modulePath, moduleVersion, modHash)
-				return []byte(gosum), nil
-			})),
-			name:        "example.com/@v/v1.0.0.mod",
-			tempDir:     t.TempDir(),
-			proxy:       proxyServer.URL,
-			wantContent: "module example.com",
+			n:            5,
+			proxyHandler: proxyHandler,
+			sumdbHandler: sumdbHandler,
+			name:         "example.com/@v/v1.0.0.mod",
+			tempDir:      t.TempDir(),
+			proxy:        proxyServer.URL,
+			wantContent:  mod,
+			wantInfo:     info,
+			wantGoMod:    mod,
+			wantZip:      string(zip),
 		},
 		{
-			n: 6,
-			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				f, err := os.Open(zipFile)
-				if err != nil {
-					t.Fatalf("unexpected error %q", err)
-				}
-				defer f.Close()
-				responseSuccess(rw, req, f, "application/zip", 60)
-			},
-			name:        "example.com/@v/v1.2.0.zip",
-			tempDir:     t.TempDir(),
-			proxy:       proxyServer.URL,
-			wantContent: string(zip),
+			n:            6,
+			proxyHandler: proxyHandler,
+			name:         "example.com/@v/v1.0.0.zip",
+			tempDir:      t.TempDir(),
+			proxy:        proxyServer.URL,
+			wantContent:  string(zip),
+			wantInfo:     info,
+			wantGoMod:    mod,
+			wantZip:      string(zip),
 		},
 		{
-			n: 7,
-			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				f, err := os.Open(zipFile)
-				if err != nil {
-					t.Fatalf("unexpected error %q", err)
-				}
-				defer f.Close()
-				responseSuccess(rw, req, f, "application/zip", 60)
-			},
-			sumdbHandler: sumdb.NewServer(sumdb.NewTestServer(skey, func(modulePath, moduleVersion string) ([]byte, error) {
-				dirHash, err = dirhash.HashZip(zipFile, dirhash.DefaultHash)
-				if err != nil {
-					return nil, err
-				}
-				gosum := fmt.Sprintf("%s %s %s\n", modulePath, moduleVersion, dirHash)
-				gosum += fmt.Sprintf("%s %s/go.mod %s\n", modulePath, moduleVersion, modHash)
-				return []byte(gosum), nil
-			})),
-			name:        "example.com/@v/v1.2.0.zip",
-			tempDir:     t.TempDir(),
-			proxy:       proxyServer.URL,
-			wantContent: string(zip),
+			n:            7,
+			proxyHandler: proxyHandler,
+			sumdbHandler: sumdbHandler,
+			name:         "example.com/@v/v1.0.0.zip",
+			tempDir:      t.TempDir(),
+			proxy:        proxyServer.URL,
+			wantContent:  string(zip),
+			wantInfo:     info,
+			wantGoMod:    mod,
+			wantZip:      string(zip),
 		},
 		{
 			n: 8,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				responseSuccess(rw, req, strings.NewReader(marshalInfo("v1.0.0", time.Time{})), "application/json; charset=utf-8", 60)
+				responseSuccess(rw, req, strings.NewReader(marshalInfo(infoVersion, time.Time{})), "application/json; charset=utf-8", 60)
 			},
 			name:      "example.com/@latest",
-			tempDir:   t.TempDir(),
 			proxy:     proxyServer.URL,
 			wantError: notFoundErrorf("invalid info response: zero time"),
 		},
 		{
 			n: 9,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				responseSuccess(rw, req, strings.NewReader(marshalInfo("v1.0.0", time.Time{})), "application/json; charset=utf-8", 60)
+				responseSuccess(rw, req, strings.NewReader(marshalInfo(infoVersion, time.Time{})), "application/json; charset=utf-8", 60)
 			},
 			name:      "example.com/@v/v1.0.0.info",
 			tempDir:   t.TempDir(),
@@ -514,22 +515,16 @@ invalid
 		{
 			n: 10,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				responseSuccess(rw, req, strings.NewReader("module example.com"), "text/plain; charset=utf-8", 60)
-			},
-			sumdbHandler: sumdb.NewServer(sumdb.NewTestServer(skey, func(modulePath, moduleVersion string) ([]byte, error) {
-				gosum := fmt.Sprintf("%s %s %s\n", modulePath, "v1.0.0", dirHash)
-				gosum += fmt.Sprintf("%s %s/go.mod %s\n", modulePath, "v1.0.0", modHash)
-				return []byte(gosum), nil
-			})),
-			name:      "example.com/@v/v1.1.0.mod",
-			tempDir:   t.TempDir(),
-			proxy:     proxyServer.URL,
-			wantError: notFoundErrorf("example.com@v1.1.0: invalid version: untrusted revision v1.1.0"),
-		},
-		{
-			n: 11,
-			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				responseSuccess(rw, req, strings.NewReader("Go 1.13\n"), "text/plain; charset=utf-8", 60)
+				switch path.Ext(req.URL.Path) {
+				case ".info":
+					responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", 60)
+				case ".mod":
+					responseSuccess(rw, req, strings.NewReader("Go 1.13\n"), "text/plain; charset=utf-8", 60)
+				case ".zip":
+					responseSuccess(rw, req, bytes.NewReader(zip), "application/zip", 60)
+				default:
+					responseNotFound(rw, req, 60)
+				}
 			},
 			name:      "example.com/@v/v1.0.0.mod",
 			tempDir:   t.TempDir(),
@@ -537,33 +532,31 @@ invalid
 			wantError: notFoundErrorf("invalid mod file: missing module directive"),
 		},
 		{
-			n: 12,
-			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				f, err := os.Open(zipFile2)
-				if err != nil {
-					t.Fatalf("unexpected error %q", err)
-				}
-				defer f.Close()
-				responseSuccess(rw, req, f, "application/zip", 60)
-			},
+			n:            11,
+			proxyHandler: proxyHandler,
 			sumdbHandler: sumdb.NewServer(sumdb.NewTestServer(skey, func(modulePath, moduleVersion string) ([]byte, error) {
-				dirHash, err = dirhash.HashZip(zipFile, dirhash.DefaultHash)
-				if err != nil {
-					return nil, err
-				}
-				gosum := fmt.Sprintf("%s %s %s\n", modulePath, "v1.2.0", dirHash)
-				gosum += fmt.Sprintf("%s %s/go.mod %s\n", modulePath, "v1.2.0", modHash)
+				gosum := fmt.Sprintf("%s %s %s\n", modulePath, "v1.0.0", dirHash)
+				gosum += fmt.Sprintf("%s %s/go.mod %s\n", modulePath, "v1.1.0", modHash)
 				return []byte(gosum), nil
 			})),
-			name:      "example.com/@v/v1.3.0.zip",
+			name:      "example.com/@v/v1.0.0.mod",
 			tempDir:   t.TempDir(),
 			proxy:     proxyServer.URL,
-			wantError: notFoundErrorf("example.com@v1.3.0: invalid version: untrusted revision v1.3.0"),
+			wantError: notFoundErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
 		},
 		{
-			n: 13,
+			n: 12,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				responseSuccess(rw, req, strings.NewReader("I'm a ZIP file!"), "application/zip", 60)
+				switch path.Ext(req.URL.Path) {
+				case ".info":
+					responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", 60)
+				case ".mod":
+					responseSuccess(rw, req, strings.NewReader(mod), "text/plain; charset=utf-8", 60)
+				case ".zip":
+					responseSuccess(rw, req, strings.NewReader("zip"), "application/zip", 60)
+				default:
+					responseNotFound(rw, req, 60)
+				}
 			},
 			name:      "example.com/@v/v1.0.0.zip",
 			tempDir:   t.TempDir(),
@@ -571,26 +564,78 @@ invalid
 			wantError: notFoundErrorf("invalid zip file: zip: not a valid zip file"),
 		},
 		{
+			n:            13,
+			proxyHandler: proxyHandler,
+			sumdbHandler: sumdb.NewServer(sumdb.NewTestServer(skey, func(modulePath, moduleVersion string) ([]byte, error) {
+				gosum := fmt.Sprintf("%s %s %s\n", modulePath, "v1.1.0", dirHash)
+				gosum += fmt.Sprintf("%s %s/go.mod %s\n", modulePath, "v1.0.0", modHash)
+				return []byte(gosum), nil
+			})),
+			name:      "example.com/@v/v1.0.0.zip",
+			tempDir:   t.TempDir(),
+			proxy:     proxyServer.URL,
+			wantError: notFoundErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
+		},
+		{
 			n:            14,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, 60) },
 			name:         "example.com/@latest",
-			tempDir:      t.TempDir(),
 			proxy:        proxyServer.URL,
 			wantError:    errNotFound,
 		},
 		{
 			n:         15,
 			name:      "example.com/@latest",
-			tempDir:   t.TempDir(),
 			proxy:     "://invalid",
 			wantError: errors.New(`parse "://invalid": missing protocol scheme`),
 		},
 		{
-			n:         16,
-			name:      "example.com/@latest",
-			tempDir:   filepath.Join(t.TempDir(), "404"),
+			n:            16,
+			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, 60) },
+			name:         "example.com/@v/list",
+			proxy:        proxyServer.URL,
+			wantError:    errNotFound,
+		},
+		{
+			n: 17,
+			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
+				responseNotFound(rw, req, 60)
+			},
+			name:      "example.com/@v/v1.0.0.info",
+			tempDir:   t.TempDir(),
 			proxy:     proxyServer.URL,
-			wantError: fs.ErrNotExist,
+			wantError: errNotFound,
+		},
+		{
+			n: 18,
+			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
+				if path.Ext(req.URL.Path) == ".info" {
+					responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", 60)
+				} else {
+					responseNotFound(rw, req, 60)
+				}
+			},
+			name:      "example.com/@v/v1.0.0.mod",
+			tempDir:   t.TempDir(),
+			proxy:     proxyServer.URL,
+			wantError: errNotFound,
+		},
+		{
+			n: 19,
+			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
+				switch path.Ext(req.URL.Path) {
+				case ".info":
+					responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", 60)
+				case ".mod":
+					responseSuccess(rw, req, strings.NewReader(mod), "text/plain; charset=utf-8", 60)
+				default:
+					responseNotFound(rw, req, 60)
+				}
+			},
+			name:      "example.com/@v/v1.0.0.zip",
+			tempDir:   t.TempDir(),
+			proxy:     proxyServer.URL,
+			wantError: errNotFound,
 		},
 	} {
 		setProxyHandler(tt.proxyHandler)
@@ -639,6 +684,27 @@ invalid
 			}
 			if got, want := strings.Join(fr.Versions, "\n"), strings.Join(tt.wantVersions, "\n"); got != want {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+			}
+			if tt.wantInfo != "" {
+				if b, err := os.ReadFile(fr.Info); err != nil {
+					t.Fatalf("test(%d): unexpected error %q", tt.n, err)
+				} else if got, want := string(b), tt.wantInfo; got != want {
+					t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+				}
+			}
+			if tt.wantGoMod != "" {
+				if b, err := os.ReadFile(fr.GoMod); err != nil {
+					t.Fatalf("test(%d): unexpected error %q", tt.n, err)
+				} else if got, want := string(b), tt.wantGoMod; got != want {
+					t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+				}
+			}
+			if tt.wantZip != "" {
+				if b, err := os.ReadFile(fr.Zip); err != nil {
+					t.Fatalf("test(%d): unexpected error %q", tt.n, err)
+				} else if got, want := string(b), tt.wantZip; got != want {
+					t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+				}
 			}
 		}
 	}
@@ -919,11 +985,9 @@ func TestFetchOpsString(t *testing.T) {
 	}{
 		{1, fetchOpsResolve, "resolve"},
 		{2, fetchOpsList, "list"},
-		{3, fetchOpsDownloadInfo, "download info"},
-		{4, fetchOpsDownloadMod, "download mod"},
-		{5, fetchOpsDownloadZip, "download zip"},
-		{6, fetchOpsInvalid, "invalid"},
-		{7, fetchOps(255), "invalid"},
+		{3, fetchOpsDownload, "download"},
+		{4, fetchOpsInvalid, "invalid"},
+		{5, fetchOps(255), "invalid"},
 	} {
 		if got, want := tt.fo.String(), tt.wantFetchOps; got != want {
 			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
@@ -940,30 +1004,46 @@ func TestFetchResultOpen(t *testing.T) {
 		wantError        error
 	}{
 		{
-			n:           1,
-			fr:          &fetchResult{f: &fetch{ops: fetchOpsResolve}, Version: "v1.0.0", Time: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)},
+			n: 1,
+			fr: &fetchResult{
+				f:       &fetch{ops: fetchOpsResolve},
+				Version: "v1.0.0",
+				Time:    time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
+			},
 			wantContent: `{"Version":"v1.0.0","Time":"2000-01-01T00:00:00Z"}`,
 		},
 		{
-			n:           2,
-			fr:          &fetchResult{f: &fetch{ops: fetchOpsList}, Versions: []string{"v1.0.0", "v1.1.0"}},
+			n: 2,
+			fr: &fetchResult{
+				f:        &fetch{ops: fetchOpsList},
+				Versions: []string{"v1.0.0", "v1.1.0"},
+			},
 			wantContent: "v1.0.0\nv1.1.0",
 		},
 		{
-			n:                3,
-			fr:               &fetchResult{f: &fetch{ops: fetchOpsDownloadInfo}, Info: filepath.Join(t.TempDir(), "info")},
+			n: 3,
+			fr: &fetchResult{
+				f:    &fetch{ops: fetchOpsDownload, name: "example.com/@v/v1.0.0.info"},
+				Info: filepath.Join(t.TempDir(), "info"),
+			},
 			setupFetchResult: func(fr *fetchResult) error { return os.WriteFile(fr.Info, []byte("info"), 0o644) },
 			wantContent:      "info",
 		},
 		{
-			n:                4,
-			fr:               &fetchResult{f: &fetch{ops: fetchOpsDownloadMod}, GoMod: filepath.Join(t.TempDir(), "mod")},
+			n: 4,
+			fr: &fetchResult{
+				f:     &fetch{ops: fetchOpsDownload, name: "example.com/@v/v1.0.0.mod"},
+				GoMod: filepath.Join(t.TempDir(), "mod"),
+			},
 			setupFetchResult: func(fr *fetchResult) error { return os.WriteFile(fr.GoMod, []byte("mod"), 0o644) },
 			wantContent:      "mod",
 		},
 		{
-			n:                5,
-			fr:               &fetchResult{f: &fetch{ops: fetchOpsDownloadZip}, Zip: filepath.Join(t.TempDir(), "zip")},
+			n: 5,
+			fr: &fetchResult{
+				f:   &fetch{ops: fetchOpsDownload, name: "example.com/@v/v1.0.0.zip"},
+				Zip: filepath.Join(t.TempDir(), "zip"),
+			},
 			setupFetchResult: func(fr *fetchResult) error { return os.WriteFile(fr.Zip, []byte("zip"), 0o644) },
 			wantContent:      "zip",
 		},

@@ -231,16 +231,10 @@ func (g *Goproxy) serveFetch(rw http.ResponseWriter, req *http.Request, name, te
 		return
 	}
 
-	var isDownload bool
-	switch f.ops {
-	case fetchOpsDownloadInfo, fetchOpsDownloadMod, fetchOpsDownloadZip:
-		isDownload = true
-	}
-
 	noFetch, _ := strconv.ParseBool(req.Header.Get("Disable-Module-Fetch"))
 	if noFetch {
 		var cacheControlMaxAge int
-		if isDownload {
+		if f.ops == fetchOpsDownload {
 			cacheControlMaxAge = 604800
 		} else {
 			cacheControlMaxAge = 60
@@ -251,7 +245,7 @@ func (g *Goproxy) serveFetch(rw http.ResponseWriter, req *http.Request, name, te
 		return
 	}
 
-	if isDownload {
+	if f.ops == fetchOpsDownload {
 		g.serveCache(rw, req, f.name, f.contentType, 604800, func() {
 			g.serveFetchDownload(rw, req, f)
 		})
@@ -303,9 +297,6 @@ func (g *Goproxy) serveFetchDownload(rw http.ResponseWriter, req *http.Request, 
 		{".mod", fr.GoMod},
 		{".zip", fr.Zip},
 	} {
-		if cache.localFile == "" {
-			continue
-		}
 		if err := g.putCacheFile(req.Context(), nameWithoutExt+cache.nameExt, cache.localFile); err != nil {
 			g.logErrorf("failed to cache module file: %s: %v", f.name, err)
 			responseInternalServerError(rw, req)

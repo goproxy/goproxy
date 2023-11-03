@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -160,7 +161,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 		{
 			n: 1,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
+				responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", 60)
 			},
 			path:             "/example.com/@latest",
 			tempDir:          t.TempDir(),
@@ -172,7 +173,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 		{
 			n: 2,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
+				responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", 60)
 			},
 			method:           http.MethodHead,
 			path:             "/example.com/@latest",
@@ -283,7 +284,30 @@ func TestGoproxyServeHTTP(t *testing.T) {
 func TestGoproxyServeFetch(t *testing.T) {
 	proxyServer, setProxyHandler := newHTTPTestServer()
 	defer proxyServer.Close()
+
 	info := marshalInfo("v1.0.0", time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC))
+	mod := "module example.com"
+	zipFile := filepath.Join(t.TempDir(), "zip")
+	if err := writeZipFile(zipFile, map[string][]byte{"example.com@v1.0.0/go.mod": []byte(mod)}); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	zip, err := os.ReadFile(zipFile)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	proxyHandler := func(rw http.ResponseWriter, req *http.Request) {
+		switch path.Ext(req.URL.Path) {
+		case ".info":
+			responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", 60)
+		case ".mod":
+			responseSuccess(rw, req, strings.NewReader(mod), "text/plain; charset=utf-8", 60)
+		case ".zip":
+			responseSuccess(rw, req, bytes.NewReader(zip), "application/zip", 60)
+		default:
+			responseNotFound(rw, req, 60)
+		}
+	}
+
 	for _, tt := range []struct {
 		n                  int
 		proxyHandler       http.HandlerFunc
@@ -299,7 +323,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 		{
 			n: 1,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
+				responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", 60)
 			},
 			cacher:           DirCacher(t.TempDir()),
 			name:             "example.com/@latest",
@@ -310,19 +334,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 		},
 		{
 			n:                2,
-			proxyHandler:     func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, 60) },
-			cacher:           DirCacher(t.TempDir()),
-			name:             "example.com/v2/@latest",
-			wantStatusCode:   http.StatusNotFound,
-			wantContentType:  "text/plain; charset=utf-8",
-			wantCacheControl: "public, max-age=60",
-			wantContent:      "not found",
-		},
-		{
-			n: 3,
-			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
-			},
+			proxyHandler:     proxyHandler,
 			cacher:           DirCacher(t.TempDir()),
 			name:             "example.com/@v/v1.0.0.info",
 			wantStatusCode:   http.StatusOK,
@@ -331,17 +343,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      info,
 		},
 		{
-			n:                4,
-			proxyHandler:     func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, 60) },
-			cacher:           DirCacher(t.TempDir()),
-			name:             "example.com/v2/@v/v1.1.0.info",
-			wantStatusCode:   http.StatusNotFound,
-			wantContentType:  "text/plain; charset=utf-8",
-			wantCacheControl: "public, max-age=600",
-			wantContent:      "not found",
-		},
-		{
-			n:            5,
+			n:            3,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {},
 			cacher:       DirCacher(t.TempDir()),
 			setupCacher: func(cacher Cacher) error {
@@ -355,18 +357,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:        info,
 		},
 		{
-			n:                  6,
-			proxyHandler:       func(rw http.ResponseWriter, req *http.Request) {},
-			cacher:             DirCacher(t.TempDir()),
-			name:               "example.com/v2/@latest",
-			disableModuleFetch: true,
-			wantStatusCode:     http.StatusNotFound,
-			wantContentType:    "text/plain; charset=utf-8",
-			wantCacheControl:   "public, max-age=60",
-			wantContent:        "not found: temporarily unavailable",
-		},
-		{
-			n:            7,
+			n:            4,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {},
 			cacher:       DirCacher(t.TempDir()),
 			setupCacher: func(cacher Cacher) error {
@@ -378,6 +369,37 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContentType:    "application/json; charset=utf-8",
 			wantCacheControl:   "public, max-age=604800",
 			wantContent:        info,
+		},
+		{
+			n:                5,
+			proxyHandler:     func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, 60) },
+			cacher:           DirCacher(t.TempDir()),
+			name:             "example.com/@latest",
+			wantStatusCode:   http.StatusNotFound,
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "public, max-age=60",
+			wantContent:      "not found",
+		},
+		{
+			n:                6,
+			proxyHandler:     func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, 60) },
+			cacher:           DirCacher(t.TempDir()),
+			name:             "example.com/@v/v1.0.0.info",
+			wantStatusCode:   http.StatusNotFound,
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "public, max-age=600",
+			wantContent:      "not found",
+		},
+		{
+			n:                  7,
+			proxyHandler:       func(rw http.ResponseWriter, req *http.Request) {},
+			cacher:             DirCacher(t.TempDir()),
+			name:               "example.com/@latest",
+			disableModuleFetch: true,
+			wantStatusCode:     http.StatusNotFound,
+			wantContentType:    "text/plain; charset=utf-8",
+			wantCacheControl:   "public, max-age=60",
+			wantContent:        "not found: temporarily unavailable",
 		},
 		{
 			n:                8,
@@ -392,7 +414,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 		{
 			n: 9,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				responseSuccess(rw, req, strings.NewReader("v1.0.0"), "text/plain; charset=utf-8", -2)
+				responseSuccess(rw, req, strings.NewReader("v1.0.0"), "text/plain; charset=utf-8", 60)
 			},
 			cacher:          &errorCacher{},
 			name:            "example.com/@v/list",
@@ -440,7 +462,30 @@ func TestGoproxyServeFetch(t *testing.T) {
 func TestGoproxyServeFetchDownload(t *testing.T) {
 	proxyServer, setProxyHandler := newHTTPTestServer()
 	defer proxyServer.Close()
+
 	info := marshalInfo("v1.0.0", time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC))
+	mod := "module example.com"
+	zipFile := filepath.Join(t.TempDir(), "zip")
+	if err := writeZipFile(zipFile, map[string][]byte{"example.com@v1.0.0/go.mod": []byte(mod)}); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	zip, err := os.ReadFile(zipFile)
+	if err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	proxyHandler := func(rw http.ResponseWriter, req *http.Request) {
+		switch path.Ext(req.URL.Path) {
+		case ".info":
+			responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", 60)
+		case ".mod":
+			responseSuccess(rw, req, strings.NewReader(mod), "text/plain; charset=utf-8", 60)
+		case ".zip":
+			responseSuccess(rw, req, bytes.NewReader(zip), "application/zip", 60)
+		default:
+			responseNotFound(rw, req, 60)
+		}
+	}
+
 	for _, tt := range []struct {
 		n                int
 		proxyHandler     http.HandlerFunc
@@ -452,10 +497,8 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 		wantContent      string
 	}{
 		{
-			n: 1,
-			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
-			},
+			n:                1,
+			proxyHandler:     proxyHandler,
 			cacher:           DirCacher(t.TempDir()),
 			name:             "example.com/@v/v1.0.0.info",
 			wantStatusCode:   http.StatusOK,
@@ -467,19 +510,17 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			n:                2,
 			proxyHandler:     func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, 60) },
 			cacher:           DirCacher(t.TempDir()),
-			name:             "example.com/@v/v1.1.0.info",
+			name:             "example.com/@v/v1.0.0.info",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
 			wantCacheControl: "public, max-age=600",
 			wantContent:      "not found",
 		},
 		{
-			n: 3,
-			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				responseSuccess(rw, req, strings.NewReader("module example.com"), "text/plain; charset=utf-8", -2)
-			},
+			n:               3,
+			proxyHandler:    proxyHandler,
 			cacher:          &errorCacher{},
-			name:            "example.com/@v/v1.0.0.mod",
+			name:            "example.com/@v/v1.0.0.info",
 			wantStatusCode:  http.StatusInternalServerError,
 			wantContentType: "text/plain; charset=utf-8",
 			wantContent:     "internal server error",
