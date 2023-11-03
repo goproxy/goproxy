@@ -16,8 +16,8 @@ import (
 type sumdbClientOps struct {
 	initOnce   sync.Once
 	initError  error
-	key        []byte
-	endpoint   *url.URL
+	key        string
+	url        *url.URL
 	envGOPROXY string
 	envGOSUMDB string
 	httpClient *http.Client
@@ -26,24 +26,24 @@ type sumdbClientOps struct {
 // init initializes the sco.
 func (sco *sumdbClientOps) init() {
 	var (
-		name             string
-		isDirectEndpoint bool
+		name        string
+		isDirectURL bool
 	)
-	name, sco.key, sco.endpoint, isDirectEndpoint, sco.initError = parseEnvGOSUMDB(sco.envGOSUMDB)
+	name, sco.key, sco.url, isDirectURL, sco.initError = parseEnvGOSUMDB(sco.envGOSUMDB)
 	if sco.initError != nil {
 		return
 	}
-	if isDirectEndpoint {
+	if isDirectURL {
 		if err := walkEnvGOPROXY(sco.envGOPROXY, func(proxy string) error {
 			proxyURL, err := parseRawURL(proxy)
 			if err != nil {
 				return err
 			}
-			proxiedEndpoint := appendURL(proxyURL, "sumdb", name)
-			if err := httpGet(context.Background(), sco.httpClient, appendURL(proxiedEndpoint, "/supported").String(), nil); err != nil {
+			u := appendURL(proxyURL, "sumdb", name)
+			if err := httpGet(context.Background(), sco.httpClient, appendURL(u, "/supported").String(), nil); err != nil {
 				return err
 			}
-			sco.endpoint = proxiedEndpoint
+			sco.url = u
 			return nil
 		}, func() error {
 			return nil
@@ -62,7 +62,7 @@ func (sco *sumdbClientOps) ReadRemote(path string) ([]byte, error) {
 		return nil, sco.initError
 	}
 	var buf bytes.Buffer
-	if err := httpGet(context.Background(), sco.httpClient, appendURL(sco.endpoint, path).String(), &buf); err != nil {
+	if err := httpGet(context.Background(), sco.httpClient, appendURL(sco.url, path).String(), &buf); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -74,7 +74,7 @@ func (sco *sumdbClientOps) ReadConfig(file string) ([]byte, error) {
 		return nil, sco.initError
 	}
 	if file == "key" {
-		return sco.key, nil
+		return []byte(sco.key), nil
 	} else if strings.HasSuffix(file, "/latest") {
 		return []byte{}, nil // Empty result means empty tree.
 	}

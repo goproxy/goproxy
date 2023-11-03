@@ -63,17 +63,17 @@ type Goproxy struct {
 	// If MaxDirectFetches is zero, there is no limit.
 	MaxDirectFetches int
 
-	// ProxiedSUMDBs is a list of proxied checksum databases (see
+	// ProxiedSumDBs is a list of proxied checksum databases (see
 	// https://go.dev/design/25530-sumdb#proxying-a-checksum-database). Each
 	// entry is in the form "<sumdb-name>" or "<sumdb-name> <sumdb-URL>".
 	// The first form is a shorthand for the second, where the corresponding
 	// <sumdb-URL> will be the <sumdb-name> itself as a host with an "https"
 	// scheme.
 	//
-	// If ProxiedSUMDBs contains duplicate checksum database names, only the
+	// If ProxiedSumDBs contains duplicate checksum database names, only the
 	// last value in the slice for each duplicate checksum database name is
 	// used.
-	ProxiedSUMDBs []string
+	ProxiedSumDBs []string
 
 	// Cacher is used to cache module files.
 	//
@@ -105,7 +105,7 @@ type Goproxy struct {
 	envGONOSUMDB          string
 	goBinName             string
 	directFetchWorkerPool chan struct{}
-	proxiedSUMDBs         map[string]*url.URL
+	proxiedSumDBs         map[string]*url.URL
 	httpClient            *http.Client
 	sumdbClient           *sumdb.Client
 }
@@ -163,22 +163,22 @@ func (g *Goproxy) init() {
 		g.directFetchWorkerPool = make(chan struct{}, g.MaxDirectFetches)
 	}
 
-	g.proxiedSUMDBs = map[string]*url.URL{}
-	for _, proxiedSUMDB := range g.ProxiedSUMDBs {
-		sumdbParts := strings.Fields(proxiedSUMDB)
-		if len(sumdbParts) == 0 {
+	g.proxiedSumDBs = map[string]*url.URL{}
+	for _, sumdb := range g.ProxiedSumDBs {
+		parts := strings.Fields(sumdb)
+		if len(parts) == 0 {
 			continue
 		}
-		sumdbName := sumdbParts[0]
-		rawSUMDBURL := sumdbName
-		if len(sumdbParts) > 1 {
-			rawSUMDBURL = sumdbParts[1]
+		name := parts[0]
+		rawURL := name
+		if len(parts) > 1 {
+			rawURL = parts[1]
 		}
-		sumdbURL, err := parseRawURL(rawSUMDBURL)
+		u, err := parseRawURL(rawURL)
 		if err != nil {
 			continue
 		}
-		g.proxiedSUMDBs[sumdbName] = sumdbURL
+		g.proxiedSumDBs[name] = u
 	}
 
 	g.httpClient = &http.Client{Transport: g.Transport}
@@ -216,7 +216,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	defer os.RemoveAll(tempDir)
 
 	if strings.HasPrefix(name, "sumdb/") {
-		g.serveSUMDB(rw, req, name, tempDir)
+		g.serveSumDB(rw, req, name, tempDir)
 		return
 	}
 
@@ -324,14 +324,15 @@ func (g *Goproxy) serveFetchDownload(rw http.ResponseWriter, req *http.Request, 
 	responseSuccess(rw, req, content, f.contentType, 604800)
 }
 
-// serveSUMDB serves checksum database proxy requests.
-func (g *Goproxy) serveSUMDB(rw http.ResponseWriter, req *http.Request, name, tempDir string) {
-	sumdbURL, err := parseRawURL(strings.TrimPrefix(name, "sumdb/"))
-	if err != nil {
+// serveSumDB serves checksum database proxy requests.
+func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, name, tempDir string) {
+	sumdbName, path, ok := strings.Cut(strings.TrimPrefix(name, "sumdb/"), "/")
+	if !ok {
 		responseNotFound(rw, req, 86400)
 		return
 	}
-	proxiedSUMDBURL, ok := g.proxiedSUMDBs[sumdbURL.Host]
+	path = "/" + path // Add the leading slash back.
+	sumdbURL, ok := g.proxiedSumDBs[sumdbName]
 	if !ok {
 		responseNotFound(rw, req, 86400)
 		return
@@ -341,17 +342,17 @@ func (g *Goproxy) serveSUMDB(rw http.ResponseWriter, req *http.Request, name, te
 		contentType        string
 		cacheControlMaxAge int
 	)
-	if sumdbURL.Path == "/supported" {
+	if path == "/supported" {
 		setResponseCacheControlHeader(rw, 86400)
 		rw.WriteHeader(http.StatusOK)
 		return
-	} else if sumdbURL.Path == "/latest" {
+	} else if path == "/latest" {
 		contentType = "text/plain; charset=utf-8"
 		cacheControlMaxAge = 3600
-	} else if strings.HasPrefix(sumdbURL.Path, "/lookup/") {
+	} else if strings.HasPrefix(path, "/lookup/") {
 		contentType = "text/plain; charset=utf-8"
 		cacheControlMaxAge = 86400
-	} else if strings.HasPrefix(sumdbURL.Path, "/tile/") {
+	} else if strings.HasPrefix(path, "/tile/") {
 		contentType = "application/octet-stream"
 		cacheControlMaxAge = 86400
 	} else {
@@ -365,7 +366,7 @@ func (g *Goproxy) serveSUMDB(rw http.ResponseWriter, req *http.Request, name, te
 		responseInternalServerError(rw, req)
 		return
 	}
-	if err := httpGet(req.Context(), g.httpClient, appendURL(proxiedSUMDBURL, sumdbURL.Path).String(), tempFile); err != nil {
+	if err := httpGet(req.Context(), g.httpClient, appendURL(sumdbURL, path).String(), tempFile); err != nil {
 		g.serveCache(rw, req, name, contentType, cacheControlMaxAge, func() {
 			g.logErrorf("failed to proxy checksum database: %s: %v", name, err)
 			responseError(rw, req, err, true)
@@ -536,12 +537,12 @@ func cleanEnvGOSUMDB(envGOSUMDB string) string {
 const sumGolangOrgKey = "sum.golang.org+033de0ae+Ac4zctda0e5eza+HJyk9SxEdh+s3Ux18htTTAD8OuAn8"
 
 // parseEnvGOSUMDB parses the envGOSUMDB.
-func parseEnvGOSUMDB(envGOSUMDB string) (name string, key []byte, endpoint *url.URL, isDirectEndpoint bool, err error) {
+func parseEnvGOSUMDB(envGOSUMDB string) (name string, key string, u *url.URL, isDirectURL bool, err error) {
 	parts := strings.Fields(envGOSUMDB)
 	if l := len(parts); l == 0 {
-		return "", nil, nil, false, errors.New("missing GOSUMDB")
+		return "", "", nil, false, errors.New("missing GOSUMDB")
 	} else if l > 2 {
-		return "", nil, nil, false, errors.New("invalid GOSUMDB: too many fields")
+		return "", "", nil, false, errors.New("invalid GOSUMDB: too many fields")
 	}
 
 	switch parts[0] {
@@ -555,26 +556,26 @@ func parseEnvGOSUMDB(envGOSUMDB string) (name string, key []byte, endpoint *url.
 	}
 	verifier, err := note.NewVerifier(parts[0])
 	if err != nil {
-		return "", nil, nil, false, fmt.Errorf("invalid GOSUMDB: %w", err)
+		return "", "", nil, false, fmt.Errorf("invalid GOSUMDB: %w", err)
 	}
 	name = verifier.Name()
-	key = []byte(parts[0])
+	key = parts[0]
 
-	endpoint, err = parseRawURL(name)
+	u, err = parseRawURL(name)
 	if err != nil ||
 		strings.HasSuffix(name, "/") ||
-		endpoint.Host == "" ||
-		endpoint.RawPath != "" ||
-		*endpoint != (url.URL{Scheme: "https", Host: endpoint.Host, Path: endpoint.Path, RawPath: endpoint.RawPath}) {
-		return "", nil, nil, false, fmt.Errorf("invalid sumdb name (must be host[/path]): %s %+v", name, *endpoint)
+		u.Host == "" ||
+		u.RawPath != "" ||
+		*u != (url.URL{Scheme: "https", Host: u.Host, Path: u.Path, RawPath: u.RawPath}) {
+		return "", "", nil, false, fmt.Errorf("invalid sumdb name (must be host[/path]): %s %+v", name, *u)
 	}
-	isDirectEndpoint = true
+	isDirectURL = true
 	if len(parts) > 1 {
-		endpoint, err = parseRawURL(parts[1])
+		u, err = parseRawURL(parts[1])
 		if err != nil {
-			return "", nil, nil, false, fmt.Errorf("invalid GOSUMDB URL: %w", err)
+			return "", "", nil, false, fmt.Errorf("invalid GOSUMDB URL: %w", err)
 		}
-		isDirectEndpoint = false
+		isDirectURL = false
 	}
 	return
 }

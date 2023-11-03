@@ -340,7 +340,7 @@ func TestFetchDo(t *testing.T) {
 func TestFetchDoProxy(t *testing.T) {
 	proxyServer, setProxyHandler := newHTTPTestServer()
 	defer proxyServer.Close()
-	sumdbServer, setSUMDBHandler := newHTTPTestServer()
+	sumdbServer, setSumDBHandler := newHTTPTestServer()
 	defer sumdbServer.Close()
 
 	infoTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -596,7 +596,7 @@ invalid
 		setProxyHandler(tt.proxyHandler)
 		envGOSUMDB := "off"
 		if tt.sumdbHandler != nil {
-			setSUMDBHandler(tt.sumdbHandler.ServeHTTP)
+			setSumDBHandler(tt.sumdbHandler.ServeHTTP)
 			envGOSUMDB = vkey + " " + sumdbServer.URL
 		}
 		g := &Goproxy{
@@ -647,7 +647,7 @@ invalid
 func TestFetchDoDirect(t *testing.T) {
 	proxyServer, setProxyHandler := newHTTPTestServer()
 	defer proxyServer.Close()
-	sumdbServer, setSUMDBHandler := newHTTPTestServer()
+	sumdbServer, setSumDBHandler := newHTTPTestServer()
 	defer sumdbServer.Close()
 
 	t.Setenv("GOFLAGS", "-modcacherw")
@@ -845,7 +845,7 @@ func TestFetchDoDirect(t *testing.T) {
 		}
 		envGOSUMDB := "off"
 		if tt.sumdbHandler != nil {
-			setSUMDBHandler(tt.sumdbHandler.ServeHTTP)
+			setSumDBHandler(tt.sumdbHandler.ServeHTTP)
 			envGOSUMDB = vkey + " " + sumdbServer.URL
 		}
 		g := &Goproxy{
@@ -1153,7 +1153,7 @@ func TestCheckModFile(t *testing.T) {
 }
 
 func TestVerifyModFile(t *testing.T) {
-	sumdbServer, setSUMDBHandler := newHTTPTestServer()
+	sumdbServer, setSumDBHandler := newHTTPTestServer()
 	defer sumdbServer.Close()
 
 	modFile := filepath.Join(t.TempDir(), "mod")
@@ -1169,7 +1169,7 @@ func TestVerifyModFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	setSUMDBHandler(sumdb.NewServer(sumdb.NewTestServer(skey, func(modulePath, moduleVersion string) ([]byte, error) {
+	setSumDBHandler(sumdb.NewServer(sumdb.NewTestServer(skey, func(modulePath, moduleVersion string) ([]byte, error) {
 		if modulePath == "example.com" && moduleVersion == "v1.0.0" {
 			dirHash, err := dirhash.HashDir(t.TempDir(), "example.com@v1.0.0", dirhash.DefaultHash)
 			if err != nil {
@@ -1294,7 +1294,7 @@ func TestCheckZipFile(t *testing.T) {
 }
 
 func TestVerifyZipFile(t *testing.T) {
-	sumdbServer, setSUMDBHandler := newHTTPTestServer()
+	sumdbServer, setSumDBHandler := newHTTPTestServer()
 	defer sumdbServer.Close()
 
 	zipFile := filepath.Join(t.TempDir(), "zip")
@@ -1310,7 +1310,7 @@ func TestVerifyZipFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	setSUMDBHandler(sumdb.NewServer(sumdb.NewTestServer(skey, func(modulePath, moduleVersion string) ([]byte, error) {
+	setSumDBHandler(sumdb.NewServer(sumdb.NewTestServer(skey, func(modulePath, moduleVersion string) ([]byte, error) {
 		if modulePath == "example.com" && moduleVersion == "v1.0.0" {
 			dirHash, err := dirhash.HashZip(zipFile, dirhash.DefaultHash)
 			if err != nil {

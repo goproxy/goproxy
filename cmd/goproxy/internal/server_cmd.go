@@ -42,7 +42,7 @@ type serverCmdConfig struct {
 	pathPrefix       string
 	goBinName        string
 	maxDirectFetches int
-	proxiedSUMDBs    []string
+	proxiedSumDBs    []string
 	cacher           string
 	cacherDir        string
 	s3CacherOpts     s3CacherOptions
@@ -63,7 +63,7 @@ func newServerCmdConfig(cmd *cobra.Command) *serverCmdConfig {
 	fs.StringVar(&cfg.pathPrefix, "path-prefix", "", "prefix for all request paths")
 	fs.StringVar(&cfg.goBinName, "go-bin-name", "go", "name of the Go binary that is used to execute direct fetches")
 	fs.IntVar(&cfg.maxDirectFetches, "max-direct-fetches", 0, "maximum number (0 means no limit) of concurrent direct fetches")
-	fs.StringSliceVar(&cfg.proxiedSUMDBs, "proxied-sumdbs", nil, "list of proxied checksum databases")
+	fs.StringSliceVar(&cfg.proxiedSumDBs, "proxied-sumdbs", nil, "list of proxied checksum databases")
 	fs.StringVar(&cfg.cacher, "cacher", "dir", "cacher to use (valid values: dir, s3)")
 	fs.StringVar(&cfg.cacherDir, "cacher-dir", "caches", "directory for the dir cacher")
 	fs.StringVar(&cfg.s3CacherOpts.accessKeyID, "cacher-s3-access-key-id", "", "access key ID for the S3 cacher")
@@ -91,7 +91,7 @@ func runServerCmd(cmd *cobra.Command, args []string, cfg *serverCmdConfig) error
 	g := &goproxy.Goproxy{
 		GoBinName:        cfg.goBinName,
 		MaxDirectFetches: cfg.maxDirectFetches,
-		ProxiedSUMDBs:    cfg.proxiedSUMDBs,
+		ProxiedSumDBs:    cfg.proxiedSumDBs,
 		TempDir:          cfg.tempDir,
 		Transport:        transport,
 	}

@@ -120,23 +120,23 @@ func TestGoproxyInit(t *testing.T) {
 		t.Fatal("unexpected nil")
 	}
 
-	g = &Goproxy{ProxiedSUMDBs: []string{
+	g = &Goproxy{ProxiedSumDBs: []string{
 		"sum.golang.google.cn",
 		defaultEnvGOSUMDB + " https://sum.golang.google.cn",
 		"",
 		"example.com ://invalid",
 	}}
 	g.init()
-	if got, want := len(g.proxiedSUMDBs), 2; got != want {
+	if got, want := len(g.proxiedSumDBs), 2; got != want {
 		t.Errorf("got %d, want %d", got, want)
 	}
-	if got, want := g.proxiedSUMDBs["sum.golang.google.cn"].String(), "https://sum.golang.google.cn"; got != want {
+	if got, want := g.proxiedSumDBs["sum.golang.google.cn"].String(), "https://sum.golang.google.cn"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	if got, want := g.proxiedSUMDBs[defaultEnvGOSUMDB].String(), "https://sum.golang.google.cn"; got != want {
+	if got, want := g.proxiedSumDBs[defaultEnvGOSUMDB].String(), "https://sum.golang.google.cn"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	if got := g.proxiedSUMDBs["example.com"]; got != nil {
+	if got := g.proxiedSumDBs["example.com"]; got != nil {
 		t.Errorf("got %#v, want nil", got)
 	}
 }
@@ -517,7 +517,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 }
 
 func TestGoproxyServeSUMDB(t *testing.T) {
-	sumdbServer, setSUMDBHandler := newHTTPTestServer()
+	sumdbServer, setSumDBHandler := newHTTPTestServer()
 	defer sumdbServer.Close()
 	for _, tt := range []struct {
 		n                int
@@ -637,15 +637,15 @@ func TestGoproxyServeSUMDB(t *testing.T) {
 			wantContent:     "internal server error",
 		},
 	} {
-		setSUMDBHandler(tt.sumdbHandler)
+		setSumDBHandler(tt.sumdbHandler)
 		g := &Goproxy{
-			ProxiedSUMDBs: []string{"sumdb.example.com " + sumdbServer.URL},
+			ProxiedSumDBs: []string{"sumdb.example.com " + sumdbServer.URL},
 			Cacher:        tt.cacher,
 			ErrorLogger:   log.New(io.Discard, "", 0),
 		}
 		g.init()
 		rec := httptest.NewRecorder()
-		g.serveSUMDB(rec, httptest.NewRequest("", "/", nil), tt.name, tt.tempDir)
+		g.serveSumDB(rec, httptest.NewRequest("", "/", nil), tt.name, tt.tempDir)
 		recr := rec.Result()
 		if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
 			t.Errorf("test(%d): got %d, want %d", tt.n, got, want)
@@ -996,53 +996,53 @@ func TestCleanEnvGOSUMDB(t *testing.T) {
 
 func TestParseEnvGOSUMDB(t *testing.T) {
 	for _, tt := range []struct {
-		n                    int
-		envGOSUMDB           string
-		wantName             string
-		wantKey              string
-		wantEndpoint         string
-		wantIsDirectEndpoint bool
-		wantError            error
+		n               int
+		envGOSUMDB      string
+		wantName        string
+		wantKey         string
+		wantURL         string
+		wantIsDirectURL bool
+		wantError       error
 	}{
 		{
-			n:                    1,
-			envGOSUMDB:           defaultEnvGOSUMDB,
-			wantName:             defaultEnvGOSUMDB,
-			wantKey:              sumGolangOrgKey,
-			wantEndpoint:         "https://" + defaultEnvGOSUMDB,
-			wantIsDirectEndpoint: true,
+			n:               1,
+			envGOSUMDB:      defaultEnvGOSUMDB,
+			wantName:        defaultEnvGOSUMDB,
+			wantKey:         sumGolangOrgKey,
+			wantURL:         "https://" + defaultEnvGOSUMDB,
+			wantIsDirectURL: true,
 		},
 		{
-			n:                    2,
-			envGOSUMDB:           sumGolangOrgKey,
-			wantName:             defaultEnvGOSUMDB,
-			wantKey:              sumGolangOrgKey,
-			wantEndpoint:         "https://" + defaultEnvGOSUMDB,
-			wantIsDirectEndpoint: true,
+			n:               2,
+			envGOSUMDB:      sumGolangOrgKey,
+			wantName:        defaultEnvGOSUMDB,
+			wantKey:         sumGolangOrgKey,
+			wantURL:         "https://" + defaultEnvGOSUMDB,
+			wantIsDirectURL: true,
 		},
 		{
-			n:                    3,
-			envGOSUMDB:           sumGolangOrgKey + " https://" + defaultEnvGOSUMDB,
-			wantName:             defaultEnvGOSUMDB,
-			wantKey:              sumGolangOrgKey,
-			wantEndpoint:         "https://" + defaultEnvGOSUMDB,
-			wantIsDirectEndpoint: false,
+			n:               3,
+			envGOSUMDB:      sumGolangOrgKey + " https://" + defaultEnvGOSUMDB,
+			wantName:        defaultEnvGOSUMDB,
+			wantKey:         sumGolangOrgKey,
+			wantURL:         "https://" + defaultEnvGOSUMDB,
+			wantIsDirectURL: false,
 		},
 		{
-			n:                    4,
-			envGOSUMDB:           "sum.golang.google.cn",
-			wantName:             defaultEnvGOSUMDB,
-			wantKey:              sumGolangOrgKey,
-			wantEndpoint:         "https://sum.golang.google.cn",
-			wantIsDirectEndpoint: false,
+			n:               4,
+			envGOSUMDB:      "sum.golang.google.cn",
+			wantName:        defaultEnvGOSUMDB,
+			wantKey:         sumGolangOrgKey,
+			wantURL:         "https://sum.golang.google.cn",
+			wantIsDirectURL: false,
 		},
 		{
-			n:                    5,
-			envGOSUMDB:           "sum.golang.google.cn https://example.com",
-			wantName:             defaultEnvGOSUMDB,
-			wantKey:              sumGolangOrgKey,
-			wantEndpoint:         "https://example.com",
-			wantIsDirectEndpoint: false,
+			n:               5,
+			envGOSUMDB:      "sum.golang.google.cn https://example.com",
+			wantName:        defaultEnvGOSUMDB,
+			wantKey:         sumGolangOrgKey,
+			wantURL:         "https://example.com",
+			wantIsDirectURL: false,
 		},
 		{
 			n:          6,
@@ -1075,7 +1075,7 @@ func TestParseEnvGOSUMDB(t *testing.T) {
 			wantError:  errors.New(`invalid GOSUMDB URL: parse "://invalid": missing protocol scheme`),
 		},
 	} {
-		name, key, endpoint, isDirectEndpoint, err := parseEnvGOSUMDB(tt.envGOSUMDB)
+		name, key, u, isDirectURL, err := parseEnvGOSUMDB(tt.envGOSUMDB)
 		if tt.wantError != nil {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
@@ -1090,13 +1090,13 @@ func TestParseEnvGOSUMDB(t *testing.T) {
 			if got, want := name, tt.wantName; got != want {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
-			if got, want := string(key), tt.wantKey; got != want {
+			if got, want := key, tt.wantKey; got != want {
 				t.Errorf("test(%d): got %x, want %x", tt.n, got, want)
 			}
-			if got, want := endpoint.String(), tt.wantEndpoint; got != want {
+			if got, want := u.String(), tt.wantURL; got != want {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
-			if got, want := isDirectEndpoint, tt.wantIsDirectEndpoint; got != want {
+			if got, want := isDirectURL, tt.wantIsDirectURL; got != want {
 				t.Errorf("test(%d): got %t, want %t", tt.n, got, want)
 			}
 		}
