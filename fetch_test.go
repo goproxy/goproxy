@@ -245,7 +245,6 @@ func TestFetchDo(t *testing.T) {
 		env          []string
 		setupGorpoxy func(g *Goproxy) error
 		name         string
-		wantContent  string
 		wantVersion  string
 		wantTime     time.Time
 		wantError    error
@@ -260,7 +259,6 @@ func TestFetchDo(t *testing.T) {
 				"GOSUMDB=off",
 			},
 			name:        "example.com/@latest",
-			wantContent: marshalInfo("v1.0.0", infoTime),
 			wantVersion: "v1.0.0",
 			wantTime:    infoTime,
 		},
@@ -329,15 +327,6 @@ func TestFetchDo(t *testing.T) {
 		} else {
 			if err != nil {
 				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
-			}
-			if rsc, err := fr.Open(); err != nil {
-				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
-			} else if b, err := io.ReadAll(rsc); err != nil {
-				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
-			} else if err := rsc.Close(); err != nil {
-				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
-			} else if got, want := string(b), tt.wantContent; got != want {
-				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 			if got, want := fr.Version, tt.wantVersion; got != want {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
@@ -411,7 +400,6 @@ func TestFetchDoProxy(t *testing.T) {
 		name         string
 		tempDir      string
 		proxy        string
-		wantContent  string
 		wantVersion  string
 		wantTime     time.Time
 		wantVersions []string
@@ -427,7 +415,6 @@ func TestFetchDoProxy(t *testing.T) {
 			},
 			name:        "example.com/@latest",
 			proxy:       proxyServer.URL,
-			wantContent: info,
 			wantVersion: infoVersion,
 			wantTime:    infoTime,
 		},
@@ -443,7 +430,6 @@ invalid
 			},
 			name:         "example.com/@v/list",
 			proxy:        proxyServer.URL,
-			wantContent:  "v1.0.0\nv1.1.0\nv1.2.0",
 			wantVersions: []string{"v1.0.0", "v1.1.0", "v1.2.0"},
 		},
 		{
@@ -452,7 +438,6 @@ invalid
 			name:         "example.com/@v/v1.0.0.info",
 			tempDir:      t.TempDir(),
 			proxy:        proxyServer.URL,
-			wantContent:  info,
 			wantInfo:     info,
 			wantGoMod:    mod,
 			wantZip:      string(zip),
@@ -463,7 +448,6 @@ invalid
 			name:         "example.com/@v/v1.0.0.mod",
 			tempDir:      t.TempDir(),
 			proxy:        proxyServer.URL,
-			wantContent:  mod,
 			wantInfo:     info,
 			wantGoMod:    mod,
 			wantZip:      string(zip),
@@ -475,7 +459,6 @@ invalid
 			name:         "example.com/@v/v1.0.0.mod",
 			tempDir:      t.TempDir(),
 			proxy:        proxyServer.URL,
-			wantContent:  mod,
 			wantInfo:     info,
 			wantGoMod:    mod,
 			wantZip:      string(zip),
@@ -486,7 +469,6 @@ invalid
 			name:         "example.com/@v/v1.0.0.zip",
 			tempDir:      t.TempDir(),
 			proxy:        proxyServer.URL,
-			wantContent:  string(zip),
 			wantInfo:     info,
 			wantGoMod:    mod,
 			wantZip:      string(zip),
@@ -498,7 +480,6 @@ invalid
 			name:         "example.com/@v/v1.0.0.zip",
 			tempDir:      t.TempDir(),
 			proxy:        proxyServer.URL,
-			wantContent:  string(zip),
 			wantInfo:     info,
 			wantGoMod:    mod,
 			wantZip:      string(zip),
@@ -677,15 +658,6 @@ invalid
 			if err != nil {
 				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
 			}
-			if rsc, err := fr.Open(); err != nil {
-				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
-			} else if b, err := io.ReadAll(rsc); err != nil {
-				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
-			} else if err := rsc.Close(); err != nil {
-				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
-			} else if got, want := string(b), tt.wantContent; got != want {
-				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-			}
 			if got, want := fr.Version, tt.wantVersion; got != want {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
@@ -754,10 +726,6 @@ func TestFetchDoDirect(t *testing.T) {
 	if err := writeZipFile(zipFile, map[string][]byte{"example.com@v1.0.0/go.mod": []byte(mod)}); err != nil {
 		t.Fatalf("unexpected error %q", err)
 	}
-	zip, err := os.ReadFile(zipFile)
-	if err != nil {
-		t.Fatalf("unexpected error %q", err)
-	}
 	zipFile2 := filepath.Join(staticGOPROXYDir, "example.com", "@v", "v1.1.0.zip")
 	if err := writeZipFile(zipFile2, map[string][]byte{"example.com@v1.0.0/go.mod": []byte(mod)}); err != nil {
 		t.Fatalf("unexpected error %q", err)
@@ -788,7 +756,6 @@ func TestFetchDoDirect(t *testing.T) {
 		sumdbHandler http.Handler
 		name         string
 		setupFetch   func(f *fetch) error
-		wantContent  string
 		wantVersion  string
 		wantTime     time.Time
 		wantVersions []string
@@ -800,7 +767,6 @@ func TestFetchDoDirect(t *testing.T) {
 		{
 			n:           1,
 			name:        "example.com/@latest",
-			wantContent: marshalInfo("v1.1.0", infoTime.Add(time.Hour)),
 			wantVersion: "v1.1.0",
 			wantTime:    infoTime.Add(time.Hour),
 			wantGoMod:   modCacheFile2,
@@ -808,7 +774,6 @@ func TestFetchDoDirect(t *testing.T) {
 		{
 			n:            2,
 			name:         "example.com/@v/list",
-			wantContent:  "v1.0.0\nv1.1.0",
 			wantVersion:  "v1.1.0",
 			wantTime:     infoTime.Add(time.Hour),
 			wantVersions: []string{"v1.0.0", "v1.1.0"},
@@ -817,7 +782,6 @@ func TestFetchDoDirect(t *testing.T) {
 		{
 			n:           3,
 			name:        "example.com/@v/v1.0.0.info",
-			wantContent: marshalInfo("v1.0.0", infoTime),
 			wantVersion: "v1.0.0",
 			wantInfo:    infoCacheFile,
 			wantGoMod:   modCacheFile,
@@ -826,7 +790,6 @@ func TestFetchDoDirect(t *testing.T) {
 		{
 			n:           4,
 			name:        "example.com/@v/v1.0.0.mod",
-			wantContent: mod,
 			wantVersion: "v1.0.0",
 			wantInfo:    infoCacheFile,
 			wantGoMod:   modCacheFile,
@@ -835,7 +798,6 @@ func TestFetchDoDirect(t *testing.T) {
 		{
 			n:           5,
 			name:        "example.com/@v/v1.0.0.zip",
-			wantContent: string(zip),
 			wantVersion: "v1.0.0",
 			wantInfo:    infoCacheFile,
 			wantGoMod:   modCacheFile,
@@ -849,7 +811,6 @@ func TestFetchDoDirect(t *testing.T) {
 				return []byte(gosum), nil
 			})),
 			name:        "example.com/@v/v1.0.0.info",
-			wantContent: marshalInfo("v1.0.0", infoTime),
 			wantVersion: "v1.0.0",
 			wantInfo:    infoCacheFile,
 			wantGoMod:   modCacheFile,
@@ -956,15 +917,6 @@ func TestFetchDoDirect(t *testing.T) {
 			if err != nil {
 				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
 			}
-			if rsc, err := fr.Open(); err != nil {
-				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
-			} else if b, err := io.ReadAll(rsc); err != nil {
-				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
-			} else if err := rsc.Close(); err != nil {
-				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
-			} else if got, want := string(b), tt.wantContent; got != want {
-				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-			}
 			if got, want := fr.Version, tt.wantVersion; got != want {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
@@ -1001,90 +953,6 @@ func TestFetchOpsString(t *testing.T) {
 	} {
 		if got, want := tt.fo.String(), tt.wantFetchOps; got != want {
 			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-		}
-	}
-}
-
-func TestFetchResultOpen(t *testing.T) {
-	for _, tt := range []struct {
-		n                int
-		fr               *fetchResult
-		setupFetchResult func(fr *fetchResult) error
-		wantContent      string
-		wantError        error
-	}{
-		{
-			n: 1,
-			fr: &fetchResult{
-				f:       &fetch{ops: fetchOpsQuery},
-				Version: "v1.0.0",
-				Time:    time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
-			},
-			wantContent: `{"Version":"v1.0.0","Time":"2000-01-01T00:00:00Z"}`,
-		},
-		{
-			n: 2,
-			fr: &fetchResult{
-				f:        &fetch{ops: fetchOpsList},
-				Versions: []string{"v1.0.0", "v1.1.0"},
-			},
-			wantContent: "v1.0.0\nv1.1.0",
-		},
-		{
-			n: 3,
-			fr: &fetchResult{
-				f:    &fetch{ops: fetchOpsDownload, name: "example.com/@v/v1.0.0.info"},
-				Info: filepath.Join(t.TempDir(), "info"),
-			},
-			setupFetchResult: func(fr *fetchResult) error { return os.WriteFile(fr.Info, []byte("info"), 0o644) },
-			wantContent:      "info",
-		},
-		{
-			n: 4,
-			fr: &fetchResult{
-				f:     &fetch{ops: fetchOpsDownload, name: "example.com/@v/v1.0.0.mod"},
-				GoMod: filepath.Join(t.TempDir(), "mod"),
-			},
-			setupFetchResult: func(fr *fetchResult) error { return os.WriteFile(fr.GoMod, []byte("mod"), 0o644) },
-			wantContent:      "mod",
-		},
-		{
-			n: 5,
-			fr: &fetchResult{
-				f:   &fetch{ops: fetchOpsDownload, name: "example.com/@v/v1.0.0.zip"},
-				Zip: filepath.Join(t.TempDir(), "zip"),
-			},
-			setupFetchResult: func(fr *fetchResult) error { return os.WriteFile(fr.Zip, []byte("zip"), 0o644) },
-			wantContent:      "zip",
-		},
-		{
-			n:         6,
-			fr:        &fetchResult{f: &fetch{ops: fetchOpsInvalid}},
-			wantError: errors.New("invalid fetch operation"),
-		},
-	} {
-		if tt.setupFetchResult != nil {
-			if err := tt.setupFetchResult(tt.fr); err != nil {
-				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
-			}
-		}
-		rsc, err := tt.fr.Open()
-		if tt.wantError != nil {
-			if err == nil {
-				t.Fatalf("test(%d): expected error", tt.n)
-			}
-			if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
-				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-			}
-		} else {
-			if err != nil {
-				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
-			}
-			if b, err := io.ReadAll(rsc); err != nil {
-				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
-			} else if got, want := string(b), tt.wantContent; got != want {
-				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-			}
 		}
 	}
 }

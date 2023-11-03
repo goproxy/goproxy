@@ -459,6 +459,18 @@ func TestGoproxyServeFetch(t *testing.T) {
 	}
 }
 
+type afterPutDirCacher struct {
+	DirCacher
+	afterPut func(name string, content io.ReadSeeker) error
+}
+
+func (c *afterPutDirCacher) Put(ctx context.Context, name string, content io.ReadSeeker) error {
+	if err := c.DirCacher.Put(ctx, name, content); err != nil {
+		return err
+	}
+	return c.afterPut(name, content)
+}
+
 func TestGoproxyServeFetchDownload(t *testing.T) {
 	proxyServer, setProxyHandler := newHTTPTestServer()
 	defer proxyServer.Close()
@@ -508,6 +520,26 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 		},
 		{
 			n:                2,
+			proxyHandler:     proxyHandler,
+			cacher:           DirCacher(t.TempDir()),
+			name:             "example.com/@v/v1.0.0.mod",
+			wantStatusCode:   http.StatusOK,
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "public, max-age=604800",
+			wantContent:      mod,
+		},
+		{
+			n:                3,
+			proxyHandler:     proxyHandler,
+			cacher:           DirCacher(t.TempDir()),
+			name:             "example.com/@v/v1.0.0.zip",
+			wantStatusCode:   http.StatusOK,
+			wantContentType:  "application/zip",
+			wantCacheControl: "public, max-age=604800",
+			wantContent:      string(zip),
+		},
+		{
+			n:                4,
 			proxyHandler:     func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, 60) },
 			cacher:           DirCacher(t.TempDir()),
 			name:             "example.com/@v/v1.0.0.info",
@@ -517,9 +549,23 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			wantContent:      "not found",
 		},
 		{
-			n:               3,
+			n:               5,
 			proxyHandler:    proxyHandler,
 			cacher:          &errorCacher{},
+			name:            "example.com/@v/v1.0.0.info",
+			wantStatusCode:  http.StatusInternalServerError,
+			wantContentType: "text/plain; charset=utf-8",
+			wantContent:     "internal server error",
+		},
+		{
+			n:            6,
+			proxyHandler: proxyHandler,
+			cacher: &afterPutDirCacher{
+				DirCacher: DirCacher(t.TempDir()),
+				afterPut: func(name string, content io.ReadSeeker) error {
+					return os.Remove(content.(*os.File).Name())
+				},
+			},
 			name:            "example.com/@v/v1.0.0.info",
 			wantStatusCode:  http.StatusInternalServerError,
 			wantContentType: "text/plain; charset=utf-8",
@@ -682,6 +728,21 @@ func TestGoproxyServeSumDB(t *testing.T) {
 			n:               11,
 			sumdbHandler:    func(rw http.ResponseWriter, req *http.Request) {},
 			cacher:          &errorCacher{},
+			name:            "sumdb/sumdb.example.com/latest",
+			tempDir:         t.TempDir(),
+			wantStatusCode:  http.StatusInternalServerError,
+			wantContentType: "text/plain; charset=utf-8",
+			wantContent:     "internal server error",
+		},
+		{
+			n:            12,
+			sumdbHandler: func(rw http.ResponseWriter, req *http.Request) {},
+			cacher: &afterPutDirCacher{
+				DirCacher: DirCacher(t.TempDir()),
+				afterPut: func(name string, content io.ReadSeeker) error {
+					return os.Remove(content.(*os.File).Name())
+				},
+			},
 			name:            "sumdb/sumdb.example.com/latest",
 			tempDir:         t.TempDir(),
 			wantStatusCode:  http.StatusInternalServerError,

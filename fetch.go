@@ -137,7 +137,7 @@ func (f *fetch) doProxy(ctx context.Context, proxy string) (*fetchResult, error)
 	}
 	u := appendURL(proxyURL, f.name).String()
 
-	r := &fetchResult{f: f}
+	r := &fetchResult{}
 	switch f.ops {
 	case fetchOpsQuery:
 		var info bytes.Buffer
@@ -259,7 +259,7 @@ func (f *fetch) doDirect(ctx context.Context) (*fetchResult, error) {
 		return nil, notFoundErrorf(msg)
 	}
 
-	r := &fetchResult{f: f}
+	r := &fetchResult{}
 	if err := json.Unmarshal(stdout, r); err != nil {
 		return nil, err
 	}
@@ -310,42 +310,12 @@ func (fo fetchOps) String() string {
 
 // fetchResult is a unified result for [fetch].
 type fetchResult struct {
-	f *fetch
-
 	Version  string
 	Time     time.Time
 	Versions []string
 	Info     string
 	GoMod    string
 	Zip      string
-}
-
-// Open opens the content of the fr.
-func (fr *fetchResult) Open() (io.ReadSeekCloser, error) {
-	switch fr.f.ops {
-	case fetchOpsQuery:
-		content := strings.NewReader(marshalInfo(fr.Version, fr.Time))
-		return struct {
-			io.ReadCloser
-			io.Seeker
-		}{io.NopCloser(content), content}, nil
-	case fetchOpsList:
-		content := strings.NewReader(strings.Join(fr.Versions, "\n"))
-		return struct {
-			io.ReadCloser
-			io.Seeker
-		}{io.NopCloser(content), content}, nil
-	case fetchOpsDownload:
-		switch path.Ext(fr.f.name) {
-		case ".info":
-			return os.Open(fr.Info)
-		case ".mod":
-			return os.Open(fr.GoMod)
-		case ".zip":
-			return os.Open(fr.Zip)
-		}
-	}
-	return nil, errors.New("invalid fetch operation")
 }
 
 // marshalInfo marshals the version and t as info.

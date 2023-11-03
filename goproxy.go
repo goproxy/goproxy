@@ -231,8 +231,7 @@ func (g *Goproxy) serveFetch(rw http.ResponseWriter, req *http.Request, name, te
 		return
 	}
 
-	noFetch, _ := strconv.ParseBool(req.Header.Get("Disable-Module-Fetch"))
-	if noFetch {
+	if noFetch, _ := strconv.ParseBool(req.Header.Get("Disable-Module-Fetch")); noFetch {
 		var cacheControlMaxAge int
 		if f.ops == fetchOpsDownload {
 			cacheControlMaxAge = 604800
@@ -260,26 +259,21 @@ func (g *Goproxy) serveFetch(rw http.ResponseWriter, req *http.Request, name, te
 		})
 		return
 	}
-
-	content, err := fr.Open()
-	if err != nil {
-		g.logErrorf("failed to open fetch result: %s: %v", f.name, err)
-		responseInternalServerError(rw, req)
-		return
+	var content string
+	switch f.ops {
+	case fetchOpsQuery:
+		content = marshalInfo(fr.Version, fr.Time)
+	case fetchOpsList:
+		content = strings.Join(fr.Versions, "\n")
 	}
-	defer content.Close()
 
-	if err := g.putCache(req.Context(), f.name, content); err != nil {
+	if err := g.putCache(req.Context(), f.name, strings.NewReader(content)); err != nil {
 		g.logErrorf("failed to cache module file: %s: %v", f.name, err)
 		responseInternalServerError(rw, req)
 		return
-	} else if _, err := content.Seek(0, io.SeekStart); err != nil {
-		g.logErrorf("failed to seek fetch result content: %s: %v", f.name, err)
-		responseInternalServerError(rw, req)
-		return
 	}
 
-	responseSuccess(rw, req, content, f.contentType, 60)
+	responseSuccess(rw, req, strings.NewReader(content), f.contentType, 60)
 }
 
 // serveFetchDownload serves fetch download requests.
@@ -304,9 +298,18 @@ func (g *Goproxy) serveFetchDownload(rw http.ResponseWriter, req *http.Request, 
 		}
 	}
 
-	content, err := fr.Open()
+	var file string
+	switch path.Ext(f.name) {
+	case ".info":
+		file = fr.Info
+	case ".mod":
+		file = fr.GoMod
+	case ".zip":
+		file = fr.Zip
+	}
+	content, err := os.Open(file)
 	if err != nil {
-		g.logErrorf("failed to open fetch result: %s: %v", f.name, err)
+		g.logErrorf("failed to open module file: %s: %v", f.name, err)
 		responseInternalServerError(rw, req)
 		return
 	}
