@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -575,20 +576,14 @@ invalid
 			wantError:    errNotFound,
 		},
 		{
-			n:         15,
-			name:      "example.com/@latest",
-			proxy:     "://invalid",
-			wantError: errors.New(`parse "://invalid": missing protocol scheme`),
-		},
-		{
-			n:            16,
+			n:            15,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, 60) },
 			name:         "example.com/@v/list",
 			proxy:        proxyServer.URL,
 			wantError:    errNotFound,
 		},
 		{
-			n: 17,
+			n: 16,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				responseNotFound(rw, req, 60)
 			},
@@ -598,7 +593,7 @@ invalid
 			wantError: errNotFound,
 		},
 		{
-			n: 18,
+			n: 17,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				if path.Ext(req.URL.Path) == ".info" {
 					responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", 60)
@@ -612,7 +607,7 @@ invalid
 			wantError: errNotFound,
 		},
 		{
-			n: 19,
+			n: 18,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				switch path.Ext(req.URL.Path) {
 				case ".info":
@@ -646,7 +641,11 @@ invalid
 		if err != nil {
 			t.Fatalf("test(%d): unexpected error %q", tt.n, err)
 		}
-		fr, err := f.doProxy(context.Background(), tt.proxy)
+		proxy, err := url.Parse(tt.proxy)
+		if err != nil {
+			t.Fatalf("test(%d): unexpected error %q", tt.n, err)
+		}
+		fr, err := f.doProxy(context.Background(), proxy)
 		if tt.wantError != nil {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)

@@ -472,7 +472,7 @@ func cleanEnvGOPROXY(envGOPROXY string) string {
 }
 
 // walkEnvGOPROXY walks through the proxy list parsed from the envGOPROXY.
-func walkEnvGOPROXY(envGOPROXY string, onProxy func(proxy string) error, onDirect, onOff func() error) error {
+func walkEnvGOPROXY(envGOPROXY string, onProxy func(proxy *url.URL) error, onDirect, onOff func() error) error {
 	if envGOPROXY == "" {
 		return errors.New("missing GOPROXY")
 	}
@@ -496,7 +496,11 @@ func walkEnvGOPROXY(envGOPROXY string, onProxy func(proxy string) error, onDirec
 		case "off":
 			return onOff()
 		}
-		if err := onProxy(proxy); err != nil {
+		u, err := url.Parse(proxy)
+		if err != nil {
+			return err
+		}
+		if err := onProxy(u); err != nil {
 			if fallBackOnError || errors.Is(err, errNotFound) {
 				lastError = err
 				continue

@@ -34,12 +34,8 @@ func (sco *sumdbClientOps) init() {
 		return
 	}
 	if isDirectURL {
-		if err := walkEnvGOPROXY(sco.envGOPROXY, func(proxy string) error {
-			proxyURL, err := parseRawURL(proxy)
-			if err != nil {
-				return err
-			}
-			u := appendURL(proxyURL, "sumdb", name)
+		if err := walkEnvGOPROXY(sco.envGOPROXY, func(proxy *url.URL) error {
+			u := appendURL(proxy, "sumdb", name)
 			if err := httpGet(context.Background(), sco.httpClient, appendURL(u, "/supported").String(), nil); err != nil {
 				return err
 			}

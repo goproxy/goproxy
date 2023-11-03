@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path"
@@ -113,7 +114,7 @@ func (f *fetch) do(ctx context.Context) (*fetchResult, error) {
 		return f.doDirect(ctx)
 	}
 	var r *fetchResult
-	if err := walkEnvGOPROXY(f.g.envGOPROXY, func(proxy string) error {
+	if err := walkEnvGOPROXY(f.g.envGOPROXY, func(proxy *url.URL) error {
 		var err error
 		r, err = f.doProxy(ctx, proxy)
 		return err
@@ -130,13 +131,8 @@ func (f *fetch) do(ctx context.Context) (*fetchResult, error) {
 }
 
 // doProxy executes the f via the proxy.
-func (f *fetch) doProxy(ctx context.Context, proxy string) (*fetchResult, error) {
-	proxyURL, err := parseRawURL(proxy)
-	if err != nil {
-		return nil, err
-	}
-	u := appendURL(proxyURL, f.name).String()
-
+func (f *fetch) doProxy(ctx context.Context, proxy *url.URL) (*fetchResult, error) {
+	u := appendURL(proxy, f.name).String()
 	r := &fetchResult{}
 	switch f.ops {
 	case fetchOpsQuery:
@@ -144,6 +140,7 @@ func (f *fetch) doProxy(ctx context.Context, proxy string) (*fetchResult, error)
 		if err := httpGet(ctx, f.g.httpClient, u, &info); err != nil {
 			return nil, err
 		}
+		var err error
 		r.Version, r.Time, err = unmarshalInfo(info.String())
 		if err != nil {
 			return nil, notFoundErrorf("invalid info response: %w", err)
@@ -169,6 +166,7 @@ func (f *fetch) doProxy(ctx context.Context, proxy string) (*fetchResult, error)
 	case fetchOpsDownload:
 		urlWithoutExt := strings.TrimSuffix(u, path.Ext(u))
 
+		var err error
 		r.Info, err = httpGetTemp(ctx, f.g.httpClient, urlWithoutExt+".info", f.tempDir)
 		if err != nil {
 			return nil, err
