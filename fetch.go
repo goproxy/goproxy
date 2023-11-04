@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/exec"
 	"path"
-	"sort"
 	"strings"
 	"time"
 
@@ -150,19 +149,20 @@ func (f *fetch) doProxy(ctx context.Context, proxy *url.URL) (*fetchResult, erro
 		if err := httpGet(ctx, f.g.httpClient, u, &list); err != nil {
 			return nil, err
 		}
-
-		lines := strings.Split(list.String(), "\n")
-		r.Versions = make([]string, 0, len(lines))
-		for _, line := range lines {
-			lineParts := strings.Fields(line)
-			if len(lineParts) > 0 && semver.IsValid(lineParts[0]) && !module.IsPseudoVersion(lineParts[0]) {
-				r.Versions = append(r.Versions, lineParts[0])
+		r.Versions = strings.Split(list.String(), "\n")
+		for i := range r.Versions {
+			parts := strings.Fields(r.Versions[i])
+			if len(parts) > 0 && semver.IsValid(parts[0]) && !module.IsPseudoVersion(parts[0]) {
+				r.Versions[i] = parts[0]
+			} else {
+				r.Versions[i] = ""
 			}
 		}
-
-		sort.Slice(r.Versions, func(i, j int) bool {
-			return semver.Compare(r.Versions[i], r.Versions[j]) < 0
-		})
+		semver.Sort(r.Versions)
+		firstNotEmptyIndex := 0
+		for ; firstNotEmptyIndex < len(r.Versions) && r.Versions[firstNotEmptyIndex] == ""; firstNotEmptyIndex++ {
+		}
+		r.Versions = r.Versions[firstNotEmptyIndex:]
 	case fetchOpsDownload:
 		urlWithoutExt := strings.TrimSuffix(u, path.Ext(u))
 
@@ -263,9 +263,7 @@ func (f *fetch) doDirect(ctx context.Context) (*fetchResult, error) {
 	}
 	switch f.ops {
 	case fetchOpsList:
-		sort.Slice(r.Versions, func(i, j int) bool {
-			return semver.Compare(r.Versions[i], r.Versions[j]) < 0
-		})
+		semver.Sort(r.Versions)
 	case fetchOpsDownload:
 		if err := checkAndFormatInfoFile(r.Info); err != nil {
 			return nil, err
