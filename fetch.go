@@ -327,9 +327,11 @@ func unmarshalInfo(s string) (string, time.Time, error) {
 	}
 	if err := json.Unmarshal([]byte(s), &info); err != nil {
 		return "", time.Time{}, err
-	} else if !semver.IsValid(info.Version) {
+	}
+	if !semver.IsValid(info.Version) {
 		return "", time.Time{}, errors.New("empty version")
-	} else if info.Time.IsZero() {
+	}
+	if info.Time.IsZero() {
 		return "", time.Time{}, errors.New("zero time")
 	}
 	return info.Version, info.Time, nil
@@ -358,7 +360,6 @@ func checkModFile(name string) error {
 		return err
 	}
 	defer f.Close()
-
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		if strings.HasPrefix(strings.TrimSpace(scanner.Text()), "module") {
@@ -368,29 +369,27 @@ func checkModFile(name string) error {
 	if err := scanner.Err(); err != nil {
 		return err
 	}
-
 	return notExistErrorf("invalid mod file: missing module directive")
 }
 
 // verifyModFile uses the sumdbClient to verify the mod file targeted by the
 // name with the modulePath and moduleVersion.
 func verifyModFile(sumdbClient *sumdb.Client, name, modulePath, moduleVersion string) error {
-	gosumLines, err := sumdbClient.Lookup(modulePath, moduleVersion+"/go.mod")
+	sumLines, err := sumdbClient.Lookup(modulePath, moduleVersion+"/go.mod")
 	if err != nil {
 		return err
 	}
-
-	modHash, err := dirhash.DefaultHash([]string{"go.mod"}, func(string) (io.ReadCloser, error) {
-		return os.Open(name)
-	})
+	modHash, err := dirhash.DefaultHash([]string{"go.mod"}, func(string) (io.ReadCloser, error) { return os.Open(name) })
 	if err != nil {
 		return err
 	}
-	if !stringSliceContains(gosumLines, fmt.Sprintf("%s %s/go.mod %s", modulePath, moduleVersion, modHash)) {
-		return notExistErrorf("%s@%s: invalid version: untrusted revision %s", modulePath, moduleVersion, moduleVersion)
+	modSumLine := fmt.Sprintf("%s %s/go.mod %s", modulePath, moduleVersion, modHash)
+	for _, sumLine := range sumLines {
+		if sumLine == modSumLine {
+			return nil
+		}
 	}
-
-	return nil
+	return notExistErrorf("%s@%s: invalid version: untrusted revision %s", modulePath, moduleVersion, moduleVersion)
 }
 
 // checkZipFile checks the zip file targeted by the name with the modulePath and
@@ -405,28 +404,19 @@ func checkZipFile(name, modulePath, moduleVersion string) error {
 // verifyZipFile uses the sumdbClient to verify the zip file targeted by the
 // name with the modulePath and moduleVersion.
 func verifyZipFile(sumdbClient *sumdb.Client, name, modulePath, moduleVersion string) error {
-	gosumLines, err := sumdbClient.Lookup(modulePath, moduleVersion)
+	sumLines, err := sumdbClient.Lookup(modulePath, moduleVersion)
 	if err != nil {
 		return err
 	}
-
 	zipHash, err := dirhash.HashZip(name, dirhash.DefaultHash)
 	if err != nil {
 		return err
 	}
-	if !stringSliceContains(gosumLines, fmt.Sprintf("%s %s %s", modulePath, moduleVersion, zipHash)) {
-		return notExistErrorf("%s@%s: invalid version: untrusted revision %s", modulePath, moduleVersion, moduleVersion)
-	}
-
-	return nil
-}
-
-// stringSliceContains reports whether the ss contains the s.
-func stringSliceContains(ss []string, s string) bool {
-	for _, v := range ss {
-		if v == s {
-			return true
+	zipSumLine := fmt.Sprintf("%s %s %s", modulePath, moduleVersion, zipHash)
+	for _, sumLine := range sumLines {
+		if sumLine == zipSumLine {
+			return nil
 		}
 	}
-	return false
+	return notExistErrorf("%s@%s: invalid version: untrusted revision %s", modulePath, moduleVersion, moduleVersion)
 }

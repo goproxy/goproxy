@@ -1394,19 +1394,3 @@ func TestVerifyZipFile(t *testing.T) {
 		}
 	}
 }
-
-func TestStringSliceContains(t *testing.T) {
-	for _, tt := range []struct {
-		n            int
-		ss           []string
-		s            string
-		wantContains bool
-	}{
-		{1, []string{"foo", "bar"}, "foo", true},
-		{2, []string{"foo", "bar"}, "foobar", false},
-	} {
-		if got, want := stringSliceContains(tt.ss, tt.s), tt.wantContains; got != want {
-			t.Errorf("test(%d): got %t, want %t", tt.n, got, want)
-		}
-	}
-}
