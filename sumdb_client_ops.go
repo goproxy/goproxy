@@ -45,7 +45,7 @@ func (sco *sumdbClientOps) init() {
 			return nil
 		}, func() error {
 			return nil
-		}); err != nil && !errors.Is(err, errNotFound) {
+		}); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			sco.initError = err
 			return
 		}

@@ -3,6 +3,7 @@ package goproxy
 import (
 	"errors"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -78,14 +79,13 @@ func TestResponseNotFound(t *testing.T) {
 		{2, []any{}, "not found"},
 		{3, []any{""}, "not found"},
 		{4, []any{"not found"}, "not found"},
-		{5, []any{"not found"}, "not found"},
-		{6, []any{errNotFound}, "not found"},
-		{7, []any{"foobar"}, "not found: foobar"},
-		{8, []any{"foo", "bar"}, "not found: foobar"},
-		{9, []any{errors.New("foo"), "bar"}, "not found: foobar"},
-		{10, []any{"not found: foobar"}, "not found: foobar"},
-		{11, []any{"bad request: foobar"}, "not found: foobar"},
-		{12, []any{"gone: foobar"}, "not found: foobar"},
+		{5, []any{fs.ErrNotExist}, "not found: file does not exist"},
+		{6, []any{"foobar"}, "not found: foobar"},
+		{7, []any{"foo", "bar"}, "not found: foobar"},
+		{8, []any{errors.New("foo"), "bar"}, "not found: foobar"},
+		{9, []any{"not found: foobar"}, "not found: foobar"},
+		{10, []any{"bad request: foobar"}, "not found: foobar"},
+		{11, []any{"gone: foobar"}, "not found: foobar"},
 	} {
 		rec := httptest.NewRecorder()
 		responseNotFound(rec, httptest.NewRequest("", "/", nil), 60, tt.msgs...)
@@ -275,7 +275,7 @@ func TestResponseError(t *testing.T) {
 	}{
 		{
 			n:                1,
-			err:              errNotFound,
+			err:              fs.ErrNotExist,
 			wantStatusCode:   http.StatusNotFound,
 			wantCacheControl: "public, max-age=600",
 			wantContent:      "not found",
@@ -296,7 +296,7 @@ func TestResponseError(t *testing.T) {
 		},
 		{
 			n:                4,
-			err:              notFoundErrorf("cache sensitive"),
+			err:              notExistErrorf("cache sensitive"),
 			cacheSensitive:   true,
 			wantStatusCode:   http.StatusNotFound,
 			wantCacheControl: "public, max-age=60",
@@ -304,14 +304,14 @@ func TestResponseError(t *testing.T) {
 		},
 		{
 			n:                5,
-			err:              notFoundErrorf("not found: bad upstream"),
+			err:              notExistErrorf("not found: bad upstream"),
 			wantStatusCode:   http.StatusNotFound,
 			wantCacheControl: "must-revalidate, no-cache, no-store",
 			wantContent:      "not found: bad upstream",
 		},
 		{
 			n:                6,
-			err:              notFoundErrorf("not found: fetch timed out"),
+			err:              notExistErrorf("not found: fetch timed out"),
 			wantStatusCode:   http.StatusNotFound,
 			wantCacheControl: "must-revalidate, no-cache, no-store",
 			wantContent:      "not found: fetch timed out",

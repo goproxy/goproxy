@@ -277,7 +277,7 @@ func TestFetchDo(t *testing.T) {
 				return nil
 			},
 			name:      "example.com/@latest",
-			wantError: notFoundErrorf("module example.com: reading %s/example.com/@v/list: 404 Not Found\n\tserver response: not found", proxyServer.URL),
+			wantError: notExistErrorf("module example.com: reading %s/example.com/@v/list: 404 Not Found\n\tserver response: not found", proxyServer.URL),
 		},
 		{
 			n:            3,
@@ -292,7 +292,7 @@ func TestFetchDo(t *testing.T) {
 				return nil
 			},
 			name:      "example.com/@latest",
-			wantError: notFoundErrorf("example.com@latest: module lookup disabled by GOPROXY=off"),
+			wantError: notExistErrorf("example.com@latest: module lookup disabled by GOPROXY=off"),
 		},
 		{
 			n:            4,
@@ -302,7 +302,7 @@ func TestFetchDo(t *testing.T) {
 				"GOSUMDB=off",
 			},
 			name:      "example.com/@latest",
-			wantError: notFoundErrorf("module lookup disabled by GOPROXY=off"),
+			wantError: notExistErrorf("module lookup disabled by GOPROXY=off"),
 		},
 	} {
 		setProxyHandler(tt.proxyHandler)
@@ -322,7 +322,11 @@ func TestFetchDo(t *testing.T) {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
 			}
-			if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
+			if tt.wantError != fs.ErrNotExist && errors.Is(tt.wantError, fs.ErrNotExist) {
+				if got, want := err, tt.wantError; !errors.Is(got, fs.ErrNotExist) || got.Error() != want.Error() {
+					t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+				}
+			} else if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		} else {
@@ -492,7 +496,7 @@ invalid
 			},
 			name:      "example.com/@latest",
 			proxy:     proxyServer.URL,
-			wantError: notFoundErrorf("invalid info response: zero time"),
+			wantError: notExistErrorf("invalid info response: zero time"),
 		},
 		{
 			n: 9,
@@ -502,7 +506,7 @@ invalid
 			name:      "example.com/@v/v1.0.0.info",
 			tempDir:   t.TempDir(),
 			proxy:     proxyServer.URL,
-			wantError: notFoundErrorf("invalid info file: zero time"),
+			wantError: notExistErrorf("invalid info file: zero time"),
 		},
 		{
 			n: 10,
@@ -521,7 +525,7 @@ invalid
 			name:      "example.com/@v/v1.0.0.mod",
 			tempDir:   t.TempDir(),
 			proxy:     proxyServer.URL,
-			wantError: notFoundErrorf("invalid mod file: missing module directive"),
+			wantError: notExistErrorf("invalid mod file: missing module directive"),
 		},
 		{
 			n:            11,
@@ -534,7 +538,7 @@ invalid
 			name:      "example.com/@v/v1.0.0.mod",
 			tempDir:   t.TempDir(),
 			proxy:     proxyServer.URL,
-			wantError: notFoundErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
+			wantError: notExistErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
 		},
 		{
 			n: 12,
@@ -553,7 +557,7 @@ invalid
 			name:      "example.com/@v/v1.0.0.zip",
 			tempDir:   t.TempDir(),
 			proxy:     proxyServer.URL,
-			wantError: notFoundErrorf("invalid zip file: zip: not a valid zip file"),
+			wantError: notExistErrorf("invalid zip file: zip: not a valid zip file"),
 		},
 		{
 			n:            13,
@@ -566,31 +570,29 @@ invalid
 			name:      "example.com/@v/v1.0.0.zip",
 			tempDir:   t.TempDir(),
 			proxy:     proxyServer.URL,
-			wantError: notFoundErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
+			wantError: notExistErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
 		},
 		{
 			n:            14,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, 60) },
 			name:         "example.com/@latest",
 			proxy:        proxyServer.URL,
-			wantError:    errNotFound,
+			wantError:    notExistErrorf("not found"),
 		},
 		{
 			n:            15,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, 60) },
 			name:         "example.com/@v/list",
 			proxy:        proxyServer.URL,
-			wantError:    errNotFound,
+			wantError:    notExistErrorf("not found"),
 		},
 		{
-			n: 16,
-			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				responseNotFound(rw, req, 60)
-			},
-			name:      "example.com/@v/v1.0.0.info",
-			tempDir:   t.TempDir(),
-			proxy:     proxyServer.URL,
-			wantError: errNotFound,
+			n:            16,
+			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, 60) },
+			name:         "example.com/@v/v1.0.0.info",
+			tempDir:      t.TempDir(),
+			proxy:        proxyServer.URL,
+			wantError:    notExistErrorf("not found"),
 		},
 		{
 			n: 17,
@@ -604,7 +606,7 @@ invalid
 			name:      "example.com/@v/v1.0.0.mod",
 			tempDir:   t.TempDir(),
 			proxy:     proxyServer.URL,
-			wantError: errNotFound,
+			wantError: notExistErrorf("not found"),
 		},
 		{
 			n: 18,
@@ -621,7 +623,7 @@ invalid
 			name:      "example.com/@v/v1.0.0.zip",
 			tempDir:   t.TempDir(),
 			proxy:     proxyServer.URL,
-			wantError: errNotFound,
+			wantError: notExistErrorf("not found"),
 		},
 	} {
 		setProxyHandler(tt.proxyHandler)
@@ -650,7 +652,11 @@ invalid
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
 			}
-			if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
+			if tt.wantError != fs.ErrNotExist && errors.Is(tt.wantError, fs.ErrNotExist) {
+				if got, want := err, tt.wantError; !errors.Is(got, fs.ErrNotExist) || got.Error() != want.Error() {
+					t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+				}
+			} else if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		} else {
@@ -818,7 +824,7 @@ func TestFetchDoDirect(t *testing.T) {
 		{
 			n:         7,
 			name:      "example.com/@v/v1.1.0.info",
-			wantError: notFoundErrorf("zip for example.com@v1.1.0 has unexpected file example.com@v1.0.0/go.mod"),
+			wantError: notExistErrorf("zip for example.com@v1.1.0 has unexpected file example.com@v1.0.0/go.mod"),
 		},
 		{
 			n:          8,
@@ -835,7 +841,7 @@ func TestFetchDoDirect(t *testing.T) {
 		{
 			n:         10,
 			name:      "example.com/@v/v1.2.0.info",
-			wantError: errNotFound,
+			wantError: fs.ErrNotExist,
 		},
 		{
 			n:    11,
@@ -844,7 +850,7 @@ func TestFetchDoDirect(t *testing.T) {
 				f.modAtVer = "invalid"
 				return nil
 			},
-			wantError: errNotFound,
+			wantError: fs.ErrNotExist,
 		},
 		{
 			n: 12,
@@ -854,7 +860,7 @@ func TestFetchDoDirect(t *testing.T) {
 				return []byte(gosum), nil
 			})),
 			name:      "example.com/@v/v1.0.0.info",
-			wantError: notFoundErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
+			wantError: notExistErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
 		},
 		{
 			n: 13,
@@ -864,7 +870,7 @@ func TestFetchDoDirect(t *testing.T) {
 				return []byte(gosum), nil
 			})),
 			name:      "example.com/@v/v1.0.0.info",
-			wantError: notFoundErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
+			wantError: notExistErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
 		},
 	} {
 		ctx := context.Background()
@@ -909,7 +915,11 @@ func TestFetchDoDirect(t *testing.T) {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
 			}
-			if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
+			if tt.wantError != fs.ErrNotExist && errors.Is(tt.wantError, fs.ErrNotExist) {
+				if got, want := err, tt.wantError; !errors.Is(got, fs.ErrNotExist) || got.Error() != want.Error() {
+					t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+				}
+			} else if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		} else {
@@ -1041,7 +1051,7 @@ func TestCheckAndFormatInfoFile(t *testing.T) {
 		{
 			n:         3,
 			info:      "{}",
-			wantError: notFoundErrorf("invalid info file: empty version"),
+			wantError: notExistErrorf("invalid info file: empty version"),
 		},
 		{
 			n:         4,
@@ -1060,7 +1070,11 @@ func TestCheckAndFormatInfoFile(t *testing.T) {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
 			}
-			if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
+			if tt.wantError != fs.ErrNotExist && errors.Is(tt.wantError, fs.ErrNotExist) {
+				if got, want := err, tt.wantError; !errors.Is(got, fs.ErrNotExist) || got.Error() != want.Error() {
+					t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+				}
+			} else if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		} else {
@@ -1084,7 +1098,7 @@ func TestCheckModFile(t *testing.T) {
 	}{
 		{1, "module", nil},
 		{2, "// foobar\nmodule foobar", nil},
-		{3, "foobar", notFoundErrorf("invalid mod file: missing module directive")},
+		{3, "foobar", notExistErrorf("invalid mod file: missing module directive")},
 		{4, "", fs.ErrNotExist},
 	} {
 		modFile := filepath.Join(t.TempDir(), "mod")
@@ -1098,7 +1112,11 @@ func TestCheckModFile(t *testing.T) {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
 			}
-			if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
+			if tt.wantError != fs.ErrNotExist && errors.Is(tt.wantError, fs.ErrNotExist) {
+				if got, want := err, tt.wantError; !errors.Is(got, fs.ErrNotExist) || got.Error() != want.Error() {
+					t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+				}
+			} else if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		} else {
@@ -1168,7 +1186,7 @@ func TestVerifyModFile(t *testing.T) {
 			modFile:       modFile,
 			modulePath:    "example.com",
 			moduleVersion: "v1.1.0",
-			wantError:     notFoundErrorf("example.com@v1.1.0/go.mod: bad upstream"),
+			wantError:     errors.New("example.com@v1.1.0/go.mod: bad upstream"),
 		},
 		{
 			n:             3,
@@ -1182,7 +1200,7 @@ func TestVerifyModFile(t *testing.T) {
 			modFile:       modFile2,
 			modulePath:    "example.com",
 			moduleVersion: "v1.0.0",
-			wantError:     notFoundErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
+			wantError:     notExistErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
 		},
 	} {
 		err := verifyModFile(g.sumdbClient, tt.modFile, tt.modulePath, tt.moduleVersion)
@@ -1190,7 +1208,11 @@ func TestVerifyModFile(t *testing.T) {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
 			}
-			if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
+			if tt.wantError != fs.ErrNotExist && errors.Is(tt.wantError, fs.ErrNotExist) {
+				if got, want := err, tt.wantError; !errors.Is(got, fs.ErrNotExist) || got.Error() != want.Error() {
+					t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+				}
+			} else if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		} else {
@@ -1224,7 +1246,7 @@ func TestCheckZipFile(t *testing.T) {
 			zipFile:       zipFile,
 			modulePath:    "example.com",
 			moduleVersion: "v1.1.0",
-			wantError:     notFoundErrorf(`invalid zip file: example.com@v1.0.0/go.mod: path does not have prefix "example.com@v1.1.0/"`),
+			wantError:     notExistErrorf(`invalid zip file: example.com@v1.0.0/go.mod: path does not have prefix "example.com@v1.1.0/"`),
 		},
 		{
 			n:             3,
@@ -1239,7 +1261,11 @@ func TestCheckZipFile(t *testing.T) {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
 			}
-			if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
+			if tt.wantError != fs.ErrNotExist && errors.Is(tt.wantError, fs.ErrNotExist) {
+				if got, want := err, tt.wantError; !errors.Is(got, fs.ErrNotExist) || got.Error() != want.Error() {
+					t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+				}
+			} else if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		} else {
@@ -1311,7 +1337,7 @@ func TestVerifyZipFile(t *testing.T) {
 			zipFile:       zipFile,
 			modulePath:    "example.com",
 			moduleVersion: "v1.1.0",
-			wantError:     notFoundErrorf("example.com@v1.1.0: bad upstream"),
+			wantError:     errors.New("example.com@v1.1.0: bad upstream"),
 		},
 		{
 			n:             3,
@@ -1325,7 +1351,7 @@ func TestVerifyZipFile(t *testing.T) {
 			zipFile:       zipFile2,
 			modulePath:    "example.com",
 			moduleVersion: "v1.0.0",
-			wantError:     notFoundErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
+			wantError:     notExistErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
 		},
 	} {
 		err := verifyZipFile(g.sumdbClient, tt.zipFile, tt.modulePath, tt.moduleVersion)
@@ -1333,7 +1359,11 @@ func TestVerifyZipFile(t *testing.T) {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
 			}
-			if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
+			if tt.wantError != fs.ErrNotExist && errors.Is(tt.wantError, fs.ErrNotExist) {
+				if got, want := err, tt.wantError; !errors.Is(got, fs.ErrNotExist) || got.Error() != want.Error() {
+					t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+				}
+			} else if got, want := err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		} else {

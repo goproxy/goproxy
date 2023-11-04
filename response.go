@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"strings"
 	"time"
@@ -99,9 +100,12 @@ func responseSuccess(rw http.ResponseWriter, req *http.Request, content io.Reade
 
 // responseError responses error to the client with the err and cacheSensitive.
 func responseError(rw http.ResponseWriter, req *http.Request, err error, cacheSensitive bool) {
-	if errors.Is(err, errNotFound) {
+	if errors.Is(err, fs.ErrNotExist) {
 		cacheControlMaxAge := -1
 		msg := err.Error()
+		if err == fs.ErrNotExist {
+			msg = "not found"
+		}
 		if strings.Contains(msg, errBadUpstream.Error()) {
 			msg = errBadUpstream.Error()
 		} else if strings.Contains(msg, errFetchTimedOut.Error()) {
@@ -116,8 +120,7 @@ func responseError(rw http.ResponseWriter, req *http.Request, err error, cacheSe
 		responseNotFound(rw, req, -1, errBadUpstream)
 	} else if t, ok := err.(interface{ Timeout() bool }); (ok && t.Timeout()) ||
 		errors.Is(err, context.DeadlineExceeded) ||
-		errors.Is(err, errFetchTimedOut) ||
-		strings.Contains(err.Error(), errFetchTimedOut.Error()) {
+		errors.Is(err, errFetchTimedOut) {
 		responseNotFound(rw, req, -1, errFetchTimedOut)
 	} else {
 		responseInternalServerError(rw, req)

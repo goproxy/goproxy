@@ -501,7 +501,7 @@ func walkEnvGOPROXY(envGOPROXY string, onProxy func(proxy *url.URL) error, onDir
 			return err
 		}
 		if err := onProxy(u); err != nil {
-			if fallBackOnError || errors.Is(err, errNotFound) {
+			if fallBackOnError || errors.Is(err, fs.ErrNotExist) {
 				lastError = err
 				continue
 			}

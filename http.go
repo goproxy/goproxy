@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,9 +16,6 @@ import (
 )
 
 var (
-	// errNotFound indicates something was not found.
-	errNotFound = errors.New("not found")
-
 	// errBadUpstream indicates an upstream is in a bad state.
 	errBadUpstream = errors.New("bad upstream")
 
@@ -25,25 +23,24 @@ var (
 	errFetchTimedOut = errors.New("fetch timed out")
 )
 
-// notFoundError is an error that indicates something was not found. It is used
-// to wrap other errors into an equivalent to [errNotFound].
+// notExistError is like [fs.ErrNotExist] but with a custom underlying error.
 //
-// NOTE: Do not use [notFoundError] directly, use [notFoundErrorf] instead.
-type notFoundError struct{ err error }
+// NOTE: Do not use [notExistError] directly, use [notExistErrorf] instead.
+type notExistError struct{ err error }
 
 // Error implements [error].
-func (nfe *notFoundError) Error() string { return nfe.err.Error() }
+func (e *notExistError) Error() string { return e.err.Error() }
 
 // Unwrap returns the underlying error.
-func (nfe *notFoundError) Unwrap() error { return nfe.err }
+func (e *notExistError) Unwrap() error { return e.err }
 
-// Is reports whether the target is [errNotFound].
-func (notFoundError) Is(target error) bool { return target == errNotFound }
+// Is reports whether the target is [fs.ErrNotExist].
+func (notExistError) Is(target error) bool { return target == fs.ErrNotExist }
 
-// notFoundErrorf formats according to a format specifier and returns the string
-// as a value that satisfies error that is equivalent to [errNotFound].
-func notFoundErrorf(format string, v ...interface{}) error {
-	return &notFoundError{err: fmt.Errorf(format, v...)}
+// notExistErrorf formats according to a format specifier and returns the string
+// as a value that satisfies error that is equivalent to [fs.ErrNotExist].
+func notExistErrorf(format string, v ...interface{}) error {
+	return &notExistError{err: fmt.Errorf(format, v...)}
 }
 
 // httpGet gets the content from the given url and writes it to the dst.
@@ -88,7 +85,7 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 		case http.StatusBadRequest,
 			http.StatusNotFound,
 			http.StatusGone:
-			return notFoundErrorf(string(respBody))
+			return notExistErrorf(string(respBody))
 		case http.StatusTooManyRequests,
 			http.StatusInternalServerError,
 			http.StatusBadGateway,

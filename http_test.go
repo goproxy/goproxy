@@ -18,34 +18,34 @@ import (
 	"time"
 )
 
-func TestNotFoundError(t *testing.T) {
+func TestNotExistError(t *testing.T) {
 	for _, tt := range []struct {
 		n         int
 		err       error
 		wantError error
 	}{
-		{1, notFoundErrorf(""), errors.New("")},
-		{2, notFoundErrorf("foobar"), errors.New("foobar")},
-		{3, notFoundErrorf("foobar"), errNotFound},
+		{1, notExistErrorf(""), errors.New("")},
+		{2, notExistErrorf("foobar"), errors.New("foobar")},
+		{3, notExistErrorf("foobar"), fs.ErrNotExist},
 	} {
 		if got, want := tt.err, tt.wantError; !errors.Is(got, want) && got.Error() != want.Error() {
 			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 		}
 	}
 
-	nfe := &notFoundError{err: errors.New("foobar")}
+	e := &notExistError{err: errors.New("foobar")}
 	for _, tt := range []struct {
 		n      int
 		err    error
 		wantIs bool
 	}{
-		{1, errNotFound, true},
+		{1, fs.ErrNotExist, true},
 		{2, io.EOF, false},
 	} {
-		if got, want := nfe.Is(tt.err), tt.wantIs; got != want {
+		if got, want := e.Is(tt.err), tt.wantIs; got != want {
 			t.Errorf("test(%d): got %t, want %t", tt.n, got, want)
 		}
-		if got, want := errors.Is(nfe, tt.err), tt.wantIs; got != want {
+		if got, want := errors.Is(e, tt.err), tt.wantIs; got != want {
 			t.Errorf("test(%d): got %t, want %t", tt.n, got, want)
 		}
 	}
@@ -78,7 +78,7 @@ func TestHTTPGet(t *testing.T) {
 				rw.WriteHeader(http.StatusNotFound)
 				fmt.Fprint(rw, "not found")
 			},
-			wantError: errNotFound,
+			wantError: fs.ErrNotExist,
 		},
 		{
 			n: 3,
@@ -208,7 +208,7 @@ func TestHTTPGetTemp(t *testing.T) {
 				fmt.Fprint(rw, "not found")
 			},
 			tempDir:   os.TempDir(),
-			wantError: errNotFound,
+			wantError: fs.ErrNotExist,
 		},
 		{
 			n:         3,

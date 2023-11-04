@@ -123,7 +123,7 @@ func (f *fetch) do(ctx context.Context) (*fetchResult, error) {
 		r, err = f.doDirect(ctx)
 		return err
 	}, func() error {
-		return notFoundErrorf("module lookup disabled by GOPROXY=off")
+		return notExistErrorf("module lookup disabled by GOPROXY=off")
 	}); err != nil {
 		return nil, err
 	}
@@ -143,7 +143,7 @@ func (f *fetch) doProxy(ctx context.Context, proxy *url.URL) (*fetchResult, erro
 		var err error
 		r.Version, r.Time, err = unmarshalInfo(info.String())
 		if err != nil {
-			return nil, notFoundErrorf("invalid info response: %w", err)
+			return nil, notExistErrorf("invalid info response: %w", err)
 		}
 	case fetchOpsList:
 		var list bytes.Buffer
@@ -254,7 +254,7 @@ func (f *fetch) doDirect(ctx context.Context) (*fetchResult, error) {
 		msg = strings.TrimPrefix(msg, "go: ")
 		msg = strings.TrimPrefix(msg, "go list -m: ")
 		msg = strings.TrimRight(msg, "\n")
-		return nil, notFoundErrorf(msg)
+		return nil, notExistErrorf(msg)
 	}
 
 	r := &fetchResult{}
@@ -345,7 +345,7 @@ func checkAndFormatInfoFile(name string) error {
 	}
 	infoVersion, infoTime, err := unmarshalInfo(string(b))
 	if err != nil {
-		return notFoundErrorf("invalid info file: %w", err)
+		return notExistErrorf("invalid info file: %w", err)
 	}
 	if info := marshalInfo(infoVersion, infoTime); info != string(b) {
 		return os.WriteFile(name, []byte(info), 0o644)
@@ -371,7 +371,7 @@ func checkModFile(name string) error {
 		return err
 	}
 
-	return notFoundErrorf("invalid mod file: missing module directive")
+	return notExistErrorf("invalid mod file: missing module directive")
 }
 
 // verifyModFile uses the sumdbClient to verify the mod file targeted by the
@@ -389,7 +389,7 @@ func verifyModFile(sumdbClient *sumdb.Client, name, modulePath, moduleVersion st
 		return err
 	}
 	if !stringSliceContains(gosumLines, fmt.Sprintf("%s %s/go.mod %s", modulePath, moduleVersion, modHash)) {
-		return notFoundErrorf("%s@%s: invalid version: untrusted revision %s", modulePath, moduleVersion, moduleVersion)
+		return notExistErrorf("%s@%s: invalid version: untrusted revision %s", modulePath, moduleVersion, moduleVersion)
 	}
 
 	return nil
@@ -399,7 +399,7 @@ func verifyModFile(sumdbClient *sumdb.Client, name, modulePath, moduleVersion st
 // moduleVersion.
 func checkZipFile(name, modulePath, moduleVersion string) error {
 	if _, err := zip.CheckZip(module.Version{Path: modulePath, Version: moduleVersion}, name); err != nil {
-		return notFoundErrorf("invalid zip file: %w", err)
+		return notExistErrorf("invalid zip file: %w", err)
 	}
 	return nil
 }
@@ -417,7 +417,7 @@ func verifyZipFile(sumdbClient *sumdb.Client, name, modulePath, moduleVersion st
 		return err
 	}
 	if !stringSliceContains(gosumLines, fmt.Sprintf("%s %s %s", modulePath, moduleVersion, zipHash)) {
-		return notFoundErrorf("%s@%s: invalid version: untrusted revision %s", modulePath, moduleVersion, moduleVersion)
+		return notExistErrorf("%s@%s: invalid version: untrusted revision %s", modulePath, moduleVersion, moduleVersion)
 	}
 
 	return nil
