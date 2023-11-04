@@ -10,8 +10,6 @@ import (
 	"io"
 	"io/fs"
 	"log"
-	"math"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -19,7 +17,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"golang.org/x/mod/sumdb"
 	"golang.org/x/mod/sumdb/note"
@@ -596,33 +593,6 @@ func cleanPath(p string) string {
 		return np + "/"
 	}
 	return np
-}
-
-var (
-	backoffRand      = rand.New(rand.NewSource(time.Now().UnixNano()))
-	backoffRandMutex sync.Mutex
-)
-
-// backoffSleep computes the exponential backoff sleep duration based on the
-// algorithm described in https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/.
-func backoffSleep(base, cap time.Duration, attempt int) time.Duration {
-	var pow time.Duration
-	if attempt < 63 {
-		pow = 1 << attempt
-	} else {
-		pow = math.MaxInt64
-	}
-
-	sleep := base * pow
-	if sleep > cap || sleep/pow != base {
-		sleep = cap
-	}
-
-	backoffRandMutex.Lock()
-	sleep = time.Duration(backoffRand.Int63n(int64(sleep)))
-	backoffRandMutex.Unlock()
-
-	return sleep
 }
 
 // stringSliceContains reports whether the ss contains the s.

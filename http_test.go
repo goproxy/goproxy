@@ -283,3 +283,19 @@ func TestAppendURL(t *testing.T) {
 		}
 	}
 }
+
+func TestBackoffSleep(t *testing.T) {
+	for _, tt := range []struct {
+		n       int
+		base    time.Duration
+		cap     time.Duration
+		attempt int
+	}{
+		{1, 100 * time.Millisecond, time.Second, 0},
+		{2, time.Minute, time.Hour, 100},
+	} {
+		if got, want := backoffSleep(tt.base, tt.cap, tt.attempt) <= tt.cap, true; got != want {
+			t.Errorf("test(%d): got %t, want %t", tt.n, got, want)
+		}
+	}
+}
