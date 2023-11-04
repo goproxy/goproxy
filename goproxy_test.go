@@ -1266,30 +1266,6 @@ func TestStringSliceContains(t *testing.T) {
 	}
 }
 
-func TestGlobsMatchPath(t *testing.T) {
-	for _, tt := range []struct {
-		n         int
-		globs     string
-		target    string
-		wantMatch bool
-	}{
-		{1, "foobar", "foobar", true},
-		{2, "foo", "foo/bar", true},
-		{3, "foo", "bar/foo", false},
-		{4, "foo", "foobar", false},
-		{5, "foo/bar", "foo/bar", true},
-		{6, "foo/bar", "foobar", false},
-		{7, "foo,bar", "foo", true},
-		{8, "foo,", "foo", true},
-		{9, ",bar", "bar", true},
-		{10, "", "foobar", false},
-	} {
-		if got, want := globsMatchPath(tt.globs, tt.target), tt.wantMatch; got != want {
-			t.Errorf("test(%d): got %t, want %t", tt.n, got, want)
-		}
-	}
-}
-
 func newHTTPTestServer() (server *httptest.Server, setHandler func(http.HandlerFunc)) {
 	var (
 		handler      http.HandlerFunc

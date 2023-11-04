@@ -104,13 +104,13 @@ func newFetch(g *Goproxy, name, tempDir string) (*fetch, error) {
 		return nil, err
 	}
 	f.modAtVer = f.modulePath + "@" + f.moduleVersion
-	f.requiredToVerify = g.envGOSUMDB != "off" && !globsMatchPath(g.envGONOSUMDB, f.modulePath)
+	f.requiredToVerify = g.envGOSUMDB != "off" && !module.MatchPrefixPatterns(g.envGONOSUMDB, f.modulePath)
 	return f, nil
 }
 
 // do executes the f.
 func (f *fetch) do(ctx context.Context) (*fetchResult, error) {
-	if globsMatchPath(f.g.envGONOPROXY, f.modulePath) {
+	if module.MatchPrefixPatterns(f.g.envGONOPROXY, f.modulePath) {
 		return f.doDirect(ctx)
 	}
 	var r *fetchResult
