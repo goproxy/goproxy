@@ -1223,6 +1223,27 @@ func TestVerifyModFile(t *testing.T) {
 	}
 }
 
+func writeZipFile(name string, files map[string][]byte) error {
+	f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	zw := zip.NewWriter(f)
+	for k, v := range files {
+		w, err := zw.Create(k)
+		if err != nil {
+			return err
+		}
+		if _, err := w.Write(v); err != nil {
+			return err
+		}
+	}
+	if err := zw.Close(); err != nil {
+		return err
+	}
+	return f.Close()
+}
+
 func TestCheckZipFile(t *testing.T) {
 	zipFile := filepath.Join(t.TempDir(), "zip")
 	if err := writeZipFile(zipFile, map[string][]byte{"example.com@v1.0.0/go.mod": []byte("module example.com")}); err != nil {
@@ -1374,23 +1395,18 @@ func TestVerifyZipFile(t *testing.T) {
 	}
 }
 
-func writeZipFile(name string, files map[string][]byte) error {
-	f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
-	if err != nil {
-		return err
-	}
-	zw := zip.NewWriter(f)
-	for k, v := range files {
-		w, err := zw.Create(k)
-		if err != nil {
-			return err
+func TestStringSliceContains(t *testing.T) {
+	for _, tt := range []struct {
+		n            int
+		ss           []string
+		s            string
+		wantContains bool
+	}{
+		{1, []string{"foo", "bar"}, "foo", true},
+		{2, []string{"foo", "bar"}, "foobar", false},
+	} {
+		if got, want := stringSliceContains(tt.ss, tt.s), tt.wantContains; got != want {
+			t.Errorf("test(%d): got %t, want %t", tt.n, got, want)
 		}
-		if _, err := w.Write(v); err != nil {
-			return err
-		}
 	}
-	if err := zw.Close(); err != nil {
-		return err
-	}
-	return f.Close()
 }

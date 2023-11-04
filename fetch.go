@@ -420,3 +420,13 @@ func verifyZipFile(sumdbClient *sumdb.Client, name, modulePath, moduleVersion st
 
 	return nil
 }
+
+// stringSliceContains reports whether the ss contains the s.
+func stringSliceContains(ss []string, s string) bool {
+	for _, v := range ss {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
