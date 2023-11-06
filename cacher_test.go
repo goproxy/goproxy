@@ -11,16 +11,6 @@ import (
 	"testing"
 )
 
-type errorReadSeeker struct{}
-
-func (errorReadSeeker) Read([]byte) (int, error) {
-	return 0, errors.New("cannot read")
-}
-
-func (errorReadSeeker) Seek(int64, int) (int64, error) {
-	return 0, errors.New("cannot seek")
-}
-
 func TestDirCacher(t *testing.T) {
 	dirCacher := DirCacher(t.TempDir())
 
@@ -60,7 +50,12 @@ func TestDirCacher(t *testing.T) {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
-	if err := dirCacher.Put(context.Background(), "d/e/f", &errorReadSeeker{}); err == nil {
+	if err := dirCacher.Put(context.Background(), "d/e/f", &testReadSeeker{
+		ReadSeeker: strings.NewReader("foobar"),
+		read: func(rs io.ReadSeeker, p []byte) (n int, err error) {
+			return 0, errors.New("cannot read")
+		},
+	}); err == nil {
 		t.Fatal("expected error")
 	} else if got, want := err.Error(), "cannot read"; got != want {
 		t.Errorf("got %q, want %q", got, want)

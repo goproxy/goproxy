@@ -632,12 +632,7 @@ invalid
 			setSumDBHandler(tt.sumdbHandler.ServeHTTP)
 			envGOSUMDB = vkey + " " + sumdbServer.URL
 		}
-		g := &Goproxy{
-			Env: []string{
-				"GOPROXY=off",
-				"GOSUMDB=" + envGOSUMDB,
-			},
-		}
+		g := &Goproxy{Env: []string{"GOPROXY=off", "GOSUMDB=" + envGOSUMDB}}
 		g.init()
 		f, err := newFetch(g, tt.name, tt.tempDir)
 		if err != nil {
@@ -1161,12 +1156,7 @@ func TestVerifyModFile(t *testing.T) {
 		return nil, errors.New("unknown module version")
 	})).ServeHTTP)
 
-	g := &Goproxy{
-		Env: []string{
-			"GOPROXY=off",
-			"GOSUMDB=" + vkey + " " + sumdbServer.URL,
-		},
-	}
+	g := &Goproxy{Env: []string{"GOPROXY=off", "GOSUMDB=" + vkey + " " + sumdbServer.URL}}
 	g.init()
 	for _, tt := range []struct {
 		n             int
@@ -1333,12 +1323,7 @@ func TestVerifyZipFile(t *testing.T) {
 		return nil, errors.New("unknown module version")
 	})).ServeHTTP)
 
-	g := &Goproxy{
-		Env: []string{
-			"GOPROXY=off",
-			"GOSUMDB=" + vkey + " " + sumdbServer.URL,
-		},
-	}
+	g := &Goproxy{Env: []string{"GOPROXY=off", "GOSUMDB=" + vkey + " " + sumdbServer.URL}}
 	g.init()
 	for _, tt := range []struct {
 		n             int
