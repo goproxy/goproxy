@@ -32,7 +32,6 @@ func TestNewFetch(t *testing.T) {
 		wantModuleVersion    string
 		wantModAtVer         string
 		wantRequiredToVerify bool
-		wantContentType      string
 		wantError            error
 	}{
 		{
@@ -43,7 +42,6 @@ func TestNewFetch(t *testing.T) {
 			wantModuleVersion:    "latest",
 			wantModAtVer:         "example.com@latest",
 			wantRequiredToVerify: true,
-			wantContentType:      "application/json; charset=utf-8",
 		},
 		{
 			n:                    2,
@@ -54,7 +52,6 @@ func TestNewFetch(t *testing.T) {
 			wantModuleVersion:    "latest",
 			wantModAtVer:         "example.com@latest",
 			wantRequiredToVerify: false,
-			wantContentType:      "application/json; charset=utf-8",
 		},
 		{
 			n:                    3,
@@ -65,7 +62,6 @@ func TestNewFetch(t *testing.T) {
 			wantModuleVersion:    "latest",
 			wantModAtVer:         "example.com@latest",
 			wantRequiredToVerify: false,
-			wantContentType:      "application/json; charset=utf-8",
 		},
 		{
 			n:                    4,
@@ -76,7 +72,6 @@ func TestNewFetch(t *testing.T) {
 			wantModuleVersion:    "latest",
 			wantModAtVer:         "example.com@latest",
 			wantRequiredToVerify: false,
-			wantContentType:      "application/json; charset=utf-8",
 		},
 		{
 			n:                    5,
@@ -86,7 +81,6 @@ func TestNewFetch(t *testing.T) {
 			wantModuleVersion:    "latest",
 			wantModAtVer:         "example.com@latest",
 			wantRequiredToVerify: true,
-			wantContentType:      "text/plain; charset=utf-8",
 		},
 		{
 			n:                    6,
@@ -96,7 +90,6 @@ func TestNewFetch(t *testing.T) {
 			wantModuleVersion:    "v1.0.0",
 			wantModAtVer:         "example.com@v1.0.0",
 			wantRequiredToVerify: true,
-			wantContentType:      "application/json; charset=utf-8",
 		},
 		{
 			n:                    7,
@@ -106,7 +99,6 @@ func TestNewFetch(t *testing.T) {
 			wantModuleVersion:    "v1.0.0",
 			wantModAtVer:         "example.com@v1.0.0",
 			wantRequiredToVerify: true,
-			wantContentType:      "text/plain; charset=utf-8",
 		},
 		{
 			n:                    8,
@@ -116,7 +108,6 @@ func TestNewFetch(t *testing.T) {
 			wantModuleVersion:    "v1.0.0",
 			wantModAtVer:         "example.com@v1.0.0",
 			wantRequiredToVerify: true,
-			wantContentType:      "application/zip",
 		},
 		{
 			n:                    9,
@@ -126,7 +117,6 @@ func TestNewFetch(t *testing.T) {
 			wantModuleVersion:    "master",
 			wantModAtVer:         "example.com@master",
 			wantRequiredToVerify: true,
-			wantContentType:      "application/json; charset=utf-8",
 		},
 		{
 			n:                    10,
@@ -136,7 +126,6 @@ func TestNewFetch(t *testing.T) {
 			wantModuleVersion:    "V1.0.0",
 			wantModAtVer:         "example.com/Foobar@V1.0.0",
 			wantRequiredToVerify: true,
-			wantContentType:      "application/json; charset=utf-8",
 		},
 		{
 			n:         11,
@@ -228,9 +217,6 @@ func TestNewFetch(t *testing.T) {
 			}
 			if got, want := f.requiredToVerify, tt.wantRequiredToVerify; got != want {
 				t.Errorf("test(%d): got %t, want %t", tt.n, got, want)
-			}
-			if got, want := f.contentType, tt.wantContentType; got != want {
-				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		}
 	}

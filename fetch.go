@@ -32,7 +32,6 @@ type fetch struct {
 	moduleVersion    string
 	modAtVer         string
 	requiredToVerify bool
-	contentType      string
 }
 
 // newFetch parses the name and returns a new [fetch].
@@ -47,12 +46,10 @@ func newFetch(g *Goproxy, name, tempDir string) (*fetch, error) {
 		escapedModulePath = strings.TrimSuffix(name, "/@latest")
 		f.ops = fetchOpsQuery
 		f.moduleVersion = "latest"
-		f.contentType = "application/json; charset=utf-8"
 	} else if strings.HasSuffix(name, "/@v/list") {
 		escapedModulePath = strings.TrimSuffix(name, "/@v/list")
 		f.ops = fetchOpsList
 		f.moduleVersion = "latest"
-		f.contentType = "text/plain; charset=utf-8"
 	} else {
 		var (
 			base string
@@ -67,12 +64,7 @@ func newFetch(g *Goproxy, name, tempDir string) (*fetch, error) {
 		ext := path.Ext(base)
 		escapedModuleVersion := strings.TrimSuffix(base, ext)
 		switch ext {
-		case ".info":
-			f.contentType = "application/json; charset=utf-8"
-		case ".mod":
-			f.contentType = "text/plain; charset=utf-8"
-		case ".zip":
-			f.contentType = "application/zip"
+		case ".info", ".mod", ".zip":
 		case "":
 			return nil, fmt.Errorf("no file extension in filename %q", escapedModuleVersion)
 		default:
