@@ -312,7 +312,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 		n                  int
 		proxyHandler       http.HandlerFunc
 		cacher             Cacher
-		name               string
+		target             string
 		disableModuleFetch bool
 		wantStatusCode     int
 		wantContentType    string
@@ -325,7 +325,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 				responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", 60)
 			},
 			cacher:           DirCacher(t.TempDir()),
-			name:             "example.com/@latest",
+			target:           "example.com/@latest",
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "application/json; charset=utf-8",
 			wantCacheControl: "public, max-age=60",
@@ -335,7 +335,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			n:                2,
 			proxyHandler:     proxyHandler,
 			cacher:           DirCacher(t.TempDir()),
-			name:             "example.com/@v/v1.0.0.info",
+			target:           "example.com/@v/v1.0.0.info",
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "application/json; charset=utf-8",
 			wantCacheControl: "public, max-age=604800",
@@ -350,7 +350,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 					return io.NopCloser(strings.NewReader(info)), nil
 				},
 			},
-			name:               "example.com/@latest",
+			target:             "example.com/@latest",
 			disableModuleFetch: true,
 			wantStatusCode:     http.StatusOK,
 			wantContentType:    "application/json; charset=utf-8",
@@ -366,7 +366,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 					return io.NopCloser(strings.NewReader(info)), nil
 				},
 			},
-			name:               "example.com/@v/v1.0.0.info",
+			target:             "example.com/@v/v1.0.0.info",
 			disableModuleFetch: true,
 			wantStatusCode:     http.StatusOK,
 			wantContentType:    "application/json; charset=utf-8",
@@ -377,7 +377,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			n:                5,
 			proxyHandler:     func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, 60) },
 			cacher:           DirCacher(t.TempDir()),
-			name:             "example.com/@latest",
+			target:           "example.com/@latest",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
 			wantCacheControl: "public, max-age=60",
@@ -387,7 +387,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			n:                6,
 			proxyHandler:     func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, 60) },
 			cacher:           DirCacher(t.TempDir()),
-			name:             "example.com/@v/v1.0.0.info",
+			target:           "example.com/@v/v1.0.0.info",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
 			wantCacheControl: "public, max-age=600",
@@ -397,7 +397,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			n:                  7,
 			proxyHandler:       func(rw http.ResponseWriter, req *http.Request) {},
 			cacher:             DirCacher(t.TempDir()),
-			name:               "example.com/@latest",
+			target:             "example.com/@latest",
 			disableModuleFetch: true,
 			wantStatusCode:     http.StatusNotFound,
 			wantContentType:    "text/plain; charset=utf-8",
@@ -408,7 +408,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			n:                8,
 			proxyHandler:     func(rw http.ResponseWriter, req *http.Request) {},
 			cacher:           DirCacher(t.TempDir()),
-			name:             "invalid",
+			target:           "invalid",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
 			wantCacheControl: "public, max-age=86400",
@@ -425,7 +425,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 					return errors.New("cannot put")
 				},
 			},
-			name:            "example.com/@v/list",
+			target:          "example.com/@v/list",
 			wantStatusCode:  http.StatusInternalServerError,
 			wantContentType: "text/plain; charset=utf-8",
 			wantContent:     "internal server error",
@@ -443,7 +443,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			req.Header.Set("Disable-Module-Fetch", "true")
 		}
 		rec := httptest.NewRecorder()
-		g.serveFetch(rec, req, tt.name, t.TempDir())
+		g.serveFetch(rec, req, tt.target, t.TempDir())
 		recr := rec.Result()
 		if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
 			t.Errorf("test(%d): got %d, want %d", tt.n, got, want)
@@ -470,7 +470,6 @@ func TestGoproxyServeFetchQuery(t *testing.T) {
 		n                int
 		proxyHandler     http.HandlerFunc
 		cacher           Cacher
-		setupCacher      func(cacher Cacher) error
 		noFetch          bool
 		wantStatusCode   int
 		wantContentType  string
@@ -491,9 +490,11 @@ func TestGoproxyServeFetchQuery(t *testing.T) {
 		{
 			n:            2,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {},
-			cacher:       DirCacher(t.TempDir()),
-			setupCacher: func(cacher Cacher) error {
-				return cacher.Put(context.Background(), "example.com/@latest", strings.NewReader(info))
+			cacher: &testCacher{
+				Cacher: DirCacher(t.TempDir()),
+				get: func(ctx context.Context, c Cacher, name string) (io.ReadCloser, error) {
+					return io.NopCloser(strings.NewReader(info)), nil
+				},
 			},
 			noFetch:          true,
 			wantStatusCode:   http.StatusOK,
@@ -512,11 +513,6 @@ func TestGoproxyServeFetchQuery(t *testing.T) {
 		},
 	} {
 		setProxyHandler(tt.proxyHandler)
-		if tt.setupCacher != nil {
-			if err := tt.setupCacher(tt.cacher); err != nil {
-				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
-			}
-		}
 		g := &Goproxy{
 			Env:         []string{"GOPROXY=" + proxyServer.URL, "GOSUMDB=off"},
 			Cacher:      tt.cacher,
@@ -555,7 +551,6 @@ func TestGoproxyServeFetchList(t *testing.T) {
 		n              int
 		proxyHandler   http.HandlerFunc
 		cacher         Cacher
-		setupCacher    func(cacher Cacher) error
 		noFetch        bool
 		wantStatusCode int
 		wantContent    string
@@ -572,9 +567,11 @@ func TestGoproxyServeFetchList(t *testing.T) {
 		{
 			n:            2,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {},
-			cacher:       DirCacher(t.TempDir()),
-			setupCacher: func(cacher Cacher) error {
-				return cacher.Put(context.Background(), "example.com/@v/list", strings.NewReader(list))
+			cacher: &testCacher{
+				Cacher: DirCacher(t.TempDir()),
+				get: func(ctx context.Context, c Cacher, name string) (io.ReadCloser, error) {
+					return io.NopCloser(strings.NewReader(list)), nil
+				},
 			},
 			noFetch:        true,
 			wantStatusCode: http.StatusOK,
@@ -589,11 +586,6 @@ func TestGoproxyServeFetchList(t *testing.T) {
 		},
 	} {
 		setProxyHandler(tt.proxyHandler)
-		if tt.setupCacher != nil {
-			if err := tt.setupCacher(tt.cacher); err != nil {
-				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
-			}
-		}
 		g := &Goproxy{
 			Env:         []string{"GOPROXY=" + proxyServer.URL, "GOSUMDB=off"},
 			Cacher:      tt.cacher,
@@ -655,7 +647,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 		n                int
 		proxyHandler     http.HandlerFunc
 		cacher           Cacher
-		name             string
+		target           string
 		noFetch          bool
 		wantStatusCode   int
 		wantContentType  string
@@ -666,7 +658,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			n:                1,
 			proxyHandler:     proxyHandler,
 			cacher:           DirCacher(t.TempDir()),
-			name:             "example.com/@v/v1.0.0.info",
+			target:           "example.com/@v/v1.0.0.info",
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "application/json; charset=utf-8",
 			wantCacheControl: "public, max-age=604800",
@@ -681,7 +673,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 					return io.NopCloser(strings.NewReader(info)), nil
 				},
 			},
-			name:             "example.com/@v/v1.0.0.info",
+			target:           "example.com/@v/v1.0.0.info",
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "application/json; charset=utf-8",
 			wantCacheControl: "public, max-age=604800",
@@ -696,7 +688,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 					return io.NopCloser(strings.NewReader(info)), nil
 				},
 			},
-			name:             "example.com/@v/v1.0.0.info",
+			target:           "example.com/@v/v1.0.0.info",
 			noFetch:          true,
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "application/json; charset=utf-8",
@@ -707,7 +699,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			n:                4,
 			proxyHandler:     proxyHandler,
 			cacher:           DirCacher(t.TempDir()),
-			name:             "example.com/@v/v1.0.0.mod",
+			target:           "example.com/@v/v1.0.0.mod",
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "text/plain; charset=utf-8",
 			wantCacheControl: "public, max-age=604800",
@@ -717,7 +709,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			n:                5,
 			proxyHandler:     proxyHandler,
 			cacher:           DirCacher(t.TempDir()),
-			name:             "example.com/@v/v1.0.0.zip",
+			target:           "example.com/@v/v1.0.0.zip",
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "application/zip",
 			wantCacheControl: "public, max-age=604800",
@@ -727,7 +719,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			n:                6,
 			proxyHandler:     func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, 60) },
 			cacher:           DirCacher(t.TempDir()),
-			name:             "example.com/@v/v1.0.0.info",
+			target:           "example.com/@v/v1.0.0.info",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
 			wantCacheControl: "public, max-age=600",
@@ -737,7 +729,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			n:                7,
 			proxyHandler:     func(rw http.ResponseWriter, req *http.Request) {},
 			cacher:           DirCacher(t.TempDir()),
-			name:             "example.com/@v/v1.0.0.info",
+			target:           "example.com/@v/v1.0.0.info",
 			noFetch:          true,
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -753,7 +745,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 					return nil, errors.New("cannot get")
 				},
 			},
-			name:            "example.com/@v/v1.0.0.info",
+			target:          "example.com/@v/v1.0.0.info",
 			wantStatusCode:  http.StatusInternalServerError,
 			wantContentType: "text/plain; charset=utf-8",
 			wantContent:     "internal server error",
@@ -767,7 +759,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 					return errors.New("cannot put")
 				},
 			},
-			name:            "example.com/@v/v1.0.0.info",
+			target:          "example.com/@v/v1.0.0.info",
 			wantStatusCode:  http.StatusInternalServerError,
 			wantContentType: "text/plain; charset=utf-8",
 			wantContent:     "internal server error",
@@ -784,7 +776,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 					return os.Remove(content.(*os.File).Name())
 				},
 			},
-			name:            "example.com/@v/v1.0.0.info",
+			target:          "example.com/@v/v1.0.0.info",
 			wantStatusCode:  http.StatusInternalServerError,
 			wantContentType: "text/plain; charset=utf-8",
 			wantContent:     "internal server error",
@@ -797,7 +789,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			ErrorLogger: log.New(io.Discard, "", 0),
 		}
 		g.init()
-		f, err := newFetch(g, tt.name, t.TempDir())
+		f, err := newFetch(g, tt.target, t.TempDir())
 		if err != nil {
 			t.Fatalf("test(%d): unexpected error %q", tt.n, err)
 		}
@@ -828,7 +820,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 		n                int
 		sumdbHandler     http.HandlerFunc
 		cacher           Cacher
-		name             string
+		target           string
 		tempDir          string
 		wantStatusCode   int
 		wantContentType  string
@@ -839,7 +831,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 			n:                1,
 			sumdbHandler:     func(rw http.ResponseWriter, req *http.Request) { fmt.Fprint(rw, req.URL.Path) },
 			cacher:           DirCacher(t.TempDir()),
-			name:             "sumdb/sumdb.example.com/supported",
+			target:           "sumdb/sumdb.example.com/supported",
 			tempDir:          t.TempDir(),
 			wantStatusCode:   http.StatusOK,
 			wantCacheControl: "public, max-age=86400",
@@ -848,7 +840,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 			n:                2,
 			sumdbHandler:     func(rw http.ResponseWriter, req *http.Request) { fmt.Fprint(rw, req.URL.Path) },
 			cacher:           DirCacher(t.TempDir()),
-			name:             "sumdb/sumdb.example.com/latest",
+			target:           "sumdb/sumdb.example.com/latest",
 			tempDir:          t.TempDir(),
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -859,7 +851,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 			n:                3,
 			sumdbHandler:     func(rw http.ResponseWriter, req *http.Request) { fmt.Fprint(rw, req.URL.Path) },
 			cacher:           DirCacher(t.TempDir()),
-			name:             "sumdb/sumdb.example.com/lookup/example.com@v1.0.0",
+			target:           "sumdb/sumdb.example.com/lookup/example.com@v1.0.0",
 			tempDir:          t.TempDir(),
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -870,7 +862,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 			n:                4,
 			sumdbHandler:     func(rw http.ResponseWriter, req *http.Request) { fmt.Fprint(rw, req.URL.Path) },
 			cacher:           DirCacher(t.TempDir()),
-			name:             "sumdb/sumdb.example.com/tile/2/0/0",
+			target:           "sumdb/sumdb.example.com/tile/2/0/0",
 			tempDir:          t.TempDir(),
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "application/octet-stream",
@@ -881,7 +873,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 			n:                5,
 			sumdbHandler:     func(rw http.ResponseWriter, req *http.Request) {},
 			cacher:           DirCacher(t.TempDir()),
-			name:             "sumdb/sumdb.example.com",
+			target:           "sumdb/sumdb.example.com",
 			tempDir:          t.TempDir(),
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -892,7 +884,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 			n:                6,
 			sumdbHandler:     func(rw http.ResponseWriter, req *http.Request) {},
 			cacher:           DirCacher(t.TempDir()),
-			name:             "sumdb/sumdb.example.com/404",
+			target:           "sumdb/sumdb.example.com/404",
 			tempDir:          t.TempDir(),
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -903,7 +895,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 			n:                7,
 			sumdbHandler:     func(rw http.ResponseWriter, req *http.Request) {},
 			cacher:           DirCacher(t.TempDir()),
-			name:             "sumdb/sumdb2.example.com/supported",
+			target:           "sumdb/sumdb2.example.com/supported",
 			tempDir:          t.TempDir(),
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -914,7 +906,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 			n:                8,
 			sumdbHandler:     func(rw http.ResponseWriter, req *http.Request) { rw.WriteHeader(http.StatusNotFound) },
 			cacher:           DirCacher(t.TempDir()),
-			name:             "sumdb/sumdb.example.com/latest",
+			target:           "sumdb/sumdb.example.com/latest",
 			tempDir:          t.TempDir(),
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -925,7 +917,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 			n:                9,
 			sumdbHandler:     func(rw http.ResponseWriter, req *http.Request) {},
 			cacher:           DirCacher(t.TempDir()),
-			name:             "://invalid",
+			target:           "://invalid",
 			tempDir:          t.TempDir(),
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -941,7 +933,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 					return errors.New("cannot put")
 				},
 			},
-			name:            "sumdb/sumdb.example.com/latest",
+			target:          "sumdb/sumdb.example.com/latest",
 			tempDir:         t.TempDir(),
 			wantStatusCode:  http.StatusInternalServerError,
 			wantContentType: "text/plain; charset=utf-8",
@@ -956,7 +948,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 		}
 		g.init()
 		rec := httptest.NewRecorder()
-		g.serveSumDB(rec, httptest.NewRequest("", "/", nil), tt.name, tt.tempDir)
+		g.serveSumDB(rec, httptest.NewRequest("", "/", nil), tt.target, tt.tempDir)
 		recr := rec.Result()
 		if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
 			t.Errorf("test(%d): got %d, want %d", tt.n, got, want)
@@ -979,16 +971,17 @@ func TestGoproxyServeCache(t *testing.T) {
 	for _, tt := range []struct {
 		n              int
 		cacher         Cacher
-		setupCacher    func(cacher Cacher) error
 		onNotFound     func(rw http.ResponseWriter, req *http.Request)
 		wantStatusCode int
 		wantContent    string
 	}{
 		{
-			n:      1,
-			cacher: DirCacher(t.TempDir()),
-			setupCacher: func(cacher Cacher) error {
-				return cacher.Put(context.Background(), "name", strings.NewReader("foobar"))
+			n: 1,
+			cacher: &testCacher{
+				Cacher: DirCacher(t.TempDir()),
+				get: func(ctx context.Context, c Cacher, name string) (io.ReadCloser, error) {
+					return io.NopCloser(strings.NewReader("foobar")), nil
+				},
 			},
 			wantStatusCode: http.StatusOK,
 			wantContent:    "foobar",
@@ -1016,11 +1009,6 @@ func TestGoproxyServeCache(t *testing.T) {
 			wantContent:    "internal server error",
 		},
 	} {
-		if tt.setupCacher != nil {
-			if err := tt.setupCacher(tt.cacher); err != nil {
-				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
-			}
-		}
 		g := &Goproxy{
 			Cacher:      tt.cacher,
 			ErrorLogger: log.New(io.Discard, "", 0),
@@ -1031,7 +1019,7 @@ func TestGoproxyServeCache(t *testing.T) {
 		if tt.onNotFound != nil {
 			onNotFound = func() { tt.onNotFound(rec, req) }
 		}
-		g.serveCache(rec, req, "name", "", -2, onNotFound)
+		g.serveCache(rec, req, "target", "", -2, onNotFound)
 		recr := rec.Result()
 		if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
 			t.Errorf("test(%d): got %d, want %d", tt.n, got, want)
@@ -1085,7 +1073,7 @@ func TestGoproxyServePutCache(t *testing.T) {
 			ErrorLogger: log.New(io.Discard, "", 0),
 		}
 		rec := httptest.NewRecorder()
-		g.servePutCache(rec, httptest.NewRequest("", "/", nil), "name", "", -2, tt.content)
+		g.servePutCache(rec, httptest.NewRequest("", "/", nil), "target", "", -2, tt.content)
 		recr := rec.Result()
 		if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
 			t.Errorf("test(%d): got %d, want %d", tt.n, got, want)
@@ -1130,7 +1118,7 @@ func TestGoproxyServePutCacheFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("test(%d): unexpected error %q", tt.n, err)
 		}
-		g.servePutCacheFile(rec, httptest.NewRequest("", "/", nil), "name", "", -2, file)
+		g.servePutCacheFile(rec, httptest.NewRequest("", "/", nil), "target", "", -2, file)
 		recr := rec.Result()
 		if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
 			t.Errorf("test(%d): got %d, want %d", tt.n, got, want)

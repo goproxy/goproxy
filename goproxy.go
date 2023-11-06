@@ -202,7 +202,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		responseNotFound(rw, req, 86400)
 		return
 	}
-	name := path[1:]
+	target := path[1:]
 
 	tempDir, err := os.MkdirTemp(g.TempDir, "goproxy.tmp.*")
 	if err != nil {
@@ -212,16 +212,16 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	if strings.HasPrefix(name, "sumdb/") {
-		g.serveSumDB(rw, req, name, tempDir)
+	if strings.HasPrefix(target, "sumdb/") {
+		g.serveSumDB(rw, req, target, tempDir)
 		return
 	}
-	g.serveFetch(rw, req, name, tempDir)
+	g.serveFetch(rw, req, target, tempDir)
 }
 
 // serveFetch serves fetch requests.
-func (g *Goproxy) serveFetch(rw http.ResponseWriter, req *http.Request, name, tempDir string) {
-	f, err := newFetch(g, name, tempDir)
+func (g *Goproxy) serveFetch(rw http.ResponseWriter, req *http.Request, target, tempDir string) {
+	f, err := newFetch(g, target, tempDir)
 	if err != nil {
 		responseNotFound(rw, req, 86400, err)
 		return
@@ -244,18 +244,18 @@ func (g *Goproxy) serveFetchQuery(rw http.ResponseWriter, req *http.Request, f *
 		cacheControlMaxAge = 60 // 1 minute
 	)
 	if noFetch {
-		g.serveCache(rw, req, f.name, contentType, cacheControlMaxAge, nil)
+		g.serveCache(rw, req, f.target, contentType, cacheControlMaxAge, nil)
 		return
 	}
 	fr, err := f.do(req.Context())
 	if err != nil {
-		g.serveCache(rw, req, f.name, contentType, cacheControlMaxAge, func() {
-			g.logErrorf("failed to query module version: %s: %v", f.name, err)
+		g.serveCache(rw, req, f.target, contentType, cacheControlMaxAge, func() {
+			g.logErrorf("failed to query module version: %s: %v", f.target, err)
 			responseError(rw, req, err, true)
 		})
 		return
 	}
-	g.servePutCache(rw, req, f.name, contentType, cacheControlMaxAge, strings.NewReader(marshalInfo(fr.Version, fr.Time)))
+	g.servePutCache(rw, req, f.target, contentType, cacheControlMaxAge, strings.NewReader(marshalInfo(fr.Version, fr.Time)))
 }
 
 // serveFetchList serves fetch list requests.
@@ -265,27 +265,27 @@ func (g *Goproxy) serveFetchList(rw http.ResponseWriter, req *http.Request, f *f
 		cacheControlMaxAge = 60 // 1 minute
 	)
 	if noFetch {
-		g.serveCache(rw, req, f.name, contentType, cacheControlMaxAge, nil)
+		g.serveCache(rw, req, f.target, contentType, cacheControlMaxAge, nil)
 		return
 	}
 	fr, err := f.do(req.Context())
 	if err != nil {
-		g.serveCache(rw, req, f.name, contentType, cacheControlMaxAge, func() {
-			g.logErrorf("failed to list module versions: %s: %v", f.name, err)
+		g.serveCache(rw, req, f.target, contentType, cacheControlMaxAge, func() {
+			g.logErrorf("failed to list module versions: %s: %v", f.target, err)
 			responseError(rw, req, err, true)
 		})
 		return
 	}
-	g.servePutCache(rw, req, f.name, contentType, cacheControlMaxAge, strings.NewReader(strings.Join(fr.Versions, "\n")))
+	g.servePutCache(rw, req, f.target, contentType, cacheControlMaxAge, strings.NewReader(strings.Join(fr.Versions, "\n")))
 }
 
 // serveFetchDownload serves fetch download requests.
 func (g *Goproxy) serveFetchDownload(rw http.ResponseWriter, req *http.Request, f *fetch, noFetch bool) {
 	const cacheControlMaxAge = 604800 // 7 days
 
-	nameExt := path.Ext(f.name)
+	targetExt := path.Ext(f.target)
 	var contentType string
-	switch nameExt {
+	switch targetExt {
 	case ".info":
 		contentType = "application/json; charset=utf-8"
 	case ".mod":
@@ -295,42 +295,42 @@ func (g *Goproxy) serveFetchDownload(rw http.ResponseWriter, req *http.Request, 
 	}
 
 	if noFetch {
-		g.serveCache(rw, req, f.name, contentType, cacheControlMaxAge, nil)
+		g.serveCache(rw, req, f.target, contentType, cacheControlMaxAge, nil)
 		return
 	}
 
-	content, err := g.cache(req.Context(), f.name)
+	content, err := g.cache(req.Context(), f.target)
 	if err == nil {
 		responseSuccess(rw, req, content, contentType, cacheControlMaxAge)
 		return
 	} else if !errors.Is(err, fs.ErrNotExist) {
-		g.logErrorf("failed to get cached module file: %s: %v", f.name, err)
+		g.logErrorf("failed to get cached module file: %s: %v", f.target, err)
 		responseInternalServerError(rw, req)
 		return
 	}
 
 	fr, err := f.do(req.Context())
 	if err != nil {
-		g.logErrorf("failed to download module version: %s: %v", f.name, err)
+		g.logErrorf("failed to download module version: %s: %v", f.target, err)
 		responseError(rw, req, err, false)
 		return
 	}
 
-	nameWithoutExt := strings.TrimSuffix(f.name, path.Ext(f.name))
-	for _, cache := range []struct{ nameExt, localFile string }{
+	targetWithoutExt := strings.TrimSuffix(f.target, path.Ext(f.target))
+	for _, cache := range []struct{ ext, localFile string }{
 		{".info", fr.Info},
 		{".mod", fr.GoMod},
 		{".zip", fr.Zip},
 	} {
-		if err := g.putCacheFile(req.Context(), nameWithoutExt+cache.nameExt, cache.localFile); err != nil {
-			g.logErrorf("failed to cache module file: %s: %v", f.name, err)
+		if err := g.putCacheFile(req.Context(), targetWithoutExt+cache.ext, cache.localFile); err != nil {
+			g.logErrorf("failed to cache module file: %s: %v", f.target, err)
 			responseInternalServerError(rw, req)
 			return
 		}
 	}
 
 	var file string
-	switch nameExt {
+	switch targetExt {
 	case ".info":
 		file = fr.Info
 	case ".mod":
@@ -350,14 +350,14 @@ func (g *Goproxy) serveFetchDownload(rw http.ResponseWriter, req *http.Request, 
 }
 
 // serveSumDB serves checksum database proxy requests.
-func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, name, tempDir string) {
-	sumdbName, path, ok := strings.Cut(strings.TrimPrefix(name, "sumdb/"), "/")
+func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, target, tempDir string) {
+	name, path, ok := strings.Cut(strings.TrimPrefix(target, "sumdb/"), "/")
 	if !ok {
 		responseNotFound(rw, req, 86400)
 		return
 	}
 	path = "/" + path // Add the leading slash back.
-	sumdbURL, ok := g.proxiedSumDBs[sumdbName]
+	u, ok := g.proxiedSumDBs[name]
 	if !ok {
 		responseNotFound(rw, req, 86400)
 		return
@@ -386,15 +386,15 @@ func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, name, te
 		return
 	}
 
-	file, err := httpGetTemp(req.Context(), g.httpClient, appendURL(sumdbURL, path).String(), tempDir)
+	file, err := httpGetTemp(req.Context(), g.httpClient, appendURL(u, path).String(), tempDir)
 	if err != nil {
-		g.serveCache(rw, req, name, contentType, cacheControlMaxAge, func() {
-			g.logErrorf("failed to proxy checksum database: %s: %v", name, err)
+		g.serveCache(rw, req, target, contentType, cacheControlMaxAge, func() {
+			g.logErrorf("failed to proxy checksum database: %s: %v", target, err)
 			responseError(rw, req, err, true)
 		})
 		return
 	}
-	g.servePutCacheFile(rw, req, name, contentType, cacheControlMaxAge, file)
+	g.servePutCacheFile(rw, req, target, contentType, cacheControlMaxAge, file)
 }
 
 // serveCache serves requests with cached module files.

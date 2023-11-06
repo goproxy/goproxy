@@ -26,7 +26,7 @@ import (
 type fetch struct {
 	g                *Goproxy
 	ops              fetchOps
-	name             string
+	target           string
 	tempDir          string
 	modulePath       string
 	moduleVersion    string
@@ -34,20 +34,20 @@ type fetch struct {
 	requiredToVerify bool
 }
 
-// newFetch parses the name and returns a new [fetch].
-func newFetch(g *Goproxy, name, tempDir string) (*fetch, error) {
+// newFetch parses the target and returns a new [fetch].
+func newFetch(g *Goproxy, target, tempDir string) (*fetch, error) {
 	f := &fetch{
 		g:       g,
-		name:    name,
+		target:  target,
 		tempDir: tempDir,
 	}
 	var escapedModulePath string
-	if strings.HasSuffix(name, "/@latest") {
-		escapedModulePath = strings.TrimSuffix(name, "/@latest")
+	if strings.HasSuffix(target, "/@latest") {
+		escapedModulePath = strings.TrimSuffix(target, "/@latest")
 		f.ops = fetchOpsQuery
 		f.moduleVersion = "latest"
-	} else if strings.HasSuffix(name, "/@v/list") {
-		escapedModulePath = strings.TrimSuffix(name, "/@v/list")
+	} else if strings.HasSuffix(target, "/@v/list") {
+		escapedModulePath = strings.TrimSuffix(target, "/@v/list")
 		f.ops = fetchOpsList
 		f.moduleVersion = "latest"
 	} else {
@@ -55,7 +55,7 @@ func newFetch(g *Goproxy, name, tempDir string) (*fetch, error) {
 			base string
 			ok   bool
 		)
-		escapedModulePath, base, ok = strings.Cut(name, "/@v/")
+		escapedModulePath, base, ok = strings.Cut(target, "/@v/")
 		if !ok {
 			return nil, errors.New("missing /@v/")
 		}
@@ -123,7 +123,7 @@ func (f *fetch) do(ctx context.Context) (*fetchResult, error) {
 
 // doProxy executes the f via the proxy.
 func (f *fetch) doProxy(ctx context.Context, proxy *url.URL) (*fetchResult, error) {
-	u := appendURL(proxy, f.name).String()
+	u := appendURL(proxy, f.target).String()
 	r := &fetchResult{}
 	switch f.ops {
 	case fetchOpsQuery:

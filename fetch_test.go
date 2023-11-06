@@ -26,7 +26,7 @@ func TestNewFetch(t *testing.T) {
 	for _, tt := range []struct {
 		n                    int
 		env                  []string
-		name                 string
+		target               string
 		wantOps              fetchOps
 		wantModulePath       string
 		wantModuleVersion    string
@@ -36,7 +36,7 @@ func TestNewFetch(t *testing.T) {
 	}{
 		{
 			n:                    1,
-			name:                 "example.com/@latest",
+			target:               "example.com/@latest",
 			wantOps:              fetchOpsQuery,
 			wantModulePath:       "example.com",
 			wantModuleVersion:    "latest",
@@ -46,7 +46,7 @@ func TestNewFetch(t *testing.T) {
 		{
 			n:                    2,
 			env:                  []string{"GOSUMDB=off"},
-			name:                 "example.com/@latest",
+			target:               "example.com/@latest",
 			wantOps:              fetchOpsQuery,
 			wantModulePath:       "example.com",
 			wantModuleVersion:    "latest",
@@ -56,7 +56,7 @@ func TestNewFetch(t *testing.T) {
 		{
 			n:                    3,
 			env:                  []string{"GONOSUMDB=example.com"},
-			name:                 "example.com/@latest",
+			target:               "example.com/@latest",
 			wantOps:              fetchOpsQuery,
 			wantModulePath:       "example.com",
 			wantModuleVersion:    "latest",
@@ -66,7 +66,7 @@ func TestNewFetch(t *testing.T) {
 		{
 			n:                    4,
 			env:                  []string{"GOPRIVATE=example.com"},
-			name:                 "example.com/@latest",
+			target:               "example.com/@latest",
 			wantOps:              fetchOpsQuery,
 			wantModulePath:       "example.com",
 			wantModuleVersion:    "latest",
@@ -75,7 +75,7 @@ func TestNewFetch(t *testing.T) {
 		},
 		{
 			n:                    5,
-			name:                 "example.com/@v/list",
+			target:               "example.com/@v/list",
 			wantOps:              fetchOpsList,
 			wantModulePath:       "example.com",
 			wantModuleVersion:    "latest",
@@ -84,7 +84,7 @@ func TestNewFetch(t *testing.T) {
 		},
 		{
 			n:                    6,
-			name:                 "example.com/@v/v1.0.0.info",
+			target:               "example.com/@v/v1.0.0.info",
 			wantOps:              fetchOpsDownload,
 			wantModulePath:       "example.com",
 			wantModuleVersion:    "v1.0.0",
@@ -93,7 +93,7 @@ func TestNewFetch(t *testing.T) {
 		},
 		{
 			n:                    7,
-			name:                 "example.com/@v/v1.0.0.mod",
+			target:               "example.com/@v/v1.0.0.mod",
 			wantOps:              fetchOpsDownload,
 			wantModulePath:       "example.com",
 			wantModuleVersion:    "v1.0.0",
@@ -102,7 +102,7 @@ func TestNewFetch(t *testing.T) {
 		},
 		{
 			n:                    8,
-			name:                 "example.com/@v/v1.0.0.zip",
+			target:               "example.com/@v/v1.0.0.zip",
 			wantOps:              fetchOpsDownload,
 			wantModulePath:       "example.com",
 			wantModuleVersion:    "v1.0.0",
@@ -111,7 +111,7 @@ func TestNewFetch(t *testing.T) {
 		},
 		{
 			n:                    9,
-			name:                 "example.com/@v/master.info",
+			target:               "example.com/@v/master.info",
 			wantOps:              fetchOpsQuery,
 			wantModulePath:       "example.com",
 			wantModuleVersion:    "master",
@@ -120,7 +120,7 @@ func TestNewFetch(t *testing.T) {
 		},
 		{
 			n:                    10,
-			name:                 "example.com/!foobar/@v/!v1.0.0.info",
+			target:               "example.com/!foobar/@v/!v1.0.0.info",
 			wantOps:              fetchOpsQuery,
 			wantModulePath:       "example.com/Foobar",
 			wantModuleVersion:    "V1.0.0",
@@ -129,63 +129,63 @@ func TestNewFetch(t *testing.T) {
 		},
 		{
 			n:         11,
-			name:      "example.com/@v/v1.0.0.ext",
+			target:    "example.com/@v/v1.0.0.ext",
 			wantError: errors.New(`unexpected extension ".ext"`),
 		},
 		{
 			n:         12,
-			name:      "example.com/@v/latest.info",
+			target:    "example.com/@v/latest.info",
 			wantError: errors.New("invalid version"),
 		},
 		{
 			n:         13,
-			name:      "example.com/@v/upgrade.info",
+			target:    "example.com/@v/upgrade.info",
 			wantError: errors.New("invalid version"),
 		},
 		{
 			n:         14,
-			name:      "example.com/@v/patch.info",
+			target:    "example.com/@v/patch.info",
 			wantError: errors.New("invalid version"),
 		},
 		{
 			n:         15,
-			name:      "example.com/@v/master.mod",
+			target:    "example.com/@v/master.mod",
 			wantError: errors.New("unrecognized version"),
 		},
 		{
 			n:         16,
-			name:      "example.com/@v/master.zip",
+			target:    "example.com/@v/master.zip",
 			wantError: errors.New("unrecognized version"),
 		},
 		{
 			n:         17,
-			name:      "example.com",
+			target:    "example.com",
 			wantError: errors.New("missing /@v/"),
 		},
 		{
 			n:         18,
-			name:      "example.com/@v/",
+			target:    "example.com/@v/",
 			wantError: errors.New(`no file extension in filename ""`),
 		},
 		{
 			n:         19,
-			name:      "example.com/@v/main",
+			target:    "example.com/@v/main",
 			wantError: errors.New(`no file extension in filename "main"`),
 		},
 		{
 			n:         20,
-			name:      "example.com/!!foobar/@latest",
+			target:    "example.com/!!foobar/@latest",
 			wantError: errors.New(`invalid escaped module path "example.com/!!foobar"`),
 		},
 		{
 			n:         21,
-			name:      "example.com/@v/!!v1.0.0.info",
+			target:    "example.com/@v/!!v1.0.0.info",
 			wantError: errors.New(`invalid escaped version "!!v1.0.0"`),
 		},
 	} {
 		g := &Goproxy{Env: tt.env}
 		g.init()
-		f, err := newFetch(g, tt.name, "tempDir")
+		f, err := newFetch(g, tt.target, "tempDir")
 		if tt.wantError != nil {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
@@ -200,7 +200,7 @@ func TestNewFetch(t *testing.T) {
 			if got, want := f.ops, tt.wantOps; got != want {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
-			if got, want := f.name, tt.name; got != want {
+			if got, want := f.target, tt.target; got != want {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 			if got, want := f.tempDir, "tempDir"; got != want {
@@ -231,7 +231,7 @@ func TestFetchDo(t *testing.T) {
 		proxyHandler http.HandlerFunc
 		env          []string
 		setupGorpoxy func(g *Goproxy) error
-		name         string
+		target       string
 		wantVersion  string
 		wantTime     time.Time
 		wantError    error
@@ -245,7 +245,7 @@ func TestFetchDo(t *testing.T) {
 				"GOPROXY=" + proxyServer.URL,
 				"GOSUMDB=off",
 			},
-			name:        "example.com/@latest",
+			target:      "example.com/@latest",
 			wantVersion: "v1.0.0",
 			wantTime:    infoTime,
 		},
@@ -262,7 +262,7 @@ func TestFetchDo(t *testing.T) {
 				g.env = append(g.env, "GOPROXY="+proxyServer.URL)
 				return nil
 			},
-			name:      "example.com/@latest",
+			target:    "example.com/@latest",
 			wantError: notExistErrorf("module example.com: reading %s/example.com/@v/list: 404 Not Found\n\tserver response: not found", proxyServer.URL),
 		},
 		{
@@ -277,7 +277,7 @@ func TestFetchDo(t *testing.T) {
 				g.env = append(g.env, "GOPROXY=off")
 				return nil
 			},
-			name:      "example.com/@latest",
+			target:    "example.com/@latest",
 			wantError: notExistErrorf("example.com@latest: module lookup disabled by GOPROXY=off"),
 		},
 		{
@@ -287,7 +287,7 @@ func TestFetchDo(t *testing.T) {
 				"GOPROXY=off",
 				"GOSUMDB=off",
 			},
-			name:      "example.com/@latest",
+			target:    "example.com/@latest",
 			wantError: notExistErrorf("module lookup disabled by GOPROXY=off"),
 		},
 	} {
@@ -299,7 +299,7 @@ func TestFetchDo(t *testing.T) {
 				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
 			}
 		}
-		f, err := newFetch(g, tt.name, t.TempDir())
+		f, err := newFetch(g, tt.target, t.TempDir())
 		if err != nil {
 			t.Fatalf("test(%d): unexpected error %q", tt.n, err)
 		}
@@ -388,7 +388,7 @@ func TestFetchDoProxy(t *testing.T) {
 		n            int
 		proxyHandler http.HandlerFunc
 		sumdbHandler http.Handler
-		name         string
+		target       string
 		tempDir      string
 		proxy        string
 		wantVersion  string
@@ -404,7 +404,7 @@ func TestFetchDoProxy(t *testing.T) {
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", 60)
 			},
-			name:        "example.com/@latest",
+			target:      "example.com/@latest",
 			proxy:       proxyServer.URL,
 			wantVersion: infoVersion,
 			wantTime:    infoTime,
@@ -419,14 +419,14 @@ v1.2.0 foo bar
 invalid
 `), "text/plain; charset=utf-8", 60)
 			},
-			name:         "example.com/@v/list",
+			target:       "example.com/@v/list",
 			proxy:        proxyServer.URL,
 			wantVersions: []string{"v1.0.0", "v1.1.0", "v1.2.0"},
 		},
 		{
 			n:            3,
 			proxyHandler: proxyHandler,
-			name:         "example.com/@v/v1.0.0.info",
+			target:       "example.com/@v/v1.0.0.info",
 			tempDir:      t.TempDir(),
 			proxy:        proxyServer.URL,
 			wantInfo:     info,
@@ -436,7 +436,7 @@ invalid
 		{
 			n:            4,
 			proxyHandler: proxyHandler,
-			name:         "example.com/@v/v1.0.0.mod",
+			target:       "example.com/@v/v1.0.0.mod",
 			tempDir:      t.TempDir(),
 			proxy:        proxyServer.URL,
 			wantInfo:     info,
@@ -447,7 +447,7 @@ invalid
 			n:            5,
 			proxyHandler: proxyHandler,
 			sumdbHandler: sumdbHandler,
-			name:         "example.com/@v/v1.0.0.mod",
+			target:       "example.com/@v/v1.0.0.mod",
 			tempDir:      t.TempDir(),
 			proxy:        proxyServer.URL,
 			wantInfo:     info,
@@ -457,7 +457,7 @@ invalid
 		{
 			n:            6,
 			proxyHandler: proxyHandler,
-			name:         "example.com/@v/v1.0.0.zip",
+			target:       "example.com/@v/v1.0.0.zip",
 			tempDir:      t.TempDir(),
 			proxy:        proxyServer.URL,
 			wantInfo:     info,
@@ -468,7 +468,7 @@ invalid
 			n:            7,
 			proxyHandler: proxyHandler,
 			sumdbHandler: sumdbHandler,
-			name:         "example.com/@v/v1.0.0.zip",
+			target:       "example.com/@v/v1.0.0.zip",
 			tempDir:      t.TempDir(),
 			proxy:        proxyServer.URL,
 			wantInfo:     info,
@@ -480,7 +480,7 @@ invalid
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				responseSuccess(rw, req, strings.NewReader(marshalInfo(infoVersion, time.Time{})), "application/json; charset=utf-8", 60)
 			},
-			name:      "example.com/@latest",
+			target:    "example.com/@latest",
 			proxy:     proxyServer.URL,
 			wantError: notExistErrorf("invalid info response: zero time"),
 		},
@@ -489,7 +489,7 @@ invalid
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				responseSuccess(rw, req, strings.NewReader(marshalInfo(infoVersion, time.Time{})), "application/json; charset=utf-8", 60)
 			},
-			name:      "example.com/@v/v1.0.0.info",
+			target:    "example.com/@v/v1.0.0.info",
 			tempDir:   t.TempDir(),
 			proxy:     proxyServer.URL,
 			wantError: notExistErrorf("invalid info file: zero time"),
@@ -508,7 +508,7 @@ invalid
 					responseNotFound(rw, req, 60)
 				}
 			},
-			name:      "example.com/@v/v1.0.0.mod",
+			target:    "example.com/@v/v1.0.0.mod",
 			tempDir:   t.TempDir(),
 			proxy:     proxyServer.URL,
 			wantError: notExistErrorf("invalid mod file: missing module directive"),
@@ -521,7 +521,7 @@ invalid
 				gosum += fmt.Sprintf("%s %s/go.mod %s\n", modulePath, "v1.1.0", modHash)
 				return []byte(gosum), nil
 			})),
-			name:      "example.com/@v/v1.0.0.mod",
+			target:    "example.com/@v/v1.0.0.mod",
 			tempDir:   t.TempDir(),
 			proxy:     proxyServer.URL,
 			wantError: notExistErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
@@ -540,7 +540,7 @@ invalid
 					responseNotFound(rw, req, 60)
 				}
 			},
-			name:      "example.com/@v/v1.0.0.zip",
+			target:    "example.com/@v/v1.0.0.zip",
 			tempDir:   t.TempDir(),
 			proxy:     proxyServer.URL,
 			wantError: notExistErrorf("invalid zip file: zip: not a valid zip file"),
@@ -553,7 +553,7 @@ invalid
 				gosum += fmt.Sprintf("%s %s/go.mod %s\n", modulePath, "v1.0.0", modHash)
 				return []byte(gosum), nil
 			})),
-			name:      "example.com/@v/v1.0.0.zip",
+			target:    "example.com/@v/v1.0.0.zip",
 			tempDir:   t.TempDir(),
 			proxy:     proxyServer.URL,
 			wantError: notExistErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
@@ -561,21 +561,21 @@ invalid
 		{
 			n:            14,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, 60) },
-			name:         "example.com/@latest",
+			target:       "example.com/@latest",
 			proxy:        proxyServer.URL,
 			wantError:    notExistErrorf("not found"),
 		},
 		{
 			n:            15,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, 60) },
-			name:         "example.com/@v/list",
+			target:       "example.com/@v/list",
 			proxy:        proxyServer.URL,
 			wantError:    notExistErrorf("not found"),
 		},
 		{
 			n:            16,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, 60) },
-			name:         "example.com/@v/v1.0.0.info",
+			target:       "example.com/@v/v1.0.0.info",
 			tempDir:      t.TempDir(),
 			proxy:        proxyServer.URL,
 			wantError:    notExistErrorf("not found"),
@@ -589,7 +589,7 @@ invalid
 					responseNotFound(rw, req, 60)
 				}
 			},
-			name:      "example.com/@v/v1.0.0.mod",
+			target:    "example.com/@v/v1.0.0.mod",
 			tempDir:   t.TempDir(),
 			proxy:     proxyServer.URL,
 			wantError: notExistErrorf("not found"),
@@ -606,7 +606,7 @@ invalid
 					responseNotFound(rw, req, 60)
 				}
 			},
-			name:      "example.com/@v/v1.0.0.zip",
+			target:    "example.com/@v/v1.0.0.zip",
 			tempDir:   t.TempDir(),
 			proxy:     proxyServer.URL,
 			wantError: notExistErrorf("not found"),
@@ -620,7 +620,7 @@ invalid
 		}
 		g := &Goproxy{Env: []string{"GOPROXY=off", "GOSUMDB=" + envGOSUMDB}}
 		g.init()
-		f, err := newFetch(g, tt.name, tt.tempDir)
+		f, err := newFetch(g, tt.target, tt.tempDir)
 		if err != nil {
 			t.Fatalf("test(%d): unexpected error %q", tt.n, err)
 		}
@@ -740,7 +740,7 @@ func TestFetchDoDirect(t *testing.T) {
 		n            int
 		ctxTimeout   time.Duration
 		sumdbHandler http.Handler
-		name         string
+		target       string
 		setupFetch   func(f *fetch) error
 		wantVersion  string
 		wantTime     time.Time
@@ -752,14 +752,14 @@ func TestFetchDoDirect(t *testing.T) {
 	}{
 		{
 			n:           1,
-			name:        "example.com/@latest",
+			target:      "example.com/@latest",
 			wantVersion: "v1.1.0",
 			wantTime:    infoTime.Add(time.Hour),
 			wantGoMod:   modCacheFile2,
 		},
 		{
 			n:            2,
-			name:         "example.com/@v/list",
+			target:       "example.com/@v/list",
 			wantVersion:  "v1.1.0",
 			wantTime:     infoTime.Add(time.Hour),
 			wantVersions: []string{"v1.0.0", "v1.1.0"},
@@ -767,7 +767,7 @@ func TestFetchDoDirect(t *testing.T) {
 		},
 		{
 			n:           3,
-			name:        "example.com/@v/v1.0.0.info",
+			target:      "example.com/@v/v1.0.0.info",
 			wantVersion: "v1.0.0",
 			wantInfo:    infoCacheFile,
 			wantGoMod:   modCacheFile,
@@ -775,7 +775,7 @@ func TestFetchDoDirect(t *testing.T) {
 		},
 		{
 			n:           4,
-			name:        "example.com/@v/v1.0.0.mod",
+			target:      "example.com/@v/v1.0.0.mod",
 			wantVersion: "v1.0.0",
 			wantInfo:    infoCacheFile,
 			wantGoMod:   modCacheFile,
@@ -783,7 +783,7 @@ func TestFetchDoDirect(t *testing.T) {
 		},
 		{
 			n:           5,
-			name:        "example.com/@v/v1.0.0.zip",
+			target:      "example.com/@v/v1.0.0.zip",
 			wantVersion: "v1.0.0",
 			wantInfo:    infoCacheFile,
 			wantGoMod:   modCacheFile,
@@ -796,7 +796,7 @@ func TestFetchDoDirect(t *testing.T) {
 				gosum += fmt.Sprintf("%s %s/go.mod %s\n", modulePath, moduleVersion, modHash)
 				return []byte(gosum), nil
 			})),
-			name:        "example.com/@v/v1.0.0.info",
+			target:      "example.com/@v/v1.0.0.info",
 			wantVersion: "v1.0.0",
 			wantInfo:    infoCacheFile,
 			wantGoMod:   modCacheFile,
@@ -804,29 +804,29 @@ func TestFetchDoDirect(t *testing.T) {
 		},
 		{
 			n:         7,
-			name:      "example.com/@v/v1.1.0.info",
+			target:    "example.com/@v/v1.1.0.info",
 			wantError: notExistErrorf("zip for example.com@v1.1.0 has unexpected file example.com@v1.0.0/go.mod"),
 		},
 		{
 			n:          8,
 			ctxTimeout: -1,
-			name:       "example.com/@v/v1.0.0.info",
+			target:     "example.com/@v/v1.0.0.info",
 			wantError:  context.Canceled,
 		},
 		{
 			n:          9,
 			ctxTimeout: -time.Hour,
-			name:       "example.com/@v/v1.0.0.info",
+			target:     "example.com/@v/v1.0.0.info",
 			wantError:  context.DeadlineExceeded,
 		},
 		{
 			n:         10,
-			name:      "example.com/@v/v1.2.0.info",
+			target:    "example.com/@v/v1.2.0.info",
 			wantError: fs.ErrNotExist,
 		},
 		{
-			n:    11,
-			name: "example.com/@v/v1.0.0.info",
+			n:      11,
+			target: "example.com/@v/v1.0.0.info",
 			setupFetch: func(f *fetch) error {
 				f.modAtVer = "invalid"
 				return nil
@@ -840,7 +840,7 @@ func TestFetchDoDirect(t *testing.T) {
 				gosum += fmt.Sprintf("%s %s/go.mod %s\n", modulePath, moduleVersion, dirHash)
 				return []byte(gosum), nil
 			})),
-			name:      "example.com/@v/v1.0.0.info",
+			target:    "example.com/@v/v1.0.0.info",
 			wantError: notExistErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
 		},
 		{
@@ -850,7 +850,7 @@ func TestFetchDoDirect(t *testing.T) {
 				gosum += fmt.Sprintf("%s %s/go.mod %s\n", modulePath, moduleVersion, modHash)
 				return []byte(gosum), nil
 			})),
-			name:      "example.com/@v/v1.0.0.info",
+			target:    "example.com/@v/v1.0.0.info",
 			wantError: notExistErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
 		},
 	} {
@@ -882,7 +882,7 @@ func TestFetchDoDirect(t *testing.T) {
 		}
 		g.init()
 		g.env = append(g.env, "GOPROXY="+proxyServer.URL)
-		f, err := newFetch(g, tt.name, t.TempDir())
+		f, err := newFetch(g, tt.target, t.TempDir())
 		if err != nil {
 			t.Fatalf("test(%d): unexpected error %q", tt.n, err)
 		}
