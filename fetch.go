@@ -113,8 +113,6 @@ func (f *fetch) do(ctx context.Context) (*fetchResult, error) {
 		var err error
 		r, err = f.doDirect(ctx)
 		return err
-	}, func() error {
-		return notExistErrorf("module lookup disabled by GOPROXY=off")
 	}); err != nil {
 		return nil, err
 	}

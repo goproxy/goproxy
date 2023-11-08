@@ -64,11 +64,7 @@ func (sco *sumdbClientOps) url() (*url.URL, error) {
 		}
 		u = pu
 		return nil
-	}, func() error {
-		return nil
-	}, func() error {
-		return nil
-	})
+	}, func() error { return nil })
 	sco.urlDeterminedAt = time.Now()
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		sco.urlDetermineError = err

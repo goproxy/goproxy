@@ -1263,48 +1263,23 @@ func TestWalkEnvGOPROXY(t *testing.T) {
 		onProxy      func(proxy *url.URL) error
 		wantOnProxy  string
 		wantOnDirect bool
-		wantOnOff    bool
 		wantError    error
 	}{
 		{
-			n:            1,
-			envGOPROXY:   "direct",
-			onProxy:      func(proxy *url.URL) error { return nil },
-			wantOnDirect: true,
-		},
-		{
-			n:          2,
-			envGOPROXY: "off",
-			onProxy:    func(proxy *url.URL) error { return nil },
-			wantOnOff:  true,
-		},
-		{
-			n:            3,
-			envGOPROXY:   "direct,off",
-			onProxy:      func(proxy *url.URL) error { return nil },
-			wantOnDirect: true,
-		},
-		{
-			n:          4,
-			envGOPROXY: "off,direct",
-			onProxy:    func(proxy *url.URL) error { return nil },
-			wantOnOff:  true,
-		},
-		{
-			n:           5,
+			n:           1,
 			envGOPROXY:  "https://example.com,direct",
 			onProxy:     func(proxy *url.URL) error { return nil },
 			wantOnProxy: "https://example.com",
 		},
 		{
-			n:            6,
+			n:            2,
 			envGOPROXY:   "https://example.com,direct",
 			onProxy:      func(proxy *url.URL) error { return fs.ErrNotExist },
 			wantOnProxy:  "https://example.com",
 			wantOnDirect: true,
 		},
 		{
-			n:          7,
+			n:          3,
 			envGOPROXY: "https://example.com|https://alt.example.com",
 			onProxy: func(proxy *url.URL) error {
 				if proxy.String() == "https://alt.example.com" {
@@ -1315,21 +1290,44 @@ func TestWalkEnvGOPROXY(t *testing.T) {
 			wantOnProxy: "https://alt.example.com",
 		},
 		{
-			n:           8,
-			envGOPROXY:  "https://example.com,direct",
-			onProxy:     func(proxy *url.URL) error { return errors.New("foobar") },
-			wantOnProxy: "https://example.com",
-			wantError:   errors.New("foobar"),
+			n:            4,
+			envGOPROXY:   "direct",
+			wantOnDirect: true,
 		},
 		{
-			n:           9,
-			envGOPROXY:  "https://example.com",
-			onProxy:     func(proxy *url.URL) error { return fs.ErrNotExist },
-			wantOnProxy: "https://example.com",
-			wantError:   fs.ErrNotExist,
+			n:            5,
+			envGOPROXY:   "direct,off",
+			wantOnDirect: true,
+		},
+		{
+			n:          6,
+			envGOPROXY: "off",
+			wantError:  errors.New("module lookup disabled by GOPROXY=off"),
+		},
+		{
+			n:          7,
+			envGOPROXY: "off,direct",
+			wantError:  errors.New("module lookup disabled by GOPROXY=off"),
+		},
+		{
+			n:          8,
+			envGOPROXY: "https://example.com,direct",
+			onProxy:    func(proxy *url.URL) error { return errors.New("foobar") },
+			wantError:  errors.New("foobar"),
+		},
+		{
+			n:          9,
+			envGOPROXY: "https://example.com",
+			onProxy:    func(proxy *url.URL) error { return fs.ErrNotExist },
+			wantError:  fs.ErrNotExist,
 		},
 		{
 			n:          10,
+			envGOPROXY: "",
+			wantError:  errors.New("missing GOPROXY"),
+		},
+		{
+			n:          11,
 			envGOPROXY: "://invalid",
 			wantError:  errors.New(`parse "://invalid": missing protocol scheme`),
 		},
@@ -1337,16 +1335,12 @@ func TestWalkEnvGOPROXY(t *testing.T) {
 		var (
 			onProxy  string
 			onDirect bool
-			onOff    bool
 		)
 		err := walkEnvGOPROXY(tt.envGOPROXY, func(proxy *url.URL) error {
 			onProxy = proxy.String()
 			return tt.onProxy(proxy)
 		}, func() error {
 			onDirect = true
-			return nil
-		}, func() error {
-			onOff = true
 			return nil
 		})
 		if tt.wantError != nil {
@@ -1360,22 +1354,13 @@ func TestWalkEnvGOPROXY(t *testing.T) {
 			if err != nil {
 				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
 			}
+			if got, want := onProxy, tt.wantOnProxy; got != want {
+				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+			}
+			if got, want := onDirect, tt.wantOnDirect; got != want {
+				t.Errorf("test(%d): got %t, want %t", tt.n, got, want)
+			}
 		}
-		if got, want := onProxy, tt.wantOnProxy; got != want {
-			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-		}
-		if got, want := onDirect, tt.wantOnDirect; got != want {
-			t.Errorf("test(%d): got %t, want %t", tt.n, got, want)
-		}
-		if got, want := onOff, tt.wantOnOff; got != want {
-			t.Errorf("test(%d): got %t, want %t", tt.n, got, want)
-		}
-	}
-
-	if err := walkEnvGOPROXY("", nil, nil, nil); err == nil {
-		t.Fatal("expected error")
-	} else if got, want := err.Error(), "missing GOPROXY"; got != want {
-		t.Errorf("got %q, want %q", got, want)
 	}
 }
 

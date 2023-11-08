@@ -241,7 +241,7 @@ func (g *Goproxy) serveFetch(rw http.ResponseWriter, req *http.Request, target, 
 func (g *Goproxy) serveFetchQuery(rw http.ResponseWriter, req *http.Request, f *fetch, noFetch bool) {
 	const (
 		contentType        = "application/json; charset=utf-8"
-		cacheControlMaxAge = 60 // 1 minute
+		cacheControlMaxAge = 60
 	)
 	if noFetch {
 		g.serveCache(rw, req, f.target, contentType, cacheControlMaxAge, nil)
@@ -262,7 +262,7 @@ func (g *Goproxy) serveFetchQuery(rw http.ResponseWriter, req *http.Request, f *
 func (g *Goproxy) serveFetchList(rw http.ResponseWriter, req *http.Request, f *fetch, noFetch bool) {
 	const (
 		contentType        = "text/plain; charset=utf-8"
-		cacheControlMaxAge = 60 // 1 minute
+		cacheControlMaxAge = 60
 	)
 	if noFetch {
 		g.serveCache(rw, req, f.target, contentType, cacheControlMaxAge, nil)
@@ -281,7 +281,7 @@ func (g *Goproxy) serveFetchList(rw http.ResponseWriter, req *http.Request, f *f
 
 // serveFetchDownload serves fetch download requests.
 func (g *Goproxy) serveFetchDownload(rw http.ResponseWriter, req *http.Request, f *fetch, noFetch bool) {
-	const cacheControlMaxAge = 604800 // 7 days
+	const cacheControlMaxAge = 604800
 
 	targetExt := path.Ext(f.target)
 	var contentType string
@@ -520,7 +520,7 @@ func cleanEnvGOPROXY(envGOPROXY string) string {
 }
 
 // walkEnvGOPROXY walks through the proxy list parsed from the envGOPROXY.
-func walkEnvGOPROXY(envGOPROXY string, onProxy func(proxy *url.URL) error, onDirect, onOff func() error) error {
+func walkEnvGOPROXY(envGOPROXY string, onProxy func(proxy *url.URL) error, onDirect func() error) error {
 	if envGOPROXY == "" {
 		return errors.New("missing GOPROXY")
 	}
@@ -542,7 +542,7 @@ func walkEnvGOPROXY(envGOPROXY string, onProxy func(proxy *url.URL) error, onDir
 		case "direct":
 			return onDirect()
 		case "off":
-			return onOff()
+			return notExistErrorf("module lookup disabled by GOPROXY=off")
 		}
 		u, err := url.Parse(proxy)
 		if err != nil {
