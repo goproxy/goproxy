@@ -35,6 +35,10 @@ type Goproxy struct {
 	// Fetcher is used to fetch module files.
 	//
 	// If Fetcher is nil, [GoFetcher] is used.
+	//
+	// Note that any error returned by Fetcher that matches [fs.ErrNotExist]
+	// will result in a 404 response with the error message in the response
+	// body.
 	Fetcher Fetcher
 
 	// ProxiedSumDBs is a list of proxied checksum databases (see

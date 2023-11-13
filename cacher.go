@@ -13,8 +13,8 @@ type Cacher interface {
 	// Get gets the matched cache for the name. It returns [fs.ErrNotExist]
 	// if not found.
 	//
-	// Note that the returned [io.ReadCloser] may optionally implement the
-	// following interfaces:
+	// The returned [io.ReadCloser] may optionally implement the following
+	// interfaces:
 	//  1. [io.Seeker], mainly for the Range request header.
 	//  2. interface{ LastModified() time.Time }, mainly for the
 	//     Last-Modified response header. Also for the If-Unmodified-Since,

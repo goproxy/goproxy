@@ -25,7 +25,11 @@ import (
 	"golang.org/x/mod/zip"
 )
 
-// Fetcher defines a set of intuitive methods used to fetch module files for [Goproxy].
+// Fetcher defines a set of intuitive methods used to fetch module files for
+// [Goproxy].
+//
+// Note that any error returned by Fetcher that matches [fs.ErrNotExist]
+// indicates that the module cannot be fetched.
 type Fetcher interface {
 	// Query performs the version query for the given module path.
 	//
