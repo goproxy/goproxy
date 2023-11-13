@@ -10,15 +10,12 @@ A minimalist Go module proxy handler.
 Goproxy has fully implemented the [GOPROXY protocol](https://go.dev/ref/mod#goproxy-protocol). The goal of this project is
 to find the most dead simple way to provide a minimalist handler that can act as
 a full-featured Go module proxy for those who want to build their own proxies.
-Yeah, there is no `Makefile`, no configuration files, no crazy file organization,
-no lengthy documentation, no annoying stuff, just a [`goproxy.Goproxy`](https://pkg.go.dev/github.com/goproxy/goproxy#Goproxy) that
-implements the [`http.Handler`](https://pkg.go.dev/net/http#Handler).
 
 ## Features
 
 - Extremely easy to use
-	- Two structs: [`goproxy.Goproxy`](https://pkg.go.dev/github.com/goproxy/goproxy#Goproxy) and [`goproxy.DirCacher`](https://pkg.go.dev/github.com/goproxy/goproxy#DirCacher)
-	- One interface: [`goproxy.Cacher`](https://pkg.go.dev/github.com/goproxy/goproxy#Cacher)
+	- Three structs: [`goproxy.Goproxy`](https://pkg.go.dev/github.com/goproxy/goproxy#Goproxy), [`goproxy.GoFetcher`](https://pkg.go.dev/github.com/goproxy/goproxy#GoFetcher), and [`goproxy.DirCacher`](https://pkg.go.dev/github.com/goproxy/goproxy#DirCacher)
+	- Two interfaces: [`goproxy.Fetcher`](https://pkg.go.dev/github.com/goproxy/goproxy#Fetcher) and [`goproxy.Cacher`](https://pkg.go.dev/github.com/goproxy/goproxy#Cacher)
 - Built-in support for `GOPROXY`, `GONOPROXY`, `GOSUMDB`, `GONOSUMDB`, and `GOPRIVATE`
 - Supports serving under other Go module proxies by setting `GOPROXY`
 - Supports [proxying checksum databases](https://go.dev/design/25530-sumdb#proxying-a-checksum-database)

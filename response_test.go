@@ -152,27 +152,21 @@ type successResponseBody_LastModified struct {
 	lastModified time.Time
 }
 
-func (srb successResponseBody_LastModified) LastModified() time.Time {
-	return srb.lastModified
-}
+func (srb successResponseBody_LastModified) LastModified() time.Time { return srb.lastModified }
 
 type successResponseBody_ModTime struct {
 	io.Reader
 	modTime time.Time
 }
 
-func (srb successResponseBody_ModTime) ModTime() time.Time {
-	return srb.modTime
-}
+func (srb successResponseBody_ModTime) ModTime() time.Time { return srb.modTime }
 
 type successResponseBody_ETag struct {
 	io.Reader
 	etag string
 }
 
-func (srb successResponseBody_ETag) ETag() string {
-	return srb.etag
-}
+func (srb successResponseBody_ETag) ETag() string { return srb.etag }
 
 func TestResponseSuccess(t *testing.T) {
 	for _, tt := range []struct {

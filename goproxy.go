@@ -18,54 +18,31 @@ import (
 	"strings"
 	"sync"
 
-	"golang.org/x/mod/sumdb"
-	"golang.org/x/mod/sumdb/note"
+	"golang.org/x/mod/module"
+	"golang.org/x/mod/semver"
 )
 
+// tempDirPattern is the pattern for creating temporary directories.
+const tempDirPattern = "goproxy.tmp.*"
+
 // Goproxy is the top-level struct of this project.
-//
-// Note that Goproxy will still adhere to your environment variables. This means
-// you can set GOPROXY to serve Goproxy itself under other proxies. By setting
-// GONOPROXY and GOPRIVATE, you can instruct Goproxy on which modules to fetch
-// directly, rather than using those proxies. Additionally, you can set GOSUMDB,
-// GONOSUMDB, and GOPRIVATE to specify how Goproxy should verify the modules it
-// has just fetched. Importantly, all of these mentioned environment variables
-// are built-in supported, resulting in fewer external command calls and a
-// significant performance boost.
 //
 // For requests involving the download of a large number of modules (e.g., for
 // bulk static analysis), Goproxy supports a non-standard header,
 // "Disable-Module-Fetch: true", which instructs it to return only cached
 // content.
-//
-// Make sure that all fields of Goproxy have been finalized before calling any
-// of its methods.
 type Goproxy struct {
-	// Env is the environment. Each entry is in the form "key=value".
+	// Fetcher is used to fetch module files.
 	//
-	// If Env is nil, [os.Environ] is used.
-	//
-	// If Env contains duplicate environment keys, only the last value in
-	// the slice for each duplicate key is used.
-	Env []string
-
-	// GoBinName is the name of the Go binary that is used to execute direct
-	// fetches.
-	//
-	// If GoBinName is empty, "go" is used.
-	GoBinName string
-
-	// MaxDirectFetches is the maximum number of concurrent direct fetches.
-	//
-	// If MaxDirectFetches is zero, there is no limit.
-	MaxDirectFetches int
+	// If Fetcher is nil, [GoFetcher] is used.
+	Fetcher Fetcher
 
 	// ProxiedSumDBs is a list of proxied checksum databases (see
 	// https://go.dev/design/25530-sumdb#proxying-a-checksum-database). Each
 	// entry is in the form "<sumdb-name>" or "<sumdb-name> <sumdb-URL>".
 	// The first form is a shorthand for the second, where the corresponding
 	// <sumdb-URL> will be the <sumdb-name> itself as a host with an "https"
-	// scheme.
+	// scheme. Invalid entries will be silently ignored.
 	//
 	// If ProxiedSumDBs contains duplicate checksum database names, only the
 	// last value in the slice for each duplicate checksum database name is
@@ -74,8 +51,7 @@ type Goproxy struct {
 
 	// Cacher is used to cache module files.
 	//
-	// If Cacher is nil, module files will be temporarily stored on the
-	// local disk and discarded when the request ends.
+	// If Cacher is nil, caching is disabled.
 	Cacher Cacher
 
 	// TempDir is the directory for storing temporary files.
@@ -83,8 +59,7 @@ type Goproxy struct {
 	// If TempDir is empty, [os.TempDir] is used.
 	TempDir string
 
-	// Transport is used to execute outgoing requests, excluding those
-	// initiated by direct fetches.
+	// Transport is used to execute outgoing requests.
 	//
 	// If Transport is nil, [http.DefaultTransport] is used.
 	Transport http.RoundTripper
@@ -94,70 +69,17 @@ type Goproxy struct {
 	// If ErrorLogger is nil, [log.Default] is used.
 	ErrorLogger *log.Logger
 
-	initOnce              sync.Once
-	env                   []string
-	envGOPROXY            string
-	envGONOPROXY          string
-	envGOSUMDB            string
-	envGONOSUMDB          string
-	goBinName             string
-	directFetchWorkerPool chan struct{}
-	proxiedSumDBs         map[string]*url.URL
-	httpClient            *http.Client
-	sumdbClient           *sumdb.Client
+	initOnce      sync.Once
+	fetcher       Fetcher
+	proxiedSumDBs map[string]*url.URL
+	httpClient    *http.Client
 }
 
 // init initializes the g.
 func (g *Goproxy) init() {
-	env := g.Env
-	if env == nil {
-		env = os.Environ()
-	}
-	var envGOPRIVATE string
-	for _, e := range env {
-		if k, v, ok := strings.Cut(e, "="); ok {
-			switch k {
-			case "GO111MODULE":
-			case "GOPROXY":
-				g.envGOPROXY = cleanEnvGOPROXY(v)
-			case "GONOPROXY":
-				g.envGONOPROXY = v
-			case "GOSUMDB":
-				g.envGOSUMDB = cleanEnvGOSUMDB(v)
-			case "GONOSUMDB":
-				g.envGONOSUMDB = v
-			case "GOPRIVATE":
-				envGOPRIVATE = v
-			default:
-				g.env = append(g.env, e)
-			}
-		}
-	}
-	if g.envGONOPROXY == "" {
-		g.envGONOPROXY = envGOPRIVATE
-	}
-	g.envGONOPROXY = cleanCommaSeparatedList(g.envGONOPROXY)
-	if g.envGONOSUMDB == "" {
-		g.envGONOSUMDB = envGOPRIVATE
-	}
-	g.envGONOSUMDB = cleanCommaSeparatedList(g.envGONOSUMDB)
-	g.env = append(
-		g.env,
-		"GO111MODULE=on",
-		"GOPROXY=direct",
-		"GONOPROXY=",
-		"GOSUMDB=off",
-		"GONOSUMDB=",
-		"GOPRIVATE=",
-	)
-
-	g.goBinName = g.GoBinName
-	if g.goBinName == "" {
-		g.goBinName = "go"
-	}
-
-	if g.MaxDirectFetches > 0 {
-		g.directFetchWorkerPool = make(chan struct{}, g.MaxDirectFetches)
+	g.fetcher = g.Fetcher
+	if g.fetcher == nil {
+		g.fetcher = &GoFetcher{TempDir: g.TempDir, Transport: g.Transport}
 	}
 
 	g.proxiedSumDBs = map[string]*url.URL{}
@@ -179,11 +101,6 @@ func (g *Goproxy) init() {
 	}
 
 	g.httpClient = &http.Client{Transport: g.Transport}
-	g.sumdbClient = sumdb.NewClient(&sumdbClientOps{
-		envGOPROXY: g.envGOPROXY,
-		envGOSUMDB: g.envGOSUMDB,
-		httpClient: g.httpClient,
-	})
 }
 
 // ServeHTTP implements [http.Handler].
@@ -202,90 +119,125 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		responseNotFound(rw, req, 86400)
 		return
 	}
-	target := path[1:]
-
-	tempDir, err := os.MkdirTemp(g.TempDir, "goproxy.tmp.*")
-	if err != nil {
-		g.logErrorf("failed to create temporary directory: %v", err)
-		responseInternalServerError(rw, req)
-		return
-	}
-	defer os.RemoveAll(tempDir)
+	target := path[1:] // Remove the leading slash.
 
 	if strings.HasPrefix(target, "sumdb/") {
-		g.serveSumDB(rw, req, target, tempDir)
+		g.serveSumDB(rw, req, target)
 		return
 	}
-	g.serveFetch(rw, req, target, tempDir)
+	g.serveFetch(rw, req, target)
 }
 
 // serveFetch serves fetch requests.
-func (g *Goproxy) serveFetch(rw http.ResponseWriter, req *http.Request, target, tempDir string) {
-	f, err := newFetch(g, target, tempDir)
+func (g *Goproxy) serveFetch(rw http.ResponseWriter, req *http.Request, target string) {
+	noFetch, _ := strconv.ParseBool(req.Header.Get("Disable-Module-Fetch"))
+
+	escapedModulePath, after, ok := strings.Cut(target, "/@")
+	if !ok {
+		responseNotFound(rw, req, 86400, "missing /@v/")
+		return
+	}
+	modulePath, err := module.UnescapePath(escapedModulePath)
 	if err != nil {
 		responseNotFound(rw, req, 86400, err)
 		return
 	}
-	noFetch, _ := strconv.ParseBool(req.Header.Get("Disable-Module-Fetch"))
-	switch f.ops {
-	case fetchOpsQuery:
-		g.serveFetchQuery(rw, req, f, noFetch)
-	case fetchOpsList:
-		g.serveFetchList(rw, req, f, noFetch)
-	case fetchOpsDownload:
-		g.serveFetchDownload(rw, req, f, noFetch)
+	switch after {
+	case "latest":
+		g.serveFetchQuery(rw, req, target, modulePath, after, noFetch)
+		return
+	case "v/list":
+		g.serveFetchList(rw, req, target, modulePath, noFetch)
+		return
 	}
+
+	if !strings.HasPrefix(after, "v/") {
+		responseNotFound(rw, req, 86400, "missing /@v/")
+		return
+	}
+	after = after[2:] // Remove the leading "v/".
+	ext := path.Ext(after)
+	switch ext {
+	case ".info", ".mod", ".zip":
+	case "":
+		responseNotFound(rw, req, 86400, fmt.Sprintf("no file extension in filename %q", after))
+		return
+	default:
+		responseNotFound(rw, req, 86400, fmt.Sprintf("unexpected extension %q", ext))
+		return
+	}
+
+	escapedModuleVersion := strings.TrimSuffix(after, ext)
+	moduleVersion, err := module.UnescapeVersion(escapedModuleVersion)
+	if err != nil {
+		responseNotFound(rw, req, 86400, err)
+		return
+	}
+	switch moduleVersion {
+	case "latest", "upgrade", "patch":
+		responseNotFound(rw, req, 86400, "invalid version")
+		return
+	}
+	if !semver.IsValid(moduleVersion) {
+		if ext == ".info" {
+			g.serveFetchQuery(rw, req, target, modulePath, moduleVersion, noFetch)
+		} else {
+			responseNotFound(rw, req, 86400, "unrecognized version")
+		}
+		return
+	}
+	g.serveFetchDownload(rw, req, target, modulePath, moduleVersion, noFetch)
 }
 
 // serveFetchQuery serves fetch query requests.
-func (g *Goproxy) serveFetchQuery(rw http.ResponseWriter, req *http.Request, f *fetch, noFetch bool) {
+func (g *Goproxy) serveFetchQuery(rw http.ResponseWriter, req *http.Request, target, modulePath, moduleQuery string, noFetch bool) {
 	const (
 		contentType        = "application/json; charset=utf-8"
 		cacheControlMaxAge = 60
 	)
 	if noFetch {
-		g.serveCache(rw, req, f.target, contentType, cacheControlMaxAge, nil)
+		g.serveCache(rw, req, target, contentType, cacheControlMaxAge, nil)
 		return
 	}
-	fr, err := f.do(req.Context())
+	version, time, err := g.fetcher.Query(req.Context(), modulePath, moduleQuery)
 	if err != nil {
-		g.serveCache(rw, req, f.target, contentType, cacheControlMaxAge, func() {
-			g.logErrorf("failed to query module version: %s: %v", f.target, err)
+		g.serveCache(rw, req, target, contentType, cacheControlMaxAge, func() {
+			g.logErrorf("failed to query module version: %s: %v", target, err)
 			responseError(rw, req, err, true)
 		})
 		return
 	}
-	g.servePutCache(rw, req, f.target, contentType, cacheControlMaxAge, strings.NewReader(marshalInfo(fr.Version, fr.Time)))
+	g.servePutCache(rw, req, target, contentType, cacheControlMaxAge, strings.NewReader(marshalInfo(version, time)))
 }
 
 // serveFetchList serves fetch list requests.
-func (g *Goproxy) serveFetchList(rw http.ResponseWriter, req *http.Request, f *fetch, noFetch bool) {
+func (g *Goproxy) serveFetchList(rw http.ResponseWriter, req *http.Request, target, modulePath string, noFetch bool) {
 	const (
 		contentType        = "text/plain; charset=utf-8"
 		cacheControlMaxAge = 60
 	)
 	if noFetch {
-		g.serveCache(rw, req, f.target, contentType, cacheControlMaxAge, nil)
+		g.serveCache(rw, req, target, contentType, cacheControlMaxAge, nil)
 		return
 	}
-	fr, err := f.do(req.Context())
+	versions, err := g.fetcher.List(req.Context(), modulePath)
 	if err != nil {
-		g.serveCache(rw, req, f.target, contentType, cacheControlMaxAge, func() {
-			g.logErrorf("failed to list module versions: %s: %v", f.target, err)
+		g.serveCache(rw, req, target, contentType, cacheControlMaxAge, func() {
+			g.logErrorf("failed to list module versions: %s: %v", target, err)
 			responseError(rw, req, err, true)
 		})
 		return
 	}
-	g.servePutCache(rw, req, f.target, contentType, cacheControlMaxAge, strings.NewReader(strings.Join(fr.Versions, "\n")))
+	g.servePutCache(rw, req, target, contentType, cacheControlMaxAge, strings.NewReader(strings.Join(versions, "\n")))
 }
 
 // serveFetchDownload serves fetch download requests.
-func (g *Goproxy) serveFetchDownload(rw http.ResponseWriter, req *http.Request, f *fetch, noFetch bool) {
+func (g *Goproxy) serveFetchDownload(rw http.ResponseWriter, req *http.Request, target, modulePath, moduleVersion string, noFetch bool) {
 	const cacheControlMaxAge = 604800
 
-	targetExt := path.Ext(f.target)
+	ext := path.Ext(target)
 	var contentType string
-	switch targetExt {
+	switch ext {
 	case ".info":
 		contentType = "application/json; charset=utf-8"
 	case ".mod":
@@ -295,62 +247,66 @@ func (g *Goproxy) serveFetchDownload(rw http.ResponseWriter, req *http.Request, 
 	}
 
 	if noFetch {
-		g.serveCache(rw, req, f.target, contentType, cacheControlMaxAge, nil)
+		g.serveCache(rw, req, target, contentType, cacheControlMaxAge, nil)
 		return
 	}
 
-	content, err := g.cache(req.Context(), f.target)
-	if err == nil {
+	if content, err := g.cache(req.Context(), target); err == nil {
 		responseSuccess(rw, req, content, contentType, cacheControlMaxAge)
 		return
 	} else if !errors.Is(err, fs.ErrNotExist) {
-		g.logErrorf("failed to get cached module file: %s: %v", f.target, err)
+		g.logErrorf("failed to get cached module file: %s: %v", target, err)
 		responseInternalServerError(rw, req)
 		return
 	}
 
-	fr, err := f.do(req.Context())
+	info, mod, zip, err := g.fetcher.Download(req.Context(), modulePath, moduleVersion)
 	if err != nil {
-		g.logErrorf("failed to download module version: %s: %v", f.target, err)
+		g.logErrorf("failed to download module version: %s: %v", target, err)
 		responseError(rw, req, err, false)
 		return
 	}
+	defer func() {
+		info.Close()
+		mod.Close()
+		zip.Close()
+	}()
 
-	targetWithoutExt := strings.TrimSuffix(f.target, path.Ext(f.target))
-	for _, cache := range []struct{ ext, localFile string }{
-		{".info", fr.Info},
-		{".mod", fr.GoMod},
-		{".zip", fr.Zip},
+	targetWithoutExt := strings.TrimSuffix(target, path.Ext(target))
+	for _, cache := range []struct {
+		ext     string
+		content io.ReadSeeker
+	}{
+		{".info", info},
+		{".mod", mod},
+		{".zip", zip},
 	} {
-		if err := g.putCacheFile(req.Context(), targetWithoutExt+cache.ext, cache.localFile); err != nil {
-			g.logErrorf("failed to cache module file: %s: %v", f.target, err)
+		if err := g.putCache(req.Context(), targetWithoutExt+cache.ext, cache.content); err != nil {
+			g.logErrorf("failed to cache module file: %s: %v", target, err)
 			responseInternalServerError(rw, req)
 			return
 		}
 	}
 
-	var file string
-	switch targetExt {
+	var content io.ReadSeeker
+	switch ext {
 	case ".info":
-		file = fr.Info
+		content = info
 	case ".mod":
-		file = fr.GoMod
+		content = mod
 	case ".zip":
-		file = fr.Zip
+		content = zip
 	}
-	content, err = os.Open(file)
-	if err != nil {
-		g.logErrorf("failed to open file: %v", err)
+	if _, err := content.Seek(0, io.SeekStart); err != nil {
+		g.logErrorf("failed to seek: %v", err)
 		responseInternalServerError(rw, req)
 		return
 	}
-	defer content.Close()
-
 	responseSuccess(rw, req, content, contentType, 604800)
 }
 
 // serveSumDB serves checksum database proxy requests.
-func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, target, tempDir string) {
+func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, target string) {
 	name, path, ok := strings.Cut(strings.TrimPrefix(target, "sumdb/"), "/")
 	if !ok {
 		responseNotFound(rw, req, 86400)
@@ -385,6 +341,14 @@ func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, target, 
 		responseNotFound(rw, req, 86400)
 		return
 	}
+
+	tempDir, err := os.MkdirTemp(g.TempDir, tempDirPattern)
+	if err != nil {
+		g.logErrorf("failed to create temporary directory: %v", err)
+		responseInternalServerError(rw, req)
+		return
+	}
+	defer os.RemoveAll(tempDir)
 
 	file, err := httpGetTemp(req.Context(), g.httpClient, appendURL(u, path).String(), tempDir)
 	if err != nil {
@@ -432,7 +396,8 @@ func (g *Goproxy) servePutCache(rw http.ResponseWriter, req *http.Request, name,
 	responseSuccess(rw, req, content, contentType, cacheControlMaxAge)
 }
 
-// servePutCacheFile is like [servePutCache] but reads the content from the local file.
+// servePutCacheFile is like [servePutCache] but reads the content from the
+// local file.
 func (g *Goproxy) servePutCacheFile(rw http.ResponseWriter, req *http.Request, name, contentType string, cacheControlMaxAge int, file string) {
 	f, err := os.Open(file)
 	if err != nil {
@@ -478,154 +443,6 @@ func (g *Goproxy) logErrorf(format string, v ...any) {
 	} else {
 		log.Output(2, msg)
 	}
-}
-
-const defaultEnvGOPROXY = "https://proxy.golang.org,direct"
-
-// cleanEnvGOPROXY returns the cleaned envGOPROXY.
-func cleanEnvGOPROXY(envGOPROXY string) string {
-	if envGOPROXY == "" || envGOPROXY == defaultEnvGOPROXY {
-		return defaultEnvGOPROXY
-	}
-	var cleaned string
-	for envGOPROXY != "" {
-		var proxy, sep string
-		if i := strings.IndexAny(envGOPROXY, ",|"); i >= 0 {
-			proxy = envGOPROXY[:i]
-			sep = string(envGOPROXY[i])
-			envGOPROXY = envGOPROXY[i+1:]
-			if envGOPROXY == "" {
-				sep = ""
-			}
-		} else {
-			proxy = envGOPROXY
-			envGOPROXY = ""
-		}
-		proxy = strings.TrimSpace(proxy)
-		switch proxy {
-		case "":
-			continue
-		case "direct", "off":
-			sep = ""
-			envGOPROXY = ""
-		}
-		cleaned += proxy + sep
-	}
-	if cleaned == "" {
-		// An error should probably be reported at this point. Refer to
-		// https://go.dev/cl/234857 for more details.
-		return "off"
-	}
-	return cleaned
-}
-
-// walkEnvGOPROXY walks through the proxy list parsed from the envGOPROXY.
-func walkEnvGOPROXY(envGOPROXY string, onProxy func(proxy *url.URL) error, onDirect func() error) error {
-	if envGOPROXY == "" {
-		return errors.New("missing GOPROXY")
-	}
-	var lastError error
-	for envGOPROXY != "" {
-		var (
-			proxy           string
-			fallBackOnError bool
-		)
-		if i := strings.IndexAny(envGOPROXY, ",|"); i >= 0 {
-			proxy = envGOPROXY[:i]
-			fallBackOnError = envGOPROXY[i] == '|'
-			envGOPROXY = envGOPROXY[i+1:]
-		} else {
-			proxy = envGOPROXY
-			envGOPROXY = ""
-		}
-		switch proxy {
-		case "direct":
-			return onDirect()
-		case "off":
-			return notExistErrorf("module lookup disabled by GOPROXY=off")
-		}
-		u, err := url.Parse(proxy)
-		if err != nil {
-			return err
-		}
-		if err := onProxy(u); err != nil {
-			if fallBackOnError || errors.Is(err, fs.ErrNotExist) {
-				lastError = err
-				continue
-			}
-			return err
-		}
-		return nil
-	}
-	return lastError
-}
-
-const defaultEnvGOSUMDB = "sum.golang.org"
-
-// cleanEnvGOSUMDB returns the cleaned envGOSUMDB.
-func cleanEnvGOSUMDB(envGOSUMDB string) string {
-	if envGOSUMDB == "" || envGOSUMDB == defaultEnvGOSUMDB {
-		return defaultEnvGOSUMDB
-	}
-	return envGOSUMDB
-}
-
-const sumGolangOrgKey = "sum.golang.org+033de0ae+Ac4zctda0e5eza+HJyk9SxEdh+s3Ux18htTTAD8OuAn8"
-
-// parseEnvGOSUMDB parses the envGOSUMDB.
-func parseEnvGOSUMDB(envGOSUMDB string) (name string, key string, u *url.URL, isDirectURL bool, err error) {
-	parts := strings.Fields(envGOSUMDB)
-	if l := len(parts); l == 0 {
-		return "", "", nil, false, errors.New("missing GOSUMDB")
-	} else if l > 2 {
-		return "", "", nil, false, errors.New("invalid GOSUMDB: too many fields")
-	}
-
-	switch parts[0] {
-	case "sum.golang.google.cn":
-		if len(parts) == 1 {
-			parts = append(parts, "https://"+parts[0])
-		}
-		fallthrough
-	case defaultEnvGOSUMDB:
-		parts[0] = sumGolangOrgKey
-	}
-	verifier, err := note.NewVerifier(parts[0])
-	if err != nil {
-		return "", "", nil, false, fmt.Errorf("invalid GOSUMDB: %w", err)
-	}
-	name = verifier.Name()
-	key = parts[0]
-
-	u, err = url.Parse("https://" + name)
-	if err != nil ||
-		strings.HasSuffix(name, "/") ||
-		u.Host == "" ||
-		u.RawPath != "" ||
-		*u != (url.URL{Scheme: "https", Host: u.Host, Path: u.Path, RawPath: u.RawPath}) {
-		return "", "", nil, false, fmt.Errorf("invalid sumdb name (must be host[/path]): %s %+v", name, *u)
-	}
-	isDirectURL = true
-	if len(parts) > 1 {
-		u, err = url.Parse(parts[1])
-		if err != nil {
-			return "", "", nil, false, fmt.Errorf("invalid GOSUMDB URL: %w", err)
-		}
-		isDirectURL = false
-	}
-	return
-}
-
-// cleanCommaSeparatedList returns the cleaned comma-separated list.
-func cleanCommaSeparatedList(list string) string {
-	var ss []string
-	for _, s := range strings.Split(list, ",") {
-		s = strings.TrimSpace(s)
-		if s != "" {
-			ss = append(ss, s)
-		}
-	}
-	return strings.Join(ss, ",")
 }
 
 // cleanPath returns the canonical path for the p.

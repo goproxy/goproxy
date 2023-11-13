@@ -40,7 +40,7 @@ type serverCmdConfig struct {
 	tlsCertFile      string
 	tlsKeyFile       string
 	pathPrefix       string
-	goBinName        string
+	goBin            string
 	maxDirectFetches int
 	proxiedSumDBs    []string
 	cacher           string
@@ -61,7 +61,7 @@ func newServerCmdConfig(cmd *cobra.Command) *serverCmdConfig {
 	fs.StringVar(&cfg.tlsCertFile, "tls-cert-file", "", "path to the TLS certificate file")
 	fs.StringVar(&cfg.tlsKeyFile, "tls-key-file", "", "path to the TLS key file")
 	fs.StringVar(&cfg.pathPrefix, "path-prefix", "", "prefix for all request paths")
-	fs.StringVar(&cfg.goBinName, "go-bin-name", "go", "name of the Go binary that is used to execute direct fetches")
+	fs.StringVar(&cfg.goBin, "go-bin", "go", "path to the Go binary that is used to execute direct fetches")
 	fs.IntVar(&cfg.maxDirectFetches, "max-direct-fetches", 0, "maximum number (0 means no limit) of concurrent direct fetches")
 	fs.StringSliceVar(&cfg.proxiedSumDBs, "proxied-sumdbs", nil, "list of proxied checksum databases")
 	fs.StringVar(&cfg.cacher, "cacher", "dir", "cacher to use (valid values: dir, s3)")
@@ -89,11 +89,15 @@ func runServerCmd(cmd *cobra.Command, args []string, cfg *serverCmdConfig) error
 	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: cfg.insecure}
 	transport.RegisterProtocol("file", http.NewFileTransport(httpDirFS{}))
 	g := &goproxy.Goproxy{
-		GoBinName:        cfg.goBinName,
-		MaxDirectFetches: cfg.maxDirectFetches,
-		ProxiedSumDBs:    cfg.proxiedSumDBs,
-		TempDir:          cfg.tempDir,
-		Transport:        transport,
+		Fetcher: &goproxy.GoFetcher{
+			GoBin:            cfg.goBin,
+			MaxDirectFetches: cfg.maxDirectFetches,
+			TempDir:          cfg.tempDir,
+			Transport:        transport,
+		},
+		ProxiedSumDBs: cfg.proxiedSumDBs,
+		TempDir:       cfg.tempDir,
+		Transport:     transport,
 	}
 	switch cfg.cacher {
 	case "dir":
@@ -131,18 +135,18 @@ func runServerCmd(cmd *cobra.Command, args []string, cfg *serverCmdConfig) error
 	}
 	stopCtx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	var serverError error
+	var serverErr error
 	go func() {
 		if cfg.tlsCertFile != "" && cfg.tlsKeyFile != "" {
-			serverError = server.ListenAndServeTLS(cfg.tlsCertFile, cfg.tlsKeyFile)
+			serverErr = server.ListenAndServeTLS(cfg.tlsCertFile, cfg.tlsKeyFile)
 		} else {
-			serverError = server.ListenAndServe()
+			serverErr = server.ListenAndServe()
 		}
 		stop()
 	}()
 	<-stopCtx.Done()
-	if serverError != nil && !errors.Is(serverError, http.ErrServerClosed) {
-		return serverError
+	if serverErr != nil && !errors.Is(serverErr, http.ErrServerClosed) {
+		return serverErr
 	}
 
 	shutdownCtx := context.Background()

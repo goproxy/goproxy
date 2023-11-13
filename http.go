@@ -48,13 +48,13 @@ func notExistErrorf(format string, v ...interface{}) error {
 
 // httpGet gets the content from the given url and writes it to the dst.
 func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer) error {
-	var lastError error
+	var lastErr error
 	for attempt := 0; attempt < 10; attempt++ {
 		if attempt > 0 {
 			select {
 			case <-time.After(backoffSleep(100*time.Millisecond, time.Second, attempt)):
 			case <-ctx.Done():
-				return lastError
+				return lastErr
 			}
 		}
 
@@ -66,7 +66,7 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 		resp, err := client.Do(req)
 		if err != nil {
 			if isRetryableHTTPClientDoError(err) {
-				lastError = err
+				lastErr = err
 				continue
 			}
 			return err
@@ -93,14 +93,14 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 			http.StatusInternalServerError,
 			http.StatusBadGateway,
 			http.StatusServiceUnavailable:
-			lastError = errBadUpstream
+			lastErr = errBadUpstream
 		case http.StatusGatewayTimeout:
-			lastError = errFetchTimedOut
+			lastErr = errFetchTimedOut
 		default:
 			return fmt.Errorf("GET %s: %s: %s", resp.Request.URL.Redacted(), resp.Status, respBody)
 		}
 	}
-	return lastError
+	return lastErr
 }
 
 // httpGetTemp is like [httpGet] but writes the content to a new temporary file

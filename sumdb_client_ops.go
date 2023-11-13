@@ -16,46 +16,49 @@ import (
 
 // sumdbClientOps implements [golang.org/x/mod/sumdb.ClientOps].
 type sumdbClientOps struct {
-	initOnce          sync.Once
-	initError         error
 	name              string
 	key               string
 	directURL         *url.URL
 	urlValue          atomic.Value
 	urlDetermineMutex sync.Mutex
 	urlDeterminedAt   time.Time
-	urlDetermineError error
+	urlDetermineErr   error
 	envGOPROXY        string
-	envGOSUMDB        string
 	httpClient        *http.Client
 }
 
-// init initializes the sco.
-func (sco *sumdbClientOps) init() {
-	var isDirectURL bool
-	sco.name, sco.key, sco.directURL, isDirectURL, sco.initError = parseEnvGOSUMDB(sco.envGOSUMDB)
-	if sco.initError != nil {
-		return
+// newSumdbClientOps creates a new [sumdbClientOps].
+func newSumdbClientOps(envGOPROXY, envGOSUMDB string, httpClient *http.Client) (*sumdbClientOps, error) {
+	var (
+		sco         = &sumdbClientOps{envGOPROXY: envGOPROXY, httpClient: httpClient}
+		u           *url.URL
+		isDirectURL bool
+		err         error
+	)
+	sco.name, sco.key, u, isDirectURL, err = parseEnvGOSUMDB(envGOSUMDB)
+	if err != nil {
+		return nil, err
 	}
-	if !isDirectURL {
-		sco.urlValue.Store(sco.directURL)
-		sco.directURL = nil
+	if isDirectURL {
+		sco.directURL = u
+	} else {
+		sco.urlValue.Store(u)
 	}
+	return sco, nil
 }
 
 // url returns the URL for connecting to the checksum database.
 func (sco *sumdbClientOps) url() (*url.URL, error) {
-	if sco.initOnce.Do(sco.init); sco.initError != nil {
-		return nil, sco.initError
-	}
 	if v := sco.urlValue.Load(); v != nil {
 		return v.(*url.URL), nil
 	}
+
 	sco.urlDetermineMutex.Lock()
 	defer sco.urlDetermineMutex.Unlock()
-	if time.Since(sco.urlDeterminedAt) < 10*time.Second && sco.urlDetermineError != nil {
-		return nil, sco.urlDetermineError
+	if time.Since(sco.urlDeterminedAt) < 10*time.Second && sco.urlDetermineErr != nil {
+		return nil, sco.urlDetermineErr
 	}
+
 	u := sco.directURL
 	err := walkEnvGOPROXY(sco.envGOPROXY, func(proxy *url.URL) error {
 		pu := appendURL(proxy, "sumdb", sco.name)
@@ -67,10 +70,11 @@ func (sco *sumdbClientOps) url() (*url.URL, error) {
 	}, func() error { return nil })
 	sco.urlDeterminedAt = time.Now()
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		sco.urlDetermineError = err
+		sco.urlDetermineErr = err
 		return nil, err
 	}
-	sco.urlDetermineError = nil
+	sco.urlDetermineErr = nil
+
 	sco.urlValue.Store(u)
 	return u, nil
 }
@@ -90,9 +94,6 @@ func (sco *sumdbClientOps) ReadRemote(path string) ([]byte, error) {
 
 // ReadConfig implements [golang.org/x/mod/sumdb.ClientOps].
 func (sco *sumdbClientOps) ReadConfig(file string) ([]byte, error) {
-	if sco.initOnce.Do(sco.init); sco.initError != nil {
-		return nil, sco.initError
-	}
 	if file == "key" {
 		return []byte(sco.key), nil
 	}

@@ -14,7 +14,8 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
-// s3Cacher implements [github.com/goproxy/goproxy.Cacher] using an S3-compatible service.
+// s3Cacher implements [github.com/goproxy/goproxy.Cacher] using an
+// S3-compatible service.
 type s3Cacher struct {
 	client   *minio.Client
 	bucket   string
@@ -81,7 +82,8 @@ func (s3c *s3Cacher) Put(ctx context.Context, name string, content io.ReadSeeker
 	size, err := content.Seek(0, io.SeekEnd)
 	if err != nil {
 		return err
-	} else if _, err := content.Seek(0, io.SeekStart); err != nil {
+	}
+	if _, err := content.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
 
