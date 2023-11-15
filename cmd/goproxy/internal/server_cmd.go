@@ -25,12 +25,14 @@ func newServerCmd() *cobra.Command {
 		Short: "Start a Go module proxy server",
 		Long: strings.TrimSpace(`
 Start a Go module proxy server.
+
+Make sure that the Go binary and the version control systems (such as Git) that
+need to be supported are installed and configured in the current environment, as
+they will be required for direct module fetching.
 `),
 	}
 	cfg := newServerCmdConfig(cmd)
-	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		return runServerCmd(cmd, args, cfg)
-	}
+	cmd.RunE = func(cmd *cobra.Command, args []string) error { return runServerCmd(cmd, args, cfg) }
 	return cmd
 }
 
