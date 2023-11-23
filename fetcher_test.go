@@ -1077,6 +1077,17 @@ func TestGoFetcherDirectDownload(t *testing.T) {
 	}
 }
 
+type misbehavingDoneContext struct{}
+
+func (misbehavingDoneContext) Deadline() (deadline time.Time, ok bool) { return time.Time{}, false }
+func (misbehavingDoneContext) Done() <-chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
+}
+func (misbehavingDoneContext) Err() error                        { return nil }
+func (misbehavingDoneContext) Value(key interface{}) interface{} { return nil }
+
 func TestGoFetcherExecGo(t *testing.T) {
 	clearGoFetcherBuiltInEnv(t)
 	t.Setenv("GOPATH", t.TempDir())
@@ -1117,6 +1128,11 @@ func TestGoFetcherExecGo(t *testing.T) {
 		},
 		{
 			n:       5,
+			ctx:     &misbehavingDoneContext{},
+			wantErr: errors.New("exec: not started"),
+		},
+		{
+			n:       6,
 			ctx:     context.Background(),
 			tempDir: filepath.Join(t.TempDir(), "404"),
 			wantErr: fs.ErrNotExist,

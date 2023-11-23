@@ -464,6 +464,9 @@ func (gf *GoFetcher) execGo(ctx context.Context, args ...string) ([]byte, error)
 	cmd.Dir = tempDir
 	output, err := cmd.Output()
 	if err != nil {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if len(output) > 0 {
 			var goErr struct{ Error string }
 			if err := json.Unmarshal(output, &goErr); err == nil && goErr.Error != "" {
@@ -471,7 +474,8 @@ func (gf *GoFetcher) execGo(ctx context.Context, args ...string) ([]byte, error)
 			}
 		} else if ee, ok := err.(*exec.ExitError); ok {
 			output = ee.Stderr
-		} else {
+		}
+		if len(output) == 0 {
 			return nil, err
 		}
 		var msg string
