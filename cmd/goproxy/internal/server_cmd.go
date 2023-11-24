@@ -27,8 +27,12 @@ func newServerCmd() *cobra.Command {
 Start a Go module proxy server.
 
 Make sure that the Go binary and the version control systems (such as Git) that
-need to be supported are installed and configured in the current environment, as
-they will be required for direct module fetching.
+need to be supported are installed and properly configured in the current
+environment, as they are required for direct module fetching.
+
+During a direct module fetch, the Go binary is called while holding a lock file
+in the module cache directory (specified by GOMODCACHE) to prevent potential
+conflicts. Misuse of a shared GOMODCACHE may lead to deadlocks.
 `),
 	}
 	cfg := newServerCmdConfig(cmd)

@@ -71,6 +71,14 @@ type Fetcher interface {
 
 // GoFetcher implements [Fetcher] using the local Go binary.
 //
+// Make sure that the Go binary and the version control systems (such as Git)
+// that need to be supported are installed and properly configured in your
+// environment, as they are required for direct module fetching.
+//
+// During a direct module fetch, the Go binary is called while holding a lock
+// file in the module cache directory (specified by GOMODCACHE) to prevent
+// potential conflicts. Misuse of a shared GOMODCACHE may lead to deadlocks.
+//
 // Note that GoFetcher will still adhere to your environment variables. This
 // means you can set GOPROXY to run GoFetcher itself under other proxies. By
 // setting GONOPROXY and GOPRIVATE, you can instruct GoFetcher on which modules

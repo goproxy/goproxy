@@ -62,10 +62,10 @@ func main() {
 }
 ```
 
-Then run it:
+Then run it with a `GOMODCACHE` that differs from `go env GOMODCACHE`:
 
 ```bash
-go run goproxy.go
+GOMODCACHE=/tmp/goproxy-gomodcache go run goproxy.go
 ```
 
 Finally, set `GOPROXY` to try it out:
@@ -82,10 +82,10 @@ For more details, refer to the [documentation](https://pkg.go.dev/github.com/gop
 
 Refer to the [Installation](#installation) section to download the binary.
 
-Then run it:
+Then run it with a `GOMODCACHE` that differs from `go env GOMODCACHE`:
 
 ```bash
-goproxy server --address localhost:8080
+GOMODCACHE=/tmp/goproxy-gomodcache goproxy server --address localhost:8080
 ```
 
 Finally, set `GOPROXY` to try it out:
