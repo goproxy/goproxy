@@ -15,6 +15,8 @@ RUN apk add --no-cache go git git-lfs openssh gpg subversion fossil mercurial br
 RUN git lfs install
 
 USER nobody
+WORKDIR /go
+VOLUME /go
 WORKDIR /goproxy
 VOLUME /goproxy
 EXPOSE 8080
