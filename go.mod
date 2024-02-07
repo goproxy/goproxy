@@ -5,7 +5,7 @@ go 1.18
 require (
 	github.com/minio/minio-go/v7 v7.0.66
 	github.com/spf13/cobra v1.8.0
-	golang.org/x/mod v0.14.0
+	golang.org/x/mod v0.15.0
 )
 
 require (
