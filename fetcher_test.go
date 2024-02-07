@@ -126,17 +126,17 @@ func TestGoFetcherInit(t *testing.T) {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 			if gf.directFetchWorkerPool == nil {
-				t.Fatal("unexpected nil")
+				t.Fatalf("test(%d): unexpected nil", tt.n)
 			} else if got, want := cap(gf.directFetchWorkerPool), 10; got != want {
 				t.Errorf("test(%d): got %d, want %d", tt.n, got, want)
 			}
 			if gf.httpClient == nil {
-				t.Fatal("unexpected nil")
+				t.Fatalf("test(%d): unexpected nil", tt.n)
 			} else if got, want := gf.httpClient.Transport, http.DefaultTransport; got != want {
 				t.Errorf("test(%d): got %#v, want %#v", tt.n, got, want)
 			}
 			if gf.sumdbClient == nil {
-				t.Fatal("unexpected nil")
+				t.Fatalf("test(%d): unexpected nil", tt.n)
 			}
 		}
 	}
@@ -839,18 +839,29 @@ func TestGoFetcherDownload(t *testing.T) {
 			}
 			if b, err := io.ReadAll(info); err != nil {
 				t.Errorf("test(%d): unexpected error %q", tt.n, err)
+			} else if err := info.Close(); err != nil {
+				t.Errorf("test(%d): unexpected error %q", tt.n, err)
 			} else if got, want := string(b), tt.wantInfo; got != want {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 			if b, err := io.ReadAll(mod); err != nil {
+				t.Errorf("test(%d): unexpected error %q", tt.n, err)
+			} else if err := mod.Close(); err != nil {
 				t.Errorf("test(%d): unexpected error %q", tt.n, err)
 			} else if got, want := string(b), tt.wantMod; got != want {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 			if b, err := io.ReadAll(zip); err != nil {
 				t.Errorf("test(%d): unexpected error %q", tt.n, err)
+			} else if err := zip.Close(); err != nil {
+				t.Errorf("test(%d): unexpected error %q", tt.n, err)
 			} else if got, want := string(b), tt.wantZip; got != want {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+			}
+			if des, err := os.ReadDir(gf.TempDir); err != nil {
+				t.Errorf("test(%d): unexpected error %q", tt.n, err)
+			} else if got, want := len(des), 0; got != want {
+				t.Errorf("test(%d): got %d, want %d", tt.n, got, want)
 			}
 		}
 	}
@@ -965,7 +976,7 @@ func TestGoFetcherProxyDownload(t *testing.T) {
 		if err != nil {
 			t.Fatalf("test(%d): unexpected error %q", tt.n, err)
 		}
-		infoFile, modFile, zipFile, err := gf.proxyDownload(context.Background(), tt.path, tt.version, proxy)
+		infoFile, modFile, zipFile, cleanup, err := gf.proxyDownload(context.Background(), tt.path, tt.version, proxy)
 		if tt.wantErr != nil {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
@@ -989,6 +1000,25 @@ func TestGoFetcherProxyDownload(t *testing.T) {
 			if b, err := os.ReadFile(zipFile); err != nil {
 				t.Errorf("test(%d): unexpected error %q", tt.n, err)
 			} else if got, want := string(b), tt.wantZip; got != want {
+				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+			}
+			if cleanup == nil {
+				t.Fatalf("test(%d): unexpected nil", tt.n)
+			}
+			cleanup()
+			if _, err := os.Stat(infoFile); err == nil {
+				t.Errorf("test(%d): expected error", tt.n)
+			} else if got, want := err, fs.ErrNotExist; !compareErrors(got, want) {
+				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+			}
+			if _, err := os.Stat(modFile); err == nil {
+				t.Errorf("test(%d): expected error", tt.n)
+			} else if got, want := err, fs.ErrNotExist; !compareErrors(got, want) {
+				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+			}
+			if _, err := os.Stat(zipFile); err == nil {
+				t.Errorf("test(%d): expected error", tt.n)
+			} else if got, want := err, fs.ErrNotExist; !compareErrors(got, want) {
 				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 			}
 		}
@@ -1919,5 +1949,19 @@ func TestVerifyZipFile(t *testing.T) {
 				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
 			}
 		}
+	}
+}
+
+func TestCloserFunc(t *testing.T) {
+	var closed bool
+	var closer io.Closer = closerFunc(func() error {
+		closed = true
+		return nil
+	})
+	if err := closer.Close(); err != nil {
+		t.Fatalf("unexpected error %q", err)
+	}
+	if got, want := closed, true; got != want {
+		t.Errorf("got %t, want %t", got, want)
 	}
 }

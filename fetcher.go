@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/mod/module"
@@ -338,12 +339,19 @@ func (gf *GoFetcher) Download(ctx context.Context, path, version string) (info, 
 		return
 	}
 
-	var infoFile, modFile, zipFile string
+	var (
+		infoFile, modFile, zipFile string
+
+		// cleanup is the cleanup function that will be called when the
+		// infoFile, modFile, and zipFile are no longer needed, or when
+		// an error occurs.
+		cleanup func()
+	)
 	if gf.skipProxy(path) {
 		infoFile, modFile, zipFile, err = gf.directDownload(ctx, path, version)
 	} else {
 		err = walkEnvGOPROXY(gf.envGOPROXY, func(proxy *url.URL) error {
-			infoFile, modFile, zipFile, err = gf.proxyDownload(ctx, path, version, proxy)
+			infoFile, modFile, zipFile, cleanup, err = gf.proxyDownload(ctx, path, version, proxy)
 			return err
 		}, func() error {
 			infoFile, modFile, zipFile, err = gf.directDownload(ctx, path, version)
@@ -352,6 +360,15 @@ func (gf *GoFetcher) Download(ctx context.Context, path, version string) (info, 
 	}
 	if err != nil {
 		return
+	}
+	if cleanup != nil {
+		defer func() {
+			if err != nil {
+				cleanup()
+			}
+		}()
+	} else {
+		cleanup = func() {} // Avoid nil cleanup.
 	}
 
 	infoVersion, infoTime, err := unmarshalInfoFile(infoFile)
@@ -378,25 +395,54 @@ func (gf *GoFetcher) Download(ctx context.Context, path, version string) (info, 
 	}
 
 	infoContent := strings.NewReader(marshalInfo(infoVersion, infoTime))
+	modContent, err := os.Open(modFile)
+	if err != nil {
+		return
+	}
+	zipContent, err := os.Open(zipFile)
+	if err != nil {
+		modContent.Close()
+		return
+	}
+
+	var (
+		closers int32 = 3
+		closed        = func() {
+			if atomic.AddInt32(&closers, -1) == 0 {
+				cleanup()
+			}
+		}
+	)
+	var infoClosedOnce sync.Once
 	info = struct {
 		io.ReadSeeker
 		io.Closer
-	}{infoContent, io.NopCloser(infoContent)}
-	mod, err = os.Open(modFile)
-	if err != nil {
-		return
-	}
-	zip, err = os.Open(zipFile)
-	if err != nil {
-		mod.Close()
-		return
-	}
+	}{infoContent, closerFunc(func() error {
+		infoClosedOnce.Do(closed)
+		return nil
+	})}
+	var modClosedOnce sync.Once
+	mod = struct {
+		io.ReadSeeker
+		io.Closer
+	}{modContent, closerFunc(func() error {
+		defer modClosedOnce.Do(closed)
+		return modContent.Close()
+	})}
+	var zipClosedOnce sync.Once
+	zip = struct {
+		io.ReadSeeker
+		io.Closer
+	}{zipContent, closerFunc(func() error {
+		defer zipClosedOnce.Do(closed)
+		return zipContent.Close()
+	})}
 	return
 }
 
 // proxyDownload downloads the module files for the given module path and
 // version using the given proxy.
-func (gf *GoFetcher) proxyDownload(ctx context.Context, path, version string, proxy *url.URL) (infoFile, modFile, zipFile string, err error) {
+func (gf *GoFetcher) proxyDownload(ctx context.Context, path, version string, proxy *url.URL) (infoFile, modFile, zipFile string, cleanup func(), err error) {
 	escapedPath, err := module.EscapePath(path)
 	if err != nil {
 		return
@@ -414,13 +460,6 @@ func (gf *GoFetcher) proxyDownload(ctx context.Context, path, version string, pr
 	defer func() {
 		if err != nil {
 			os.RemoveAll(tempDir)
-		} else {
-			// TODO: Use [context.AfterFunc] when the minimum supported
-			// Go version is 1.21. See https://go.dev/doc/go1.21#context.
-			go func() {
-				<-ctx.Done()
-				os.RemoveAll(tempDir)
-			}()
 		}
 	}()
 
@@ -436,6 +475,7 @@ func (gf *GoFetcher) proxyDownload(ctx context.Context, path, version string, pr
 	if err != nil {
 		return
 	}
+	cleanup = func() { os.RemoveAll(tempDir) }
 	return
 }
 
@@ -760,3 +800,9 @@ func verifyZipFile(sumdbClient *sumdb.Client, name, modulePath, moduleVersion st
 	}
 	return notExistErrorf("%s@%s: invalid version: untrusted revision %s", modulePath, moduleVersion, moduleVersion)
 }
+
+// closerFunc is an adapter to allow the use of an ordinary function as an [io.Closer].
+type closerFunc func() error
+
+// Close implements [io.Closer].
+func (f closerFunc) Close() error { return f() }
