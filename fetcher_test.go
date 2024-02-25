@@ -1567,7 +1567,7 @@ func TestUnmarshalInfo(t *testing.T) {
 		{
 			n:       4,
 			info:    "{}",
-			wantErr: errors.New("empty version"),
+			wantErr: errors.New("invalid version"),
 		},
 		{
 			n:       5,
