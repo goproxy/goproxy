@@ -273,7 +273,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 		},
 		{
 			n:                7,
-			target:           "example.com/@v/master.info",
+			target:           "example.com/@v/v1.info",
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "application/json; charset=utf-8",
 			wantCacheControl: "public, max-age=60",
@@ -281,6 +281,22 @@ func TestGoproxyServeFetch(t *testing.T) {
 		},
 		{
 			n:                8,
+			target:           "example.com/@v/v1.0.info",
+			wantStatusCode:   http.StatusOK,
+			wantContentType:  "application/json; charset=utf-8",
+			wantCacheControl: "public, max-age=60",
+			wantContent:      info,
+		},
+		{
+			n:                9,
+			target:           "example.com/@v/master.info",
+			wantStatusCode:   http.StatusOK,
+			wantContentType:  "application/json; charset=utf-8",
+			wantCacheControl: "public, max-age=60",
+			wantContent:      info,
+		},
+		{
+			n:                10,
 			target:           "example.com/@v/v1.0.0.mod",
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -288,7 +304,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      mod,
 		},
 		{
-			n: 9,
+			n: 11,
 			cacher: &testCacher{
 				Cacher: DirCacher(t.TempDir()),
 				get: func(ctx context.Context, c Cacher, name string) (io.ReadCloser, error) {
@@ -303,7 +319,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:        mod,
 		},
 		{
-			n:                10,
+			n:                12,
 			target:           "example.com/@v/v1.0.0.zip",
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "application/zip",
@@ -311,7 +327,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      string(zip),
 		},
 		{
-			n: 11,
+			n: 13,
 			cacher: &testCacher{
 				Cacher: DirCacher(t.TempDir()),
 				get: func(ctx context.Context, c Cacher, name string) (io.ReadCloser, error) {
@@ -326,7 +342,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:        string(zip),
 		},
 		{
-			n:                12,
+			n:                14,
 			target:           "example.com",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -334,7 +350,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      "not found: missing /@v/",
 		},
 		{
-			n:                13,
+			n:                15,
 			target:           "example.com/@/",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -342,7 +358,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      "not found: missing /@v/",
 		},
 		{
-			n:                14,
+			n:                16,
 			target:           "foobar/@latest",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -350,7 +366,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      `not found: invalid escaped module path "foobar": malformed module path "foobar": missing dot in first path element`,
 		},
 		{
-			n:                15,
+			n:                17,
 			target:           "example.com/@v/foobar",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -358,7 +374,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      `not found: no file extension in filename "foobar"`,
 		},
 		{
-			n:                16,
+			n:                18,
 			target:           "example.com/@v/foo.bar",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -366,7 +382,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      `not found: unexpected extension ".bar"`,
 		},
 		{
-			n:                17,
+			n:                19,
 			target:           "example.com/@v/!!v1.0.0.info",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -374,7 +390,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      `not found: invalid escaped version "!!v1.0.0"`,
 		},
 		{
-			n:                18,
+			n:                20,
 			target:           "example.com/@v/latest.info",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -382,7 +398,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      "not found: invalid version",
 		},
 		{
-			n:                19,
+			n:                21,
 			target:           "example.com/@v/upgrade.info",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -390,7 +406,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      "not found: invalid version",
 		},
 		{
-			n:                20,
+			n:                22,
 			target:           "example.com/@v/patch.info",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -398,7 +414,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      "not found: invalid version",
 		},
 		{
-			n:                21,
+			n:                23,
 			target:           "example.com/@v/master.mod",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
