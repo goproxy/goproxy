@@ -80,7 +80,7 @@ For more details, refer to the [documentation](https://pkg.go.dev/github.com/gop
 
 <details><summary>Run from command line</summary>
 
-Refer to the [Installation](#installation) section to download the binary.
+Refer to the [Installation](#installation) section to download or build the binary.
 
 Then run it with a `GOMODCACHE` that differs from `go env GOMODCACHE`:
 
