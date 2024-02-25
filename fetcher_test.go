@@ -1560,9 +1560,10 @@ func TestUnmarshalInfo(t *testing.T) {
 			wantTime:    time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
 		},
 		{
-			n:       3,
-			info:    `{"Version":"v1.0.0"}`,
-			wantErr: errors.New("zero time"),
+			n:           3,
+			info:        `{"Version":"v1.0.0","Time":"0001-01-01T00:00:00Z"}`,
+			wantVersion: "v1.0.0",
+			wantTime:    time.Time{},
 		},
 		{
 			n:       4,

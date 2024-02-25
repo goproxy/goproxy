@@ -707,9 +707,6 @@ func unmarshalInfo(s string) (string, time.Time, error) {
 	if !semver.IsValid(info.Version) {
 		return "", time.Time{}, errors.New("invalid version")
 	}
-	if info.Time.IsZero() {
-		return "", time.Time{}, errors.New("zero time")
-	}
 	return info.Version, info.Time.UTC(), nil
 }
 
