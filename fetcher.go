@@ -339,6 +339,10 @@ func (gf *GoFetcher) Download(ctx context.Context, path, version string) (info, 
 		return
 	}
 
+	if err = checkCanonicalVersion(path, version); err != nil {
+		return
+	}
+
 	var (
 		infoFile, modFile, zipFile string
 
@@ -688,6 +692,21 @@ func cleanCommaSeparatedList(list string) string {
 		}
 	}
 	return strings.Join(ss, ",")
+}
+
+// checkCanonicalVersion is like [module.Check] but also checks whether the
+// version is canonical.
+func checkCanonicalVersion(path, version string) error {
+	if err := module.Check(path, version); err != nil {
+		return err
+	}
+	if version != module.CanonicalVersion(version) {
+		return &module.ModuleError{
+			Path: path,
+			Err:  &module.InvalidVersionError{Version: version, Err: errors.New("not a canonical version")},
+		}
+	}
+	return nil
 }
 
 // marshalInfo marshals the version and t as info.

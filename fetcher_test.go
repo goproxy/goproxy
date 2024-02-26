@@ -702,6 +702,7 @@ func TestGoFetcherDownload(t *testing.T) {
 		sumdbHandler http.HandlerFunc
 		env          []string
 		path         string
+		version      string
 		wantInfo     string
 		wantMod      string
 		wantZip      string
@@ -711,6 +712,7 @@ func TestGoFetcherDownload(t *testing.T) {
 			n:        1,
 			env:      append(os.Environ(), "GOPROXY="+proxyServer.URL, "GOSUMDB="+vkey+" "+sumdbServer.URL),
 			path:     "example.com",
+			version:  infoVersion,
 			wantInfo: info,
 			wantMod:  mod,
 			wantZip:  string(zip),
@@ -724,6 +726,7 @@ func TestGoFetcherDownload(t *testing.T) {
 				"GOSUMDB="+vkey+" "+sumdbServer.URL,
 			),
 			path:     "example.com",
+			version:  infoVersion,
 			wantInfo: info,
 			wantMod:  mod,
 			wantZip:  string(zip),
@@ -739,6 +742,7 @@ func TestGoFetcherDownload(t *testing.T) {
 			},
 			env:      append(os.Environ(), "GOPROXY="+proxyServer.URL+",direct", "GOSUMDB="+vkey+" "+sumdbServer.URL),
 			path:     "example.com",
+			version:  infoVersion,
 			wantInfo: info,
 			wantMod:  mod,
 			wantZip:  string(zip),
@@ -754,6 +758,7 @@ func TestGoFetcherDownload(t *testing.T) {
 			},
 			env:     append(os.Environ(), "GOPROXY="+proxyServer.URL, "GOSUMDB=off"),
 			path:    "example.com",
+			version: infoVersion,
 			wantErr: notExistErrorf("invalid info file: unexpected end of JSON input"),
 		},
 		{
@@ -767,6 +772,7 @@ func TestGoFetcherDownload(t *testing.T) {
 			},
 			env:     append(os.Environ(), "GOPROXY="+proxyServer.URL, "GOSUMDB=off"),
 			path:    "example.com",
+			version: infoVersion,
 			wantErr: notExistErrorf("invalid mod file: missing module directive"),
 		},
 		{
@@ -780,6 +786,7 @@ func TestGoFetcherDownload(t *testing.T) {
 			},
 			env:     append(os.Environ(), "GOPROXY="+proxyServer.URL, "GOSUMDB=off"),
 			path:    "example.com",
+			version: infoVersion,
 			wantErr: notExistErrorf("invalid zip file: zip: not a valid zip file"),
 		},
 		{
@@ -791,6 +798,7 @@ func TestGoFetcherDownload(t *testing.T) {
 			})).ServeHTTP,
 			env:     append(os.Environ(), "GOPROXY="+proxyServer.URL, "GOSUMDB="+vkey+" "+sumdbServer.URL),
 			path:    "example.com",
+			version: infoVersion,
 			wantErr: notExistErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
 		},
 		{
@@ -802,15 +810,41 @@ func TestGoFetcherDownload(t *testing.T) {
 			})).ServeHTTP,
 			env:     append(os.Environ(), "GOPROXY="+proxyServer.URL, "GOSUMDB="+vkey+" "+sumdbServer.URL),
 			path:    "example.com",
+			version: infoVersion,
 			wantErr: notExistErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
 		},
 		{
 			n:       9,
-			path:    "foobar",
-			wantErr: errors.New(`malformed module path "foobar": missing dot in first path element`),
+			path:    "example.com",
+			version: "v1",
+			wantErr: errors.New("example.com@v1: invalid version: not a canonical version"),
 		},
 		{
 			n:       10,
+			path:    "example.com",
+			version: "v1.0",
+			wantErr: errors.New("example.com@v1.0: invalid version: not a canonical version"),
+		},
+		{
+			n:       11,
+			path:    "example.com",
+			version: "master",
+			wantErr: errors.New("example.com@master: invalid version: not a semantic version"),
+		},
+		{
+			n:       12,
+			path:    "example.com",
+			version: "v2.0.0",
+			wantErr: errors.New("example.com@v2.0.0: invalid version: should be v0 or v1, not v2"),
+		},
+		{
+			n:       13,
+			path:    "foobar",
+			version: infoVersion,
+			wantErr: errors.New(`malformed module path "foobar": missing dot in first path element`),
+		},
+		{
+			n:       14,
 			env:     append(os.Environ(), "GOSUMDB=foobar"),
 			wantErr: errors.New("invalid GOSUMDB: malformed verifier id"),
 		},
@@ -826,7 +860,7 @@ func TestGoFetcherDownload(t *testing.T) {
 		gf := &GoFetcher{Env: tt.env, TempDir: t.TempDir()}
 		gf.initOnce.Do(gf.init)
 		gf.env = append(gf.env, "GOPROXY="+proxyServer.URL+"/direct/")
-		info, mod, zip, err := gf.Download(context.Background(), tt.path, infoVersion)
+		info, mod, zip, err := gf.Download(context.Background(), tt.path, tt.version)
 		if tt.wantErr != nil {
 			if err == nil {
 				t.Fatalf("test(%d): expected error", tt.n)
@@ -1527,6 +1561,56 @@ func TestCleanCommaSeparatedList(t *testing.T) {
 	} {
 		if got, want := cleanCommaSeparatedList(tt.list), tt.wantList; got != want {
 			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+		}
+	}
+}
+
+func TestCheckCanonicalVersion(t *testing.T) {
+	for _, tt := range []struct {
+		n       int
+		path    string
+		version string
+		wantErr error
+	}{
+		{
+			n:       1,
+			path:    "example.com",
+			version: "v1.0.0",
+		},
+		{
+			n:       2,
+			path:    "example.com",
+			version: "v1",
+			wantErr: errors.New("example.com@v1: invalid version: not a canonical version"),
+		},
+		{
+			n:       3,
+			path:    "example.com",
+			version: "v1.0",
+			wantErr: errors.New("example.com@v1.0: invalid version: not a canonical version"),
+		},
+		{
+			n:       4,
+			path:    "example.com",
+			version: "master",
+			wantErr: errors.New("example.com@master: invalid version: not a semantic version"),
+		},
+		{
+			n:       5,
+			path:    "example.com",
+			version: "v2.0.0",
+			wantErr: errors.New("example.com@v2.0.0: invalid version: should be v0 or v1, not v2"),
+		},
+	} {
+		err := checkCanonicalVersion(tt.path, tt.version)
+		if tt.wantErr != nil {
+			if err == nil {
+				t.Fatalf("test(%d): expected error", tt.n)
+			} else if got, want := err, tt.wantErr; !compareErrors(got, want) {
+				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+			}
+		} else if err != nil {
+			t.Fatalf("test(%d): unexpected error %q", tt.n, err)
 		}
 	}
 }
