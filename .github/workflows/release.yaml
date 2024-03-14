@@ -19,8 +19,7 @@ jobs:
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v5
         with:
-          args: release --rm-dist
-          workdir: cmd/goproxy
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{github.token}}
   docker:

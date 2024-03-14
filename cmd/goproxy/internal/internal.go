@@ -10,11 +10,17 @@ func Execute() int {
 	return 0
 }
 
+// Version is the version of the running binary set by the Go linker.
+var Version string
+
 // binaryVersion returns the version of the running binary.
 func binaryVersion() string {
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		return ""
+	}
+	if Version != "" {
+		info.Main.Version = Version
 	}
 	version := "Version: " + info.Main.Version + "\n"
 	for _, setting := range info.Settings {
