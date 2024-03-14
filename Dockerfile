@@ -4,13 +4,12 @@ WORKDIR /usr/local/src/goproxy
 COPY . .
 
 RUN set -eux; \
-	mkdir bin; \
 	if [ -d dist ]; then \
 		GOARCH=$(go env GOARCH); \
-		BUILD_DIR=dist/goproxy_linux_$GOARCH; \
-		[ $GOARCH == "amd64" ] && BUILD_DIR=${BUILD_DIR}_v1; \
-		[ $GOARCH == "arm" ] && BUILD_DIR=${BUILD_DIR}_$(go env GOARM | cut -d , -f 1); \
-		cp $BUILD_DIR/goproxy bin/goproxy; \
+		BIN_DIR=dist/goproxy_linux_$GOARCH; \
+		[ $GOARCH == "amd64" ] && BIN_DIR=${BIN_DIR}_v1; \
+		[ $GOARCH == "arm" ] && BIN_DIR=${BIN_DIR}_$(go env GOARM | cut -d , -f 1); \
+		cp -r $BIN_DIR bin; \
 	else \
 		apk add --no-cache git; \
 		go mod download; \
