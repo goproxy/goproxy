@@ -3,13 +3,25 @@ FROM golang:1.22-alpine3.19 AS build
 WORKDIR /usr/local/src/goproxy
 COPY . .
 
-RUN apk add --no-cache git
-RUN go mod download
-RUN CGO_ENABLED=0 go build \
-	-trimpath \
-	-ldflags "-s -w -X github.com/goproxy/goproxy/cmd/goproxy/internal.Version=$(git describe --dirty --tags --always)" \
-	-o bin/ \
-	./cmd/goproxy
+RUN set -eux; \
+	mkdir bin; \
+	if [ -d dist ]; then \
+		GOOS=$(go env GOOS); \
+		GOARCH=$(go env GOARCH); \
+		GOARM=$(go env GOARM); \
+		BUILD_DIR=dist/goproxy_${GOOS}_${GOARCH}; \
+		[ $GOARCH == "amd64" ] && BUILD_DIR=${BUILD_DIR}_v1; \
+		[ $GOARCH == "arm" ] && BUILD_DIR=${BUILD_DIR}_$(echo $GOARM | cut -c 1); \
+		cp $BUILD_DIR/goproxy bin/goproxy; \
+	else \
+		apk add --no-cache git; \
+		go mod download; \
+		CGO_ENABLED=0 go build \
+			-trimpath \
+			-ldflags "-s -w -X github.com/goproxy/goproxy/cmd/goproxy/internal.Version=$(git describe --dirty --tags --always)" \
+			-o bin/ \
+			./cmd/goproxy; \
+	fi
 
 FROM alpine:3.19
 
