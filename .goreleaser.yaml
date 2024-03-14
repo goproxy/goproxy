@@ -25,4 +25,7 @@ builds:
     mod_timestamp: "{{.CommitTimestamp}}"
 
 archives:
-  - id: default
+  - id: goproxy
+
+snapshot:
+  name_template: "{{.Summary}}"
