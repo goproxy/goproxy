@@ -5,7 +5,11 @@ COPY . .
 
 RUN apk add --no-cache git
 RUN go mod download
-RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o bin/ ./cmd/goproxy
+RUN CGO_ENABLED=0 go build \
+	-trimpath \
+	-ldflags "-s -w -X github.com/goproxy/goproxy/cmd/goproxy/internal.Version=$(git describe --dirty --tags --always)" \
+	-o bin/ \
+	./cmd/goproxy
 
 FROM alpine:3.19
 
