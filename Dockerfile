@@ -6,12 +6,10 @@ COPY . .
 RUN set -eux; \
 	mkdir bin; \
 	if [ -d dist ]; then \
-		GOOS=$(go env GOOS); \
 		GOARCH=$(go env GOARCH); \
-		GOARM=$(go env GOARM); \
-		BUILD_DIR=dist/goproxy_${GOOS}_${GOARCH}; \
+		BUILD_DIR=dist/goproxy_linux_$GOARCH; \
 		[ $GOARCH == "amd64" ] && BUILD_DIR=${BUILD_DIR}_v1; \
-		[ $GOARCH == "arm" ] && BUILD_DIR=${BUILD_DIR}_$(echo $GOARM | cut -c 1); \
+		[ $GOARCH == "arm" ] && BUILD_DIR=${BUILD_DIR}_$(go env GOARM | cut -d , -f 1); \
 		cp $BUILD_DIR/goproxy bin/goproxy; \
 	else \
 		apk add --no-cache git; \
