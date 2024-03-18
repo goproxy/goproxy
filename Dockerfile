@@ -1,10 +1,12 @@
 FROM golang:1.22-alpine3.19 AS build
 
+ARG USE_GORELEASER_ARTIFACTS=0
+
 WORKDIR /usr/local/src/goproxy
 COPY . .
 
 RUN set -eux; \
-	if [ -d dist ]; then \
+	if [ $USE_GORELEASER_ARTIFACTS -eq 1 ]; then \
 		GOARCH=$(go env GOARCH); \
 		BIN_DIR=dist/goproxy_linux_$GOARCH; \
 		[ $GOARCH == "amd64" ] && BIN_DIR=${BIN_DIR}_v1; \
