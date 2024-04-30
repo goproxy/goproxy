@@ -27,7 +27,7 @@ FROM alpine:3.19
 COPY --from=build /usr/local/src/goproxy/bin/ /usr/local/bin/
 
 RUN apk add --no-cache go git git-lfs openssh gpg subversion fossil mercurial breezy
-RUN git lfs install
+RUN git lfs install --system
 
 USER nobody
 WORKDIR /go
