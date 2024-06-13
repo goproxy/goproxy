@@ -1,4 +1,4 @@
-FROM golang:1.22-alpine3.19 AS build
+FROM golang:1.22-alpine3.20 AS build
 
 ARG USE_GORELEASER_ARTIFACTS=0
 
