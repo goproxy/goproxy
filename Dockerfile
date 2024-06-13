@@ -1,4 +1,4 @@
-FROM golang:1.22-alpine3.19 AS build
+FROM golang:1.22-alpine3.20 AS build
 
 ARG USE_GORELEASER_ARTIFACTS=0
 
@@ -22,7 +22,7 @@ RUN set -eux; \
 			./cmd/goproxy; \
 	fi
 
-FROM alpine:3.19
+FROM alpine:3.20
 
 COPY --from=build /usr/local/src/goproxy/bin/ /usr/local/bin/
 
