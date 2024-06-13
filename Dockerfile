@@ -22,7 +22,7 @@ RUN set -eux; \
 			./cmd/goproxy; \
 	fi
 
-FROM alpine:3.19
+FROM alpine:3.20
 
 COPY --from=build /usr/local/src/goproxy/bin/ /usr/local/bin/
 
