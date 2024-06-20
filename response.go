@@ -88,6 +88,12 @@ func responseSuccess(rw http.ResponseWriter, req *http.Request, content io.Reade
 		return
 	}
 
+	if sz, ok := content.(interface{ Size() int64 }); ok {
+		if size := sz.Size(); size != 0 {
+			w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+		}
+	}
+
 	if !lastModified.IsZero() {
 		rw.Header().Set("Last-Modified", lastModified.UTC().Format(http.TimeFormat))
 	}
