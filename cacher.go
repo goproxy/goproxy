@@ -27,8 +27,8 @@ type Cacher interface {
 	//     headers when 1 is implemented. Note that the return value will be
 	//     assumed to have complied with RFC 7232, section 2.3, so it will
 	//     be used directly without further processing.
-	//  5. interface{ Size() int64 }, mainly for the Content-Length
-	//     response header.
+	//  5. interface{ Size() int64 }, mainly for the Content-Length response
+	//     header.
 	Get(ctx context.Context, name string) (io.ReadCloser, error)
 
 	// Put puts a cache for the name with the content.
