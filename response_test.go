@@ -147,6 +147,13 @@ func TestResponseInternalServerError(t *testing.T) {
 	}
 }
 
+type successResponseBody_Size struct {
+	io.Reader
+	size int64
+}
+
+func (srb successResponseBody_Size) Size() int64 { return srb.size }
+
 type successResponseBody_LastModified struct {
 	io.Reader
 	lastModified time.Time
@@ -170,66 +177,84 @@ func (srb successResponseBody_ETag) ETag() string { return srb.etag }
 
 func TestResponseSuccess(t *testing.T) {
 	for _, tt := range []struct {
-		n                int
-		method           string
-		content          io.Reader
-		wantLastModified string
-		wantETag         string
-		wantContent      string
+		n                 int
+		method            string
+		content           io.Reader
+		wantContentLength int64
+		wantLastModified  string
+		wantETag          string
+		wantContent       string
 	}{
 		{
-			n:           1,
-			content:     strings.NewReader("foobar"),
-			wantContent: "foobar",
+			n:                 1,
+			content:           strings.NewReader("foobar"),
+			wantContentLength: 6,
+			wantContent:       "foobar",
 		},
 		{
-			n:       2,
-			method:  http.MethodHead,
-			content: strings.NewReader("foobar"),
+			n:                 2,
+			method:            http.MethodHead,
+			wantContentLength: 6,
+			content:           strings.NewReader("foobar"),
 		},
 		{
 			n: 3,
+			content: successResponseBody_Size{
+				Reader: strings.NewReader("foobar"),
+				size:   6,
+			},
+			wantContentLength: 6,
+			wantContent:       "foobar",
+		},
+		{
+			n: 4,
 			content: successResponseBody_LastModified{
 				Reader:       strings.NewReader("foobar"),
 				lastModified: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
 			},
-			wantLastModified: "Sat, 01 Jan 2000 00:00:00 GMT",
-			wantContent:      "foobar",
+			wantContentLength: -1,
+			wantLastModified:  "Sat, 01 Jan 2000 00:00:00 GMT",
+			wantContent:       "foobar",
 		},
 		{
-			n: 4,
+			n: 5,
 			content: successResponseBody_ModTime{
 				Reader:  strings.NewReader("foobar"),
 				modTime: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
 			},
-			wantLastModified: "Sat, 01 Jan 2000 00:00:00 GMT",
-			wantContent:      "foobar",
+			wantContentLength: -1,
+			wantLastModified:  "Sat, 01 Jan 2000 00:00:00 GMT",
+			wantContent:       "foobar",
 		},
 		{
-			n: 5,
+			n: 6,
 			content: successResponseBody_ETag{
 				Reader: strings.NewReader("foobar"),
 				etag:   `"foobar"`,
 			},
-			wantETag:    `"foobar"`,
-			wantContent: "foobar",
+			wantContentLength: -1,
+			wantETag:          `"foobar"`,
+			wantContent:       "foobar",
 		},
 		{
-			n: 6,
+			n: 7,
 			content: struct {
 				io.Reader
+				successResponseBody_Size
 				successResponseBody_LastModified
 				successResponseBody_ModTime
 				successResponseBody_ETag
 			}{
 				strings.NewReader("foobar"),
+				successResponseBody_Size{size: 6},
 				successResponseBody_LastModified{lastModified: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)},
 				successResponseBody_ModTime{modTime: time.Date(2000, 1, 2, 0, 0, 0, 0, time.UTC)},
 				successResponseBody_ETag{etag: `"foobar"`},
 			},
-			wantLastModified: "Sat, 01 Jan 2000 00:00:00 GMT",
-			wantETag:         `"foobar"`,
-			wantContent:      "foobar",
+			wantContentLength: 6,
+			wantLastModified:  "Sat, 01 Jan 2000 00:00:00 GMT",
+			wantETag:          `"foobar"`,
+			wantContent:       "foobar",
 		},
 	} {
 		rec := httptest.NewRecorder()
@@ -243,6 +268,9 @@ func TestResponseSuccess(t *testing.T) {
 		}
 		if got, want := recr.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
 			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+		}
+		if got, want := recr.ContentLength, tt.wantContentLength; got != want {
+			t.Errorf("test(%d): got %d, want %d", tt.n, got, want)
 		}
 		if got, want := recr.Header.Get("Last-Modified"), tt.wantLastModified; got != want {
 			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
