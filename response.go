@@ -89,7 +89,7 @@ func responseSuccess(rw http.ResponseWriter, req *http.Request, content io.Reade
 		return
 	}
 
-	if sz, ok := content.(interface{ Size() int64 }); ok {
+	if s, ok := content.(interface{ Size() int64 }); ok {
 		if size := sz.Size(); size > 0 {
 			rw.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 		}
