@@ -7,15 +7,18 @@
 
 A minimalist Go module proxy handler.
 
-Goproxy has fully implemented the [GOPROXY protocol](https://go.dev/ref/mod#goproxy-protocol). The goal of this project is
-to find the most dead simple way to provide a minimalist handler that can act as
-a full-featured Go module proxy for those who want to build their own proxies.
+Goproxy has fully implemented the [GOPROXY protocol](https://go.dev/ref/mod#goproxy-protocol). The goal of this project
+is to find the most dead simple way to provide a minimalist handler that can act as a full-featured Go module proxy for
+those who want to build their own proxies.
 
 ## Features
 
 - Extremely easy to use
-	- Three structs: [`goproxy.Goproxy`](https://pkg.go.dev/github.com/goproxy/goproxy#Goproxy), [`goproxy.GoFetcher`](https://pkg.go.dev/github.com/goproxy/goproxy#GoFetcher), and [`goproxy.DirCacher`](https://pkg.go.dev/github.com/goproxy/goproxy#DirCacher)
-	- Two interfaces: [`goproxy.Fetcher`](https://pkg.go.dev/github.com/goproxy/goproxy#Fetcher) and [`goproxy.Cacher`](https://pkg.go.dev/github.com/goproxy/goproxy#Cacher)
+  - Three structs: [`goproxy.Goproxy`](https://pkg.go.dev/github.com/goproxy/goproxy#Goproxy),
+    [`goproxy.GoFetcher`](https://pkg.go.dev/github.com/goproxy/goproxy#GoFetcher), and
+    [`goproxy.DirCacher`](https://pkg.go.dev/github.com/goproxy/goproxy#DirCacher)
+  - Two interfaces: [`goproxy.Fetcher`](https://pkg.go.dev/github.com/goproxy/goproxy#Fetcher) and
+    [`goproxy.Cacher`](https://pkg.go.dev/github.com/goproxy/goproxy#Cacher)
 - Built-in support for `GOPROXY`, `GONOPROXY`, `GOSUMDB`, `GONOSUMDB`, and `GOPRIVATE`
 - Supports serving under other Go module proxies by setting `GOPROXY`
 - Supports [proxying checksum databases](https://go.dev/design/25530-sumdb#proxying-a-checksum-database)
@@ -25,22 +28,23 @@ a full-featured Go module proxy for those who want to build their own proxies.
 
 - To use this project programmatically, `go get` it:
 
-```bash
-go get github.com/goproxy/goproxy
-```
+  ```bash
+  go get github.com/goproxy/goproxy
+  ```
 
-- To use this project from the command line, download the pre-built binaries
-  from [here](https://github.com/goproxy/goproxy/releases) or build it from source:
+- To use this project from the command line, download the pre-built binaries from
+  [here](https://github.com/goproxy/goproxy/releases) or build it from source:
 
-```bash
-go install github.com/goproxy/goproxy/cmd/goproxy@latest
-```
+  ```bash
+  go install github.com/goproxy/goproxy/cmd/goproxy@latest
+  ```
 
-- To use this project with Docker, pull the pre-built images from [here](https://github.com/goproxy/goproxy/pkgs/container/goproxy):
+- To use this project with Docker, pull the pre-built images from
+  [here](https://github.com/goproxy/goproxy/pkgs/container/goproxy):
 
-```bash
-docker pull ghcr.io/goproxy/goproxy
-```
+  ```bash
+  docker pull ghcr.io/goproxy/goproxy
+  ```
 
 ## Quick Start
 
@@ -133,8 +137,8 @@ If you have any questions or ideas about this project, feel free to discuss them
 
 ## Contributing
 
-If you would like to contribute to this project, please submit issues [here](https://github.com/goproxy/goproxy/issues) or
-pull requests [here](https://github.com/goproxy/goproxy/pulls).
+If you would like to contribute to this project, please submit issues [here](https://github.com/goproxy/goproxy/issues)
+or pull requests [here](https://github.com/goproxy/goproxy/pulls).
 
 ## License
 
