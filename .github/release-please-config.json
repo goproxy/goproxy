@@ -1,0 +1,18 @@
+{
+	"$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+	"bump-minor-pre-major": true,
+	"bump-patch-for-minor-pre-major": true,
+	"changelog-sections": [
+		{ "type": "feat", "section": "Features" },
+		{ "type": "fix", "section": "Bug Fixes" },
+		{ "type": "refactor", "section": "Code Refactoring"},
+		{ "type": "test", "section": "Tests"},
+		{ "type": "docs", "section": "Documentation"},
+		{ "type": "chore", "section": "Miscellaneous Chores"}
+	],
+	"packages": {
+		".": {
+			"release-type": "go"
+		}
+	}
+}
