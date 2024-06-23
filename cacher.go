@@ -16,13 +16,15 @@ type Cacher interface {
 	// The returned [io.ReadCloser] may optionally implement the following
 	// interfaces:
 	//  1. [io.Seeker], mainly for the Range request header.
-	//  2. interface{ LastModified() time.Time }, mainly for the
+	//  2. interface{ Size() int64 }, mainly for the Content-Length response
+	//     header. It takes effect only if 1 is not implemented.
+	//  3. interface{ LastModified() time.Time }, mainly for the
 	//     Last-Modified response header. Also for the If-Unmodified-Since,
 	//     If-Modified-Since, and If-Range request headers when 1 is
 	//     implemented.
-	//  3. interface{ ModTime() time.Time }, same as 2 but with lower
+	//  4. interface{ ModTime() time.Time }, same as 2 but with lower
 	//     priority.
-	//  4. interface{ ETag() string }, mainly for the ETag response header.
+	//  5. interface{ ETag() string }, mainly for the ETag response header.
 	//     Also for the If-Match, If-None-Match, and If-Range request
 	//     headers when 1 is implemented. Note that the return value will be
 	//     assumed to have complied with RFC 7232, section 2.3, so it will

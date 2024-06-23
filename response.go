@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -86,6 +87,12 @@ func responseSuccess(rw http.ResponseWriter, req *http.Request, content io.Reade
 	if content, ok := content.(io.ReadSeeker); ok {
 		http.ServeContent(rw, req, "", lastModified, content)
 		return
+	}
+
+	if s, ok := content.(interface{ Size() int64 }); ok {
+		if size := s.Size(); size > 0 {
+			rw.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+		}
 	}
 
 	if !lastModified.IsZero() {
