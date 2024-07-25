@@ -618,7 +618,7 @@ func TestGoFetcherDirectList(t *testing.T) {
 		{
 			n:       2,
 			path:    "foobar",
-			wantErr: errors.New(`malformed module path "foobar": missing dot in first path element`),
+			wantErr: errors.New(`foobar@latest: malformed module path "foobar": missing dot in first path element`),
 		},
 	} {
 		gf := &GoFetcher{TempDir: t.TempDir()}
