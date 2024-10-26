@@ -236,9 +236,9 @@ func (gf *GoFetcher) proxyQuery(ctx context.Context, path, query string, proxy *
 	}
 	var u *url.URL
 	if escapedQuery == "latest" {
-		u = appendURL(proxy, escapedPath+"/@latest")
+		u = proxy.JoinPath(escapedPath + "/@latest")
 	} else {
-		u = appendURL(proxy, escapedPath+"/@v/"+escapedQuery+".info")
+		u = proxy.JoinPath(escapedPath + "/@v/" + escapedQuery + ".info")
 	}
 	var info bytes.Buffer
 	err = httpGet(ctx, gf.httpClient, u.String(), &info)
@@ -313,7 +313,7 @@ func (gf *GoFetcher) proxyList(ctx context.Context, path string, proxy *url.URL)
 		return
 	}
 	var list bytes.Buffer
-	err = httpGet(ctx, gf.httpClient, appendURL(proxy, escapedPath+"/@v/list").String(), &list)
+	err = httpGet(ctx, gf.httpClient, proxy.JoinPath(escapedPath+"/@v/list").String(), &list)
 	if err != nil {
 		return
 	}
@@ -417,28 +417,28 @@ func (gf *GoFetcher) Download(ctx context.Context, path, version string) (info, 
 			}
 		}
 	)
-	var infoClosedOnce sync.Once
+	infoClosedOnce := sync.OnceFunc(closed)
 	info = struct {
 		io.ReadSeeker
 		io.Closer
 	}{infoContent, closerFunc(func() error {
-		infoClosedOnce.Do(closed)
+		infoClosedOnce()
 		return nil
 	})}
-	var modClosedOnce sync.Once
+	modClosedOnce := sync.OnceFunc(closed)
 	mod = struct {
 		io.ReadSeeker
 		io.Closer
 	}{modContent, closerFunc(func() error {
-		defer modClosedOnce.Do(closed)
+		defer modClosedOnce()
 		return modContent.Close()
 	})}
-	var zipClosedOnce sync.Once
+	zipClosedOnce := sync.OnceFunc(closed)
 	zip = struct {
 		io.ReadSeeker
 		io.Closer
 	}{zipContent, closerFunc(func() error {
-		defer zipClosedOnce.Do(closed)
+		defer zipClosedOnce()
 		return zipContent.Close()
 	})}
 	return
@@ -455,7 +455,7 @@ func (gf *GoFetcher) proxyDownload(ctx context.Context, path, version string, pr
 	if err != nil {
 		return
 	}
-	urlWithoutExt := appendURL(proxy, escapedPath+"/@v/"+escapedVersion).String()
+	urlWithoutExt := proxy.JoinPath(escapedPath + "/@v/" + escapedVersion).String()
 
 	tempDir, err := os.MkdirTemp(gf.TempDir, tempDirPattern)
 	if err != nil {

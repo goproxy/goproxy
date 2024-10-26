@@ -351,7 +351,7 @@ func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, target s
 	}
 	defer os.RemoveAll(tempDir)
 
-	file, err := httpGetTemp(req.Context(), g.httpClient, appendURL(u, path).String(), tempDir)
+	file, err := httpGetTemp(req.Context(), g.httpClient, u.JoinPath(path).String(), tempDir)
 	if err != nil {
 		g.serveCache(rw, req, target, contentType, cacheControlMaxAge, func() {
 			g.logErrorf("failed to proxy checksum database: %s: %v", target, err)

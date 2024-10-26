@@ -8,13 +8,10 @@ import (
 	"io"
 	"io/fs"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"os"
-	"path"
-	"strings"
-	"sync"
 	"time"
 )
 
@@ -133,41 +130,12 @@ func isRetryableHTTPClientDoError(err error) bool {
 		case x509.UnknownAuthorityError:
 			return false
 		}
-		switch e.Error() {
-		// TODO: Use [http.ErrSchemeMismatch] when the minimum supported
-		// Go version is 1.21. See https://go.dev/doc/go1.21#net/http.
-		case "http: server gave HTTP response to HTTPS client":
+		if errors.Is(e, http.ErrSchemeMismatch) {
 			return false
 		}
 	}
 	return true
 }
-
-// appendURL appends the extraPaths to the u safely and reutrns a new [url.URL].
-//
-// TODO: Remove appendURL when the minimum supported Go version is 1.19. See
-// https://go.dev/doc/go1.19#net/url.
-func appendURL(u *url.URL, extraPaths ...string) *url.URL {
-	nu := *u
-	u = &nu
-	for _, ep := range extraPaths {
-		if ep == "" {
-			continue
-		}
-		u.Path = path.Join(u.Path, ep)
-		u.RawPath = path.Join(u.RawPath, strings.ReplaceAll(url.PathEscape(ep), "%2F", "/"))
-		if ep[len(ep)-1] == '/' {
-			u.Path += "/"
-			u.RawPath += "/"
-		}
-	}
-	return u
-}
-
-var (
-	backoffRand      = rand.New(rand.NewSource(time.Now().UnixNano()))
-	backoffRandMutex sync.Mutex
-)
 
 // backoffSleep computes the exponential backoff sleep duration based on the
 // algorithm described in https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/.
@@ -183,10 +151,6 @@ func backoffSleep(base, cap time.Duration, attempt int) time.Duration {
 	if sleep > cap || sleep/pow != base {
 		sleep = cap
 	}
-
-	backoffRandMutex.Lock()
-	sleep = time.Duration(backoffRand.Int63n(int64(sleep)))
-	backoffRandMutex.Unlock()
-
+	sleep = rand.N(sleep)
 	return sleep
 }

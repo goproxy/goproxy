@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -54,9 +53,6 @@ func TestNotExistError(t *testing.T) {
 func TestHTTPGet(t *testing.T) {
 	server, setHandler := newHTTPTestServer()
 	defer server.Close()
-	savedBackoffRand := backoffRand
-	backoffRand = rand.New(rand.NewSource(1))
-	defer func() { backoffRand = savedBackoffRand }()
 	for _, tt := range []struct {
 		n             int
 		ctxTimeout    time.Duration
@@ -252,30 +248,10 @@ func TestIsRetryableHTTPClientDoError(t *testing.T) {
 		{4, context.DeadlineExceeded, false},
 		{5, &url.Error{Err: errors.New("oops")}, true},
 		{6, &url.Error{Err: x509.UnknownAuthorityError{}}, false},
-		{7, &url.Error{Err: errors.New("http: server gave HTTP response to HTTPS client")}, false},
+		{7, &url.Error{Err: http.ErrSchemeMismatch}, false},
 	} {
 		if got, want := isRetryableHTTPClientDoError(tt.err), tt.wantIsRetryable; got != want {
 			t.Errorf("test(%d): got %t, want %t", tt.n, got, want)
-		}
-	}
-}
-
-func TestAppendURL(t *testing.T) {
-	u := &url.URL{Scheme: "https", Host: "example.com"}
-	for _, tt := range []struct {
-		n       int
-		au      *url.URL
-		wantURL string
-	}{
-		{1, appendURL(u, "foobar"), "https://example.com/foobar"},
-		{2, appendURL(u, "foo", "bar"), "https://example.com/foo/bar"},
-		{3, appendURL(u, "", "foo", "", "bar"), "https://example.com/foo/bar"},
-		{4, appendURL(u, "foo/bar"), "https://example.com/foo/bar"},
-		{5, appendURL(u, "/foo/bar"), "https://example.com/foo/bar"},
-		{6, appendURL(u, "/foo/bar/"), "https://example.com/foo/bar/"},
-	} {
-		if got, want := tt.au.String(), tt.wantURL; got != want {
-			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
 		}
 	}
 }
