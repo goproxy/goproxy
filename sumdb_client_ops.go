@@ -19,7 +19,7 @@ type sumdbClientOps struct {
 	name              string
 	key               string
 	directURL         *url.URL
-	urlValue          atomic.Value
+	urlValue          atomic.Pointer[url.URL]
 	urlDetermineMutex sync.Mutex
 	urlDeterminedAt   time.Time
 	urlDetermineErr   error
@@ -49,8 +49,8 @@ func newSumdbClientOps(envGOPROXY, envGOSUMDB string, httpClient *http.Client) (
 
 // url returns the URL for connecting to the checksum database.
 func (sco *sumdbClientOps) url() (*url.URL, error) {
-	if v := sco.urlValue.Load(); v != nil {
-		return v.(*url.URL), nil
+	if u := sco.urlValue.Load(); u != nil {
+		return u, nil
 	}
 
 	sco.urlDetermineMutex.Lock()
@@ -61,8 +61,8 @@ func (sco *sumdbClientOps) url() (*url.URL, error) {
 
 	u := sco.directURL
 	err := walkEnvGOPROXY(sco.envGOPROXY, func(proxy *url.URL) error {
-		pu := appendURL(proxy, "sumdb", sco.name)
-		if err := httpGet(context.Background(), sco.httpClient, appendURL(pu, "/supported").String(), nil); err != nil {
+		pu := proxy.JoinPath("sumdb", sco.name)
+		if err := httpGet(context.Background(), sco.httpClient, pu.JoinPath("/supported").String(), nil); err != nil {
 			return err
 		}
 		u = pu
@@ -86,7 +86,7 @@ func (sco *sumdbClientOps) ReadRemote(path string) ([]byte, error) {
 		return nil, err
 	}
 	var buf bytes.Buffer
-	if err := httpGet(context.Background(), sco.httpClient, appendURL(u, path).String(), &buf); err != nil {
+	if err := httpGet(context.Background(), sco.httpClient, u.JoinPath(path).String(), &buf); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
