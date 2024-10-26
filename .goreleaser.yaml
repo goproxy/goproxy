@@ -1,3 +1,5 @@
+version: 2
+
 before:
   hooks:
     - go mod download
@@ -23,9 +25,6 @@ builds:
       - windows_amd64
       - windows_arm64
     mod_timestamp: "{{.CommitTimestamp}}"
-
-archives:
-  - id: goproxy
 
 dockers:
   - goarch: "386"
@@ -136,7 +135,7 @@ docker_manifests:
     skip_push: auto
 
 snapshot:
-  name_template: '{{trimprefix .Summary "v"}}'
+  version_template: '{{trimprefix .Summary "v"}}'
 
 release:
   prerelease: auto
