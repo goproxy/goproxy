@@ -324,7 +324,7 @@ func (gf *GoFetcher) proxyList(ctx context.Context, path string, proxy *url.URL)
 // directList lists the available versions for the given module path using the
 // local Go binary.
 func (gf *GoFetcher) directList(ctx context.Context, path string) (versions []string, err error) {
-	output, err := gf.execGo(ctx, "list", "-json", "-m", "-versions", path)
+	output, err := gf.execGo(ctx, "list", "-json", "-m", "-versions", path+"@latest")
 	if err != nil {
 		return
 	}
