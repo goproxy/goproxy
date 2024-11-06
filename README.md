@@ -3,7 +3,7 @@
 [![Test](https://github.com/goproxy/goproxy/actions/workflows/test.yaml/badge.svg)](https://github.com/goproxy/goproxy/actions/workflows/test.yaml)
 [![codecov](https://codecov.io/gh/goproxy/goproxy/branch/master/graph/badge.svg)](https://codecov.io/gh/goproxy/goproxy)
 [![Go Report Card](https://goreportcard.com/badge/github.com/goproxy/goproxy)](https://goreportcard.com/report/github.com/goproxy/goproxy)
-[![PkgGoDev](https://pkg.go.dev/badge/github.com/goproxy/goproxy)](https://pkg.go.dev/github.com/goproxy/goproxy)
+[![Go Reference](https://pkg.go.dev/badge/github.com/goproxy/goproxy.svg)](https://pkg.go.dev/github.com/goproxy/goproxy)
 
 A minimalist Go module proxy handler.
 
@@ -139,6 +139,9 @@ If you have any questions or ideas about this project, feel free to discuss them
 
 If you would like to contribute to this project, please submit issues [here](https://github.com/goproxy/goproxy/issues)
 or pull requests [here](https://github.com/goproxy/goproxy/pulls).
+
+When submitting a pull request, please make sure its commit messages adhere to
+[Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/).
 
 ## License
 
