@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -289,19 +290,18 @@ func (gf *GoFetcher) List(ctx context.Context, path string) (versions []string, 
 		return
 	}
 
-	for i := range versions {
-		parts := strings.Fields(versions[i])
+	for i, version := range versions {
+		parts := strings.Fields(version)
 		if len(parts) > 0 && semver.IsValid(parts[0]) && !module.IsPseudoVersion(parts[0]) {
 			versions[i] = parts[0]
 		} else {
 			versions[i] = ""
 		}
 	}
+	versions = slices.DeleteFunc(versions, func(version string) bool {
+		return version == ""
+	})
 	semver.Sort(versions)
-	firstNotEmptyIndex := 0
-	for ; firstNotEmptyIndex < len(versions) && versions[firstNotEmptyIndex] == ""; firstNotEmptyIndex++ {
-	}
-	versions = versions[firstNotEmptyIndex:]
 	return
 }
 
@@ -684,14 +684,13 @@ func parseEnvGOSUMDB(envGOSUMDB string) (name string, key string, u *url.URL, is
 
 // cleanCommaSeparatedList returns the cleaned comma-separated list.
 func cleanCommaSeparatedList(list string) string {
-	var ss []string
-	for _, s := range strings.Split(list, ",") {
-		s = strings.TrimSpace(s)
-		if s != "" {
-			ss = append(ss, s)
-		}
+	ss := strings.Split(list, ",")
+	for i, s := range ss {
+		ss[i] = strings.TrimSpace(s)
 	}
-	return strings.Join(ss, ",")
+	return strings.Join(slices.DeleteFunc(ss, func(s string) bool {
+		return s == ""
+	}), ",")
 }
 
 // checkCanonicalVersion is like [module.Check] but also checks whether the
@@ -777,12 +776,10 @@ func verifyModFile(sumdbClient *sumdb.Client, name, modulePath, moduleVersion st
 		return err
 	}
 	modSumLine := fmt.Sprintf("%s %s/go.mod %s", modulePath, moduleVersion, modHash)
-	for _, sumLine := range sumLines {
-		if sumLine == modSumLine {
-			return nil
-		}
+	if !slices.Contains(sumLines, modSumLine) {
+		return notExistErrorf("%s@%s: invalid version: untrusted revision %s", modulePath, moduleVersion, moduleVersion)
 	}
-	return notExistErrorf("%s@%s: invalid version: untrusted revision %s", modulePath, moduleVersion, moduleVersion)
+	return nil
 }
 
 // checkZipFile checks the zip file targeted by the name with the modulePath and
@@ -809,12 +806,10 @@ func verifyZipFile(sumdbClient *sumdb.Client, name, modulePath, moduleVersion st
 		return err
 	}
 	zipSumLine := fmt.Sprintf("%s %s %s", modulePath, moduleVersion, zipHash)
-	for _, sumLine := range sumLines {
-		if sumLine == zipSumLine {
-			return nil
-		}
+	if !slices.Contains(sumLines, zipSumLine) {
+		return notExistErrorf("%s@%s: invalid version: untrusted revision %s", modulePath, moduleVersion, moduleVersion)
 	}
-	return notExistErrorf("%s@%s: invalid version: untrusted revision %s", modulePath, moduleVersion, moduleVersion)
+	return nil
 }
 
 // closerFunc is an adapter to allow the use of an ordinary function as an [io.Closer].
