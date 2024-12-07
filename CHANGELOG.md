@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.2](https://github.com/goproxy/goproxy/compare/v0.18.1...v0.18.2) (2024-12-07)
+
+
+### Bug Fixes
+
+* **Dockerfile:** extract binaries from tarball when using GoReleaser artifacts ([#87](https://github.com/goproxy/goproxy/issues/87)) ([2b9d89c](https://github.com/goproxy/goproxy/commit/2b9d89c41e3724b4718637935693d59e6c94df34))
+
 ## [0.18.1](https://github.com/goproxy/goproxy/compare/v0.18.0...v0.18.1) (2024-12-07)
 
 
