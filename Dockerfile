@@ -1,17 +1,14 @@
 FROM golang:1.23-alpine3.21 AS build
 
 ARG USE_GORELEASER_ARTIFACTS=0
+ARG GORELEASER_ARTIFACTS_TARBALL
 
 WORKDIR /usr/local/src/goproxy
 COPY . .
 
 RUN set -eux; \
 	if [ "${USE_GORELEASER_ARTIFACTS}" -eq 1 ]; then \
-		GOARCH="$(go env GOARCH)"; \
-		BIN_DIR="dist/goproxy_linux_${GOARCH}"; \
-		[ "${GOARCH}" == "amd64" ] && BIN_DIR="${BIN_DIR}_v1"; \
-		[ "${GOARCH}" == "arm" ] && BIN_DIR="${BIN_DIR}_$(go env GOARM | cut -d , -f 1)"; \
-		cp -r "${BIN_DIR}" bin; \
+		tar -xzf "${GORELEASER_ARTIFACTS_TARBALL}" bin/goproxy; \
 	else \
 		apk add --no-cache git; \
 		go mod download; \
