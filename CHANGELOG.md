@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.3](https://github.com/goproxy/goproxy/compare/v0.18.2...v0.18.3) (2024-12-08)
+
+
+### Miscellaneous Chores
+
+* **.goreleaser.yaml:** align GORELEASER_ARTIFACTS_TARBALL with archive name template ([#89](https://github.com/goproxy/goproxy/issues/89)) ([fe067ab](https://github.com/goproxy/goproxy/commit/fe067abab77dcfa2a0caefb42adc01714f66eb03))
+
 ## [0.18.2](https://github.com/goproxy/goproxy/compare/v0.18.1...v0.18.2) (2024-12-07)
 
 
