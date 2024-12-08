@@ -35,7 +35,7 @@ dockers:
     build_flag_templates:
       - --platform=linux/386
       - --build-arg=USE_GORELEASER_ARTIFACTS=1
-      - --build-arg=GORELEASER_ARTIFACTS_TARBALL=dist/goproxy_{{.Version}}_linux_386.tar.gz
+      - --build-arg=GORELEASER_ARTIFACTS_TARBALL=./dist/{{.ProjectName}}_{{.Version}}_linux_386.tar.gz
     extra_files:
       - ./
   - goarch: amd64
@@ -45,7 +45,7 @@ dockers:
     build_flag_templates:
       - --platform=linux/amd64
       - --build-arg=USE_GORELEASER_ARTIFACTS=1
-      - --build-arg=GORELEASER_ARTIFACTS_TARBALL=dist/goproxy_{{.Version}}_linux_amd64.tar.gz
+      - --build-arg=GORELEASER_ARTIFACTS_TARBALL=./dist/{{.ProjectName}}_{{.Version}}_linux_amd64.tar.gz
     extra_files:
       - ./
   - goarch: arm64
@@ -55,7 +55,7 @@ dockers:
     build_flag_templates:
       - --platform=linux/arm64
       - --build-arg=USE_GORELEASER_ARTIFACTS=1
-      - --build-arg=GORELEASER_ARTIFACTS_TARBALL=dist/goproxy_{{.Version}}_linux_arm64.tar.gz
+      - --build-arg=GORELEASER_ARTIFACTS_TARBALL=./dist/{{.ProjectName}}_{{.Version}}_linux_arm64.tar.gz
     extra_files:
       - ./
   - goarch: arm
@@ -66,7 +66,7 @@ dockers:
     build_flag_templates:
       - --platform=linux/arm/v6
       - --build-arg=USE_GORELEASER_ARTIFACTS=1
-      - --build-arg=GORELEASER_ARTIFACTS_TARBALL=dist/goproxy_{{.Version}}_linux_armv6.tar.gz
+      - --build-arg=GORELEASER_ARTIFACTS_TARBALL=./dist/{{.ProjectName}}_{{.Version}}_linux_armv6.tar.gz
     extra_files:
       - ./
   - goarch: arm
@@ -77,7 +77,7 @@ dockers:
     build_flag_templates:
       - --platform=linux/arm/v7
       - --build-arg=USE_GORELEASER_ARTIFACTS=1
-      - --build-arg=GORELEASER_ARTIFACTS_TARBALL=dist/goproxy_{{.Version}}_linux_armv7.tar.gz
+      - --build-arg=GORELEASER_ARTIFACTS_TARBALL=./dist/{{.ProjectName}}_{{.Version}}_linux_armv7.tar.gz
     extra_files:
       - ./
   - goarch: ppc64le
@@ -87,7 +87,7 @@ dockers:
     build_flag_templates:
       - --platform=linux/ppc64le
       - --build-arg=USE_GORELEASER_ARTIFACTS=1
-      - --build-arg=GORELEASER_ARTIFACTS_TARBALL=dist/goproxy_{{.Version}}_linux_ppc64le.tar.gz
+      - --build-arg=GORELEASER_ARTIFACTS_TARBALL=./dist/{{.ProjectName}}_{{.Version}}_linux_ppc64le.tar.gz
     extra_files:
       - ./
   - goarch: s390x
@@ -97,7 +97,7 @@ dockers:
     build_flag_templates:
       - --platform=linux/s390x
       - --build-arg=USE_GORELEASER_ARTIFACTS=1
-      - --build-arg=GORELEASER_ARTIFACTS_TARBALL=dist/goproxy_{{.Version}}_linux_s390x.tar.gz
+      - --build-arg=GORELEASER_ARTIFACTS_TARBALL=./dist/{{.ProjectName}}_{{.Version}}_linux_s390x.tar.gz
     extra_files:
       - ./
 
