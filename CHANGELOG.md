@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.18.3](https://github.com/goproxy/goproxy/compare/v0.18.2...v0.18.3) (2025-01-26)
+
+
+### Miscellaneous Chores
+
+* **.goreleaser.yaml:** align GORELEASER_ARTIFACTS_TARBALL with archive name template ([#89](https://github.com/goproxy/goproxy/issues/89)) ([fe067ab](https://github.com/goproxy/goproxy/commit/fe067abab77dcfa2a0caefb42adc01714f66eb03))
+* **ci:** add support for `linux/riscv64` ([#94](https://github.com/goproxy/goproxy/issues/94)) ([cd425f3](https://github.com/goproxy/goproxy/commit/cd425f3907ea549342253d2fc08bdfa16382b265))
+* **ci:** bump codecov/codecov-action from 4 to 5 ([#91](https://github.com/goproxy/goproxy/issues/91)) ([ab618b0](https://github.com/goproxy/goproxy/commit/ab618b0b09f0b9c1f4c80b5a00a7cc37d56f2666))
+* **deps:** bump golang.org/x/crypto from 0.28.0 to 0.31.0 ([#92](https://github.com/goproxy/goproxy/issues/92)) ([6014fda](https://github.com/goproxy/goproxy/commit/6014fda90cce0891c9f11ab044ed7e6c66acdf09))
+* **deps:** bump golang.org/x/net from 0.30.0 to 0.33.0 ([#93](https://github.com/goproxy/goproxy/issues/93)) ([093e27c](https://github.com/goproxy/goproxy/commit/093e27cfad43eb5d6ba0b6ecccc7a2edb23045d3))
+
 ## [0.18.2](https://github.com/goproxy/goproxy/compare/v0.18.1...v0.18.2) (2024-12-07)
 
 
