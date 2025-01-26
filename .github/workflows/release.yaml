@@ -17,9 +17,9 @@ jobs:
           config-file: .github/release-please-config.json
           manifest-file: .github/.release-please-manifest.json
   release:
-    runs-on: ubuntu-latest
     needs: release-please
     if: needs.release-please.outputs.release_created
+    runs-on: ubuntu-latest
     steps:
       - name: Check out code
         uses: actions/checkout@v4

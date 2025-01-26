@@ -21,6 +21,7 @@ builds:
       - linux_arm_6
       - linux_arm_7
       - linux_ppc64le
+      - linux_riscv64
       - linux_s390x
       - windows_386
       - windows_amd64
@@ -90,6 +91,16 @@ dockers:
       - --build-arg=GORELEASER_ARTIFACTS_TARBALL=./dist/{{.ProjectName}}_{{.Version}}_linux_ppc64le.tar.gz
     extra_files:
       - ./
+  - goarch: riscv64
+    image_templates:
+      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-riscv64
+    use: buildx
+    build_flag_templates:
+      - --platform=linux/riscv64
+      - --build-arg=USE_GORELEASER_ARTIFACTS=1
+      - --build-arg=GORELEASER_ARTIFACTS_TARBALL=./dist/{{.ProjectName}}_{{.Version}}_linux_riscv64.tar.gz
+    extra_files:
+      - ./
   - goarch: s390x
     image_templates:
       - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-s390x
@@ -110,6 +121,7 @@ docker_manifests:
       - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-armv6
       - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-armv7
       - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-ppc64le
+      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-riscv64
       - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-s390x
   - name_template: ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Major}}.{{.Minor}}
     image_templates:
@@ -119,6 +131,7 @@ docker_manifests:
       - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-armv6
       - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-armv7
       - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-ppc64le
+      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-riscv64
       - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-s390x
     skip_push: auto
   - name_template: ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Major}}
@@ -129,6 +142,7 @@ docker_manifests:
       - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-armv6
       - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-armv7
       - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-ppc64le
+      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-riscv64
       - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-s390x
     skip_push: auto
   - name_template: ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:latest
@@ -139,6 +153,7 @@ docker_manifests:
       - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-armv6
       - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-armv7
       - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-ppc64le
+      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-riscv64
       - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-s390x
     skip_push: auto
 
