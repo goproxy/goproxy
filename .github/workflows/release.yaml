@@ -43,3 +43,4 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{github.token}}
+          DOCKER_IMAGE_REPO: ghcr.io/${{github.repository}}
