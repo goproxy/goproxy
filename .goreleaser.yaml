@@ -1,5 +1,8 @@
 version: 2
 
+env:
+  - DOCKER_IMAGE_REPO={{envOrDefault "DOCKER_IMAGE_REPO" "goproxy"}}
+
 before:
   hooks:
     - go mod download
@@ -31,7 +34,7 @@ builds:
 dockers:
   - goarch: "386"
     image_templates:
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-386
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-386"
     use: buildx
     build_flag_templates:
       - --platform=linux/386
@@ -41,7 +44,7 @@ dockers:
       - ./
   - goarch: amd64
     image_templates:
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-amd64
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-amd64"
     use: buildx
     build_flag_templates:
       - --platform=linux/amd64
@@ -51,7 +54,7 @@ dockers:
       - ./
   - goarch: arm64
     image_templates:
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-arm64
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-arm64"
     use: buildx
     build_flag_templates:
       - --platform=linux/arm64
@@ -62,7 +65,7 @@ dockers:
   - goarch: arm
     goarm: "6"
     image_templates:
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-armv6
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-armv6"
     use: buildx
     build_flag_templates:
       - --platform=linux/arm/v6
@@ -73,7 +76,7 @@ dockers:
   - goarch: arm
     goarm: "7"
     image_templates:
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-armv7
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-armv7"
     use: buildx
     build_flag_templates:
       - --platform=linux/arm/v7
@@ -83,7 +86,7 @@ dockers:
       - ./
   - goarch: ppc64le
     image_templates:
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-ppc64le
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-ppc64le"
     use: buildx
     build_flag_templates:
       - --platform=linux/ppc64le
@@ -93,7 +96,7 @@ dockers:
       - ./
   - goarch: riscv64
     image_templates:
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-riscv64
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-riscv64"
     use: buildx
     build_flag_templates:
       - --platform=linux/riscv64
@@ -103,7 +106,7 @@ dockers:
       - ./
   - goarch: s390x
     image_templates:
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-s390x
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-s390x"
     use: buildx
     build_flag_templates:
       - --platform=linux/s390x
@@ -113,48 +116,48 @@ dockers:
       - ./
 
 docker_manifests:
-  - name_template: ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}
+  - name_template: "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}"
     image_templates:
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-386
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-amd64
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-arm64
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-armv6
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-armv7
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-ppc64le
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-riscv64
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-s390x
-  - name_template: ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Major}}.{{.Minor}}
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-386"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-amd64"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-arm64"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-armv6"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-armv7"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-ppc64le"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-riscv64"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-s390x"
+  - name_template: "{{.Env.DOCKER_IMAGE_REPO}}:{{.Major}}.{{.Minor}}"
     image_templates:
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-386
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-amd64
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-arm64
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-armv6
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-armv7
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-ppc64le
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-riscv64
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-s390x
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-386"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-amd64"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-arm64"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-armv6"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-armv7"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-ppc64le"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-riscv64"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-s390x"
     skip_push: auto
-  - name_template: ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Major}}
+  - name_template: "{{.Env.DOCKER_IMAGE_REPO}}:{{.Major}}"
     image_templates:
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-386
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-amd64
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-arm64
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-armv6
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-armv7
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-ppc64le
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-riscv64
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-s390x
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-386"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-amd64"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-arm64"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-armv6"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-armv7"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-ppc64le"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-riscv64"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-s390x"
     skip_push: auto
-  - name_template: ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:latest
+  - name_template: "{{.Env.DOCKER_IMAGE_REPO}}:latest"
     image_templates:
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-386
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-amd64
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-arm64
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-armv6
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-armv7
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-ppc64le
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-riscv64
-      - ghcr.io/{{envOrDefault "GITHUB_REPOSITORY" "goproxy/goproxy"}}:{{.Version}}-s390x
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-386"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-amd64"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-arm64"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-armv6"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-armv7"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-ppc64le"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-riscv64"
+      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-s390x"
     skip_push: auto
 
 snapshot:
