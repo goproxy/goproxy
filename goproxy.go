@@ -85,7 +85,7 @@ func (g *Goproxy) init() {
 		g.fetcher = &GoFetcher{TempDir: g.TempDir, Transport: g.Transport}
 	}
 
-	g.proxiedSumDBs = map[string]*url.URL{}
+	g.proxiedSumDBs = make(map[string]*url.URL)
 	for _, sumdb := range g.ProxiedSumDBs {
 		parts := strings.Fields(sumdb)
 		if len(parts) == 0 {
