@@ -85,7 +85,7 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 		case http.StatusBadRequest,
 			http.StatusNotFound,
 			http.StatusGone:
-			return notExistErrorf(string(respBody))
+			return notExistErrorf("%s", respBody)
 		case http.StatusTooManyRequests,
 			http.StatusInternalServerError,
 			http.StatusBadGateway,
