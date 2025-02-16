@@ -1,4 +1,6 @@
-FROM golang:1.24-alpine3.21 AS build
+ARG GO_BASE_IMAGE=golang:1.24-alpine3.21
+
+FROM ${GO_BASE_IMAGE} AS build
 
 ARG USE_GORELEASER_ARTIFACTS=0
 ARG GORELEASER_ARTIFACTS_TARBALL
@@ -19,16 +21,14 @@ RUN set -eux; \
 			./cmd/goproxy; \
 	fi
 
-FROM alpine:3.21
+FROM ${GO_BASE_IMAGE}
 
 COPY --from=build /usr/local/src/goproxy/bin/ /usr/local/bin/
 
-RUN apk add --no-cache go git git-lfs openssh gpg subversion fossil mercurial breezy
+RUN apk add --no-cache git git-lfs openssh gpg subversion fossil mercurial breezy
 RUN git lfs install --system
 
 USER nobody
-WORKDIR /go
-VOLUME /go
 WORKDIR /goproxy
 VOLUME /goproxy
 EXPOSE 8080
