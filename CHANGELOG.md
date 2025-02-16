@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.19.0](https://github.com/goproxy/goproxy/compare/v0.18.2...v0.19.0) (2025-02-16)
+
+
+### Code Refactoring
+
+* improve error message formatting ([#95](https://github.com/goproxy/goproxy/issues/95)) ([faf43bd](https://github.com/goproxy/goproxy/commit/faf43bd21170ae02274378cf75193c3cd8da0541))
+
+
+### Tests
+
+* cover Go 1.24 ([#96](https://github.com/goproxy/goproxy/issues/96)) ([d93abb4](https://github.com/goproxy/goproxy/commit/d93abb4bd1e107ad6c2369b3114736fca89273de))
+
+
+### Miscellaneous Chores
+
+* **.goreleaser.yaml:** align GORELEASER_ARTIFACTS_TARBALL with archive name template ([#89](https://github.com/goproxy/goproxy/issues/89)) ([fe067ab](https://github.com/goproxy/goproxy/commit/fe067abab77dcfa2a0caefb42adc01714f66eb03))
+* **ci:** add support for `linux/riscv64` ([#94](https://github.com/goproxy/goproxy/issues/94)) ([cd425f3](https://github.com/goproxy/goproxy/commit/cd425f3907ea549342253d2fc08bdfa16382b265))
+* **ci:** bump codecov/codecov-action from 4 to 5 ([#91](https://github.com/goproxy/goproxy/issues/91)) ([ab618b0](https://github.com/goproxy/goproxy/commit/ab618b0b09f0b9c1f4c80b5a00a7cc37d56f2666))
+* **deps:** bump golang.org/x/crypto from 0.28.0 to 0.31.0 ([#92](https://github.com/goproxy/goproxy/issues/92)) ([6014fda](https://github.com/goproxy/goproxy/commit/6014fda90cce0891c9f11ab044ed7e6c66acdf09))
+* **deps:** bump golang.org/x/mod, github.com/spf13/cobra, github.com/minio/minio-go/v7 ([#98](https://github.com/goproxy/goproxy/issues/98)) ([e75760c](https://github.com/goproxy/goproxy/commit/e75760c27ff1a22cda603f83b324cce8c3d9f5bc))
+* **deps:** bump golang.org/x/net from 0.30.0 to 0.33.0 ([#93](https://github.com/goproxy/goproxy/issues/93)) ([093e27c](https://github.com/goproxy/goproxy/commit/093e27cfad43eb5d6ba0b6ecccc7a2edb23045d3))
+* release 0.19.0 ([#99](https://github.com/goproxy/goproxy/issues/99)) ([6ea2ff0](https://github.com/goproxy/goproxy/commit/6ea2ff06922eaa0879035ff78e392b3a3fdabb9d))
+* use Go 1.24 for releases ([#97](https://github.com/goproxy/goproxy/issues/97)) ([8c974b5](https://github.com/goproxy/goproxy/commit/8c974b5b75a78a8106a874ff86e5a23b4d83dd86))
+
 ## [0.18.2](https://github.com/goproxy/goproxy/compare/v0.18.1...v0.18.2) (2024-12-07)
 
 
