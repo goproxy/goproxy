@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.1](https://github.com/goproxy/goproxy/compare/v0.19.0...v0.19.1) (2025-02-16)
+
+
+### Bug Fixes
+
+* **cmd/goproxy:** require github.com/minio/crc64nvme@v1.0.1 ([#100](https://github.com/goproxy/goproxy/issues/100)) ([6e61c8f](https://github.com/goproxy/goproxy/commit/6e61c8fb617be2e69af7164e446364c3b06928da))
+
 ## [0.19.0](https://github.com/goproxy/goproxy/compare/v0.18.2...v0.19.0) (2025-02-16)
 
 
