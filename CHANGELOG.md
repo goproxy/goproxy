@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.19.2](https://github.com/goproxy/goproxy/compare/v0.19.1...v0.19.2) (2025-02-16)
+
+
+### Miscellaneous Chores
+
+* **.goreleaser.yaml:** add DOCKER_IMAGE_REPO for dynamic repo config ([#104](https://github.com/goproxy/goproxy/issues/104)) ([524fde2](https://github.com/goproxy/goproxy/commit/524fde25a2a7c41037201f63942ad0d1bb60fa72))
+* **ci:** add build tests ([#105](https://github.com/goproxy/goproxy/issues/105)) ([92cac17](https://github.com/goproxy/goproxy/commit/92cac178cff71655131c3a27948fc92a6aeb7b43))
+* **Dockerfile:** use `golang:1.24-alpine3.21` as base image ([#102](https://github.com/goproxy/goproxy/issues/102)) ([bae1a73](https://github.com/goproxy/goproxy/commit/bae1a7314993814495056b48629975cd5178c27f))
+
 ## [0.19.1](https://github.com/goproxy/goproxy/compare/v0.19.0...v0.19.1) (2025-02-16)
 
 
