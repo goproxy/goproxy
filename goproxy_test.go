@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -139,9 +139,9 @@ func TestGoproxyServeHTTP(t *testing.T) {
 				Env:     []string{"GOPROXY=" + proxyServer.URL, "GOSUMDB=off"},
 				TempDir: t.TempDir(),
 			},
-			Cacher:      DirCacher(t.TempDir()),
-			TempDir:     t.TempDir(),
-			ErrorLogger: log.New(io.Discard, "", 0),
+			Cacher:  DirCacher(t.TempDir()),
+			TempDir: t.TempDir(),
+			Logger:  slog.New(slogDiscardHandler{}),
 		}
 		rec := httptest.NewRecorder()
 		g.ServeHTTP(rec, httptest.NewRequest(tt.method, tt.path, nil))
@@ -430,9 +430,9 @@ func TestGoproxyServeFetch(t *testing.T) {
 				Env:     []string{"GOPROXY=" + proxyServer.URL, "GOSUMDB=off"},
 				TempDir: t.TempDir(),
 			},
-			Cacher:      tt.cacher,
-			TempDir:     t.TempDir(),
-			ErrorLogger: log.New(io.Discard, "", 0),
+			Cacher:  tt.cacher,
+			TempDir: t.TempDir(),
+			Logger:  slog.New(slogDiscardHandler{}),
 		}
 		g.initOnce.Do(g.init)
 		req := httptest.NewRequest("", "/", nil)
@@ -518,9 +518,9 @@ func TestGoproxyServeFetchQuery(t *testing.T) {
 				Env:     []string{"GOPROXY=" + proxyServer.URL, "GOSUMDB=off"},
 				TempDir: t.TempDir(),
 			},
-			Cacher:      tt.cacher,
-			TempDir:     t.TempDir(),
-			ErrorLogger: log.New(io.Discard, "", 0),
+			Cacher:  tt.cacher,
+			TempDir: t.TempDir(),
+			Logger:  slog.New(slogDiscardHandler{}),
 		}
 		g.initOnce.Do(g.init)
 		rec := httptest.NewRecorder()
@@ -594,9 +594,9 @@ func TestGoproxyServeFetchList(t *testing.T) {
 				Env:     []string{"GOPROXY=" + proxyServer.URL, "GOSUMDB=off"},
 				TempDir: t.TempDir(),
 			},
-			Cacher:      tt.cacher,
-			TempDir:     t.TempDir(),
-			ErrorLogger: log.New(io.Discard, "", 0),
+			Cacher:  tt.cacher,
+			TempDir: t.TempDir(),
+			Logger:  slog.New(slogDiscardHandler{}),
 		}
 		g.initOnce.Do(g.init)
 		rec := httptest.NewRecorder()
@@ -777,9 +777,9 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 				Env:     []string{"GOPROXY=" + proxyServer.URL, "GOSUMDB=off"},
 				TempDir: t.TempDir(),
 			},
-			Cacher:      tt.cacher,
-			TempDir:     t.TempDir(),
-			ErrorLogger: log.New(io.Discard, "", 0),
+			Cacher:  tt.cacher,
+			TempDir: t.TempDir(),
+			Logger:  slog.New(slogDiscardHandler{}),
 		}
 		g.initOnce.Do(g.init)
 		escapedModulePath, after, ok := strings.Cut(tt.target, "/@v/")
@@ -936,7 +936,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 			ProxiedSumDBs: []string{"sumdb.example.com " + sumdbServer.URL},
 			Cacher:        tt.cacher,
 			TempDir:       tt.tempDir,
-			ErrorLogger:   log.New(io.Discard, "", 0),
+			Logger:        slog.New(slogDiscardHandler{}),
 		}
 		g.initOnce.Do(g.init)
 		rec := httptest.NewRecorder()
@@ -1005,9 +1005,9 @@ func TestGoproxyServeCache(t *testing.T) {
 			tt.cacher = DirCacher(t.TempDir())
 		}
 		g := &Goproxy{
-			Cacher:      tt.cacher,
-			TempDir:     t.TempDir(),
-			ErrorLogger: log.New(io.Discard, "", 0),
+			Cacher:  tt.cacher,
+			TempDir: t.TempDir(),
+			Logger:  slog.New(slogDiscardHandler{}),
 		}
 		g.initOnce.Do(g.init)
 		req := httptest.NewRequest("", "/", nil)
@@ -1066,9 +1066,9 @@ func TestGoproxyServePutCache(t *testing.T) {
 		},
 	} {
 		g := &Goproxy{
-			Cacher:      DirCacher(t.TempDir()),
-			TempDir:     t.TempDir(),
-			ErrorLogger: log.New(io.Discard, "", 0),
+			Cacher:  DirCacher(t.TempDir()),
+			TempDir: t.TempDir(),
+			Logger:  slog.New(slogDiscardHandler{}),
 		}
 		g.initOnce.Do(g.init)
 		rec := httptest.NewRecorder()
@@ -1106,9 +1106,9 @@ func TestGoproxyServePutCacheFile(t *testing.T) {
 		},
 	} {
 		g := &Goproxy{
-			Cacher:      DirCacher(t.TempDir()),
-			TempDir:     t.TempDir(),
-			ErrorLogger: log.New(io.Discard, "", 0),
+			Cacher:  DirCacher(t.TempDir()),
+			TempDir: t.TempDir(),
+			Logger:  slog.New(slogDiscardHandler{}),
 		}
 		g.initOnce.Do(g.init)
 		rec := httptest.NewRecorder()
@@ -1202,32 +1202,6 @@ func TestGoproxyPutCacheFile(t *testing.T) {
 		t.Fatal("expected error")
 	} else if got, want := err, fs.ErrNotExist; !compareErrors(got, want) {
 		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
-func TestGoproxyLogErrorf(t *testing.T) {
-	for _, tt := range []struct {
-		n           int
-		errorLogger *log.Logger
-	}{
-		{1, log.New(io.Discard, "", log.Ldate)},
-		{2, nil},
-	} {
-		var errorLoggerBuffer bytes.Buffer
-		g := &Goproxy{TempDir: t.TempDir(), ErrorLogger: tt.errorLogger}
-		g.initOnce.Do(g.init)
-		if g.ErrorLogger != nil {
-			g.ErrorLogger.SetOutput(&errorLoggerBuffer)
-		} else {
-			log.SetFlags(log.Ldate)
-			defer log.SetFlags(log.LstdFlags)
-			log.SetOutput(&errorLoggerBuffer)
-			defer log.SetOutput(os.Stderr)
-		}
-		g.logErrorf("not found: %s", "invalid version")
-		if got, want := errorLoggerBuffer.String(), fmt.Sprintf("%s goproxy: not found: invalid version\n", time.Now().Format("2006/01/02")); got != want {
-			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-		}
 	}
 }
 
@@ -1347,3 +1321,14 @@ func (c *testCacher) Put(ctx context.Context, name string, content io.ReadSeeker
 	}
 	return c.Cacher.Put(ctx, name, content)
 }
+
+// slogDiscardHandler implements [slog.Handler] by discarding all logs.
+//
+// TODO: Remove slogDiscardHandler when the minimum supported Go version is
+// 1.24. See https://go.dev/doc/go1.24#logslogpkglogslog.
+type slogDiscardHandler struct{}
+
+func (h slogDiscardHandler) Enabled(context.Context, slog.Level) bool  { return false }
+func (h slogDiscardHandler) Handle(context.Context, slog.Record) error { return nil }
+func (h slogDiscardHandler) WithAttrs([]slog.Attr) slog.Handler        { return h }
+func (h slogDiscardHandler) WithGroup(string) slog.Handler             { return h }
