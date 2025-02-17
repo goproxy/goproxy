@@ -30,7 +30,8 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{secrets.CODECOV_TOKEN}}
-          file: coverage.out
+          disable_search: true
+          files: coverage.out
   test-go-build:
     needs: test
     runs-on: ubuntu-latest
