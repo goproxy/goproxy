@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -57,6 +58,7 @@ type serverCmdConfig struct {
 	connectTimeout   time.Duration
 	fetchTimeout     time.Duration
 	shutdownTimeout  time.Duration
+	logFormat        string
 }
 
 // newServerCmdConfig creates a new [serverCmdConfig].
@@ -85,6 +87,7 @@ func newServerCmdConfig(cmd *cobra.Command) *serverCmdConfig {
 	fs.DurationVar(&cfg.connectTimeout, "connect-timeout", 30*time.Second, "maximum amount of time (0 means no limit) will wait for an outgoing connection to establish")
 	fs.DurationVar(&cfg.fetchTimeout, "fetch-timeout", 10*time.Minute, "maximum amount of time (0 means no limit) will wait for a fetch to complete")
 	fs.DurationVar(&cfg.shutdownTimeout, "shutdown-timeout", 10*time.Second, "maximum amount of time (0 means no limit) will wait for the server to shutdown")
+	fs.StringVar(&cfg.logFormat, "log-format", "text", "log format to use (valid values: text, json)")
 	return cfg
 }
 
@@ -105,6 +108,7 @@ func runServerCmd(cmd *cobra.Command, args []string, cfg *serverCmdConfig) error
 		TempDir:       cfg.tempDir,
 		Transport:     transport,
 	}
+
 	switch cfg.cacher {
 	case "dir":
 		g.Cacher = goproxy.DirCacher(cfg.cacherDir)
@@ -119,6 +123,17 @@ func runServerCmd(cmd *cobra.Command, args []string, cfg *serverCmdConfig) error
 	default:
 		return fmt.Errorf("invalid --cacher: %q", cfg.cacher)
 	}
+
+	var logHandler slog.Handler
+	switch cfg.logFormat {
+	case "text":
+		logHandler = slog.NewTextHandler(os.Stderr, nil)
+	case "json":
+		logHandler = slog.NewJSONHandler(os.Stderr, nil)
+	default:
+		return fmt.Errorf("invalid --log-format: %q", cfg.logFormat)
+	}
+	g.Logger = slog.New(logHandler)
 
 	handler := http.Handler(g)
 	if cfg.pathPrefix != "" {
