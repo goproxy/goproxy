@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -22,12 +23,14 @@ func TestSetResponseCacheControlHeader(t *testing.T) {
 		{3, -1, "must-revalidate, no-cache, no-store"},
 		{4, -2, ""},
 	} {
-		rec := httptest.NewRecorder()
-		setResponseCacheControlHeader(rec, tt.maxAge)
-		recr := rec.Result()
-		if got, want := recr.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
-			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-		}
+		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			setResponseCacheControlHeader(rec, tt.maxAge)
+			recr := rec.Result()
+			if got, want := recr.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+		})
 	}
 }
 
@@ -49,23 +52,25 @@ func TestResponseString(t *testing.T) {
 			content: "foobar",
 		},
 	} {
-		rec := httptest.NewRecorder()
-		responseString(rec, httptest.NewRequest(tt.method, "/", nil), http.StatusOK, 60, tt.content)
-		recr := rec.Result()
-		if got, want := recr.StatusCode, http.StatusOK; got != want {
-			t.Errorf("test(%d): got %d, want %d", tt.n, got, want)
-		}
-		if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
-			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-		}
-		if got, want := recr.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
-			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-		}
-		if b, err := io.ReadAll(recr.Body); err != nil {
-			t.Fatalf("test(%d): unexpected error %q", tt.n, err)
-		} else if got, want := string(b), tt.wantContent; got != want {
-			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-		}
+		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			responseString(rec, httptest.NewRequest(tt.method, "/", nil), http.StatusOK, 60, tt.content)
+			recr := rec.Result()
+			if got, want := recr.StatusCode, http.StatusOK; got != want {
+				t.Errorf("got %d, want %d", got, want)
+			}
+			if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+			if got, want := recr.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+			if b, err := io.ReadAll(recr.Body); err != nil {
+				t.Errorf("unexpected error %q", err)
+			} else if got, want := string(b), tt.wantContent; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+		})
 	}
 }
 
@@ -87,23 +92,25 @@ func TestResponseNotFound(t *testing.T) {
 		{10, []any{"bad request: foobar"}, "not found: foobar"},
 		{11, []any{"gone: foobar"}, "not found: foobar"},
 	} {
-		rec := httptest.NewRecorder()
-		responseNotFound(rec, httptest.NewRequest("", "/", nil), 60, tt.msgs...)
-		recr := rec.Result()
-		if got, want := recr.StatusCode, http.StatusNotFound; got != want {
-			t.Errorf("test(%d): got %d, want %d", tt.n, got, want)
-		}
-		if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
-			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-		}
-		if got, want := recr.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
-			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-		}
-		if b, err := io.ReadAll(recr.Body); err != nil {
-			t.Fatalf("test(%d): unexpected error %q", tt.n, err)
-		} else if got, want := string(b), tt.wantContent; got != want {
-			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-		}
+		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			responseNotFound(rec, httptest.NewRequest("", "/", nil), 60, tt.msgs...)
+			recr := rec.Result()
+			if got, want := recr.StatusCode, http.StatusNotFound; got != want {
+				t.Errorf("got %d, want %d", got, want)
+			}
+			if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+			if got, want := recr.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+			if b, err := io.ReadAll(recr.Body); err != nil {
+				t.Errorf("unexpected error %q", err)
+			} else if got, want := string(b), tt.wantContent; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+		})
 	}
 }
 
@@ -121,7 +128,7 @@ func TestResponseMethodNotAllowed(t *testing.T) {
 		t.Errorf("got %q, want %q", got, want)
 	}
 	if b, err := io.ReadAll(recr.Body); err != nil {
-		t.Fatalf("unexpected error %q", err)
+		t.Errorf("unexpected error %q", err)
 	} else if got, want := string(b), "method not allowed"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -141,7 +148,7 @@ func TestResponseInternalServerError(t *testing.T) {
 		t.Errorf("got %q, want %q", got, want)
 	}
 	if b, err := io.ReadAll(recr.Body); err != nil {
-		t.Fatalf("unexpected error %q", err)
+		t.Errorf("unexpected error %q", err)
 	} else if got, want := string(b), "internal server error"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -257,32 +264,34 @@ func TestResponseSuccess(t *testing.T) {
 			wantContent:       "foobar",
 		},
 	} {
-		rec := httptest.NewRecorder()
-		responseSuccess(rec, httptest.NewRequest(tt.method, "/", nil), tt.content, "text/plain; charset=utf-8", 60)
-		recr := rec.Result()
-		if got, want := recr.StatusCode, http.StatusOK; got != want {
-			t.Errorf("test(%d): got %d, want %d", tt.n, got, want)
-		}
-		if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
-			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-		}
-		if got, want := recr.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
-			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-		}
-		if got, want := recr.ContentLength, tt.wantContentLength; got != want {
-			t.Errorf("test(%d): got %d, want %d", tt.n, got, want)
-		}
-		if got, want := recr.Header.Get("Last-Modified"), tt.wantLastModified; got != want {
-			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-		}
-		if got, want := recr.Header.Get("ETag"), tt.wantETag; got != want {
-			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-		}
-		if b, err := io.ReadAll(recr.Body); err != nil {
-			t.Fatalf("test(%d): unexpected error %q", tt.n, err)
-		} else if got, want := string(b), tt.wantContent; got != want {
-			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-		}
+		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			responseSuccess(rec, httptest.NewRequest(tt.method, "/", nil), tt.content, "text/plain; charset=utf-8", 60)
+			recr := rec.Result()
+			if got, want := recr.StatusCode, http.StatusOK; got != want {
+				t.Errorf("got %d, want %d", got, want)
+			}
+			if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+			if got, want := recr.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+			if got, want := recr.ContentLength, tt.wantContentLength; got != want {
+				t.Errorf("got %d, want %d", got, want)
+			}
+			if got, want := recr.Header.Get("Last-Modified"), tt.wantLastModified; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+			if got, want := recr.Header.Get("ETag"), tt.wantETag; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+			if b, err := io.ReadAll(recr.Body); err != nil {
+				t.Errorf("unexpected error %q", err)
+			} else if got, want := string(b), tt.wantContent; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+		})
 	}
 }
 
@@ -345,22 +354,24 @@ func TestResponseError(t *testing.T) {
 			wantContent:    "internal server error",
 		},
 	} {
-		rec := httptest.NewRecorder()
-		responseError(rec, httptest.NewRequest("", "/", nil), tt.err, tt.cacheSensitive)
-		recr := rec.Result()
-		if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
-			t.Errorf("test(%d): got %d, want %d", tt.n, got, want)
-		}
-		if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
-			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-		}
-		if got, want := recr.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
-			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-		}
-		if b, err := io.ReadAll(recr.Body); err != nil {
-			t.Fatalf("test(%d): unexpected error %q", tt.n, err)
-		} else if got, want := string(b), tt.wantContent; got != want {
-			t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-		}
+		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			responseError(rec, httptest.NewRequest("", "/", nil), tt.err, tt.cacheSensitive)
+			recr := rec.Result()
+			if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
+				t.Errorf("got %d, want %d", got, want)
+			}
+			if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+			if got, want := recr.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+			if b, err := io.ReadAll(recr.Body); err != nil {
+				t.Errorf("unexpected error %q", err)
+			} else if got, want := string(b), tt.wantContent; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+		})
 	}
 }
