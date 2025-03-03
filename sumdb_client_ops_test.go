@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -19,123 +20,129 @@ func TestNewSumDBClientOps(t *testing.T) {
 		{2, defaultEnvGOSUMDB + " https://example.com", nil},
 		{3, "", errors.New("missing GOSUMDB")},
 	} {
-		sco, err := newSumdbClientOps(defaultEnvGOPROXY, tt.envGOSUMDB, http.DefaultClient)
-		if tt.wantErr != nil {
-			if err == nil {
-				t.Fatalf("test(%d): expected error", tt.n)
-			} else if got, want := err, tt.wantErr; !compareErrors(got, want) {
-				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+			sco, err := newSumdbClientOps(defaultEnvGOPROXY, tt.envGOSUMDB, http.DefaultClient)
+			if tt.wantErr != nil {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				if got, want := err, tt.wantErr; !compareErrors(got, want) {
+					t.Errorf("got %q, want %q", got, want)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error %q", err)
+				}
+				if got, want := sco.name, defaultEnvGOSUMDB; got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
+				if got, want := sco.key, sumGolangOrgKey; got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
 			}
-		} else {
-			if err != nil {
-				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
-			}
-			if got, want := sco.name, defaultEnvGOSUMDB; got != want {
-				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-			}
-			if got, want := sco.key, sumGolangOrgKey; got != want {
-				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-			}
-		}
+		})
 	}
 }
 
 func TestSumDBClientOpsURL(t *testing.T) {
-	proxyServer, setProxyHandler := newHTTPTestServer()
-	defer proxyServer.Close()
 	for _, tt := range []struct {
 		n            int
 		proxyHandler http.HandlerFunc
-		envGOPROXY   string
+		envGOPROXY   func(proxyServerURL string) string
 		envGOSUMDB   string
-		wantURL      string
+		wantURL      func(proxyServerURL string) string
 		wantErr      error
 		doubleCheck  bool
 	}{
 		{
 			n:          1,
-			envGOPROXY: "direct",
+			envGOPROXY: func(_ string) string { return "direct" },
 			envGOSUMDB: defaultEnvGOSUMDB,
-			wantURL:    "https://" + defaultEnvGOSUMDB,
+			wantURL:    func(_ string) string { return "https://" + defaultEnvGOSUMDB },
 		},
 		{
 			n:          2,
-			envGOPROXY: "direct",
+			envGOPROXY: func(_ string) string { return "direct" },
 			envGOSUMDB: defaultEnvGOSUMDB + " https://example.com",
-			wantURL:    "https://example.com",
+			wantURL:    func(_ string) string { return "https://example.com" },
 		},
 		{
 			n:            3,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {},
-			envGOPROXY:   proxyServer.URL,
+			envGOPROXY:   func(proxyServerURL string) string { return proxyServerURL },
 			envGOSUMDB:   defaultEnvGOSUMDB,
-			wantURL:      proxyServer.URL + "/sumdb/" + defaultEnvGOSUMDB,
+			wantURL:      func(proxyServerURL string) string { return proxyServerURL + "/sumdb/" + defaultEnvGOSUMDB },
 		},
 		{
 			n:            4,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, -2) },
-			envGOPROXY:   proxyServer.URL,
+			envGOPROXY:   func(proxyServerURL string) string { return proxyServerURL },
 			envGOSUMDB:   defaultEnvGOSUMDB,
-			wantURL:      "https://" + defaultEnvGOSUMDB,
+			wantURL:      func(_ string) string { return "https://" + defaultEnvGOSUMDB },
 		},
 		{
 			n:            5,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, -2) },
-			envGOPROXY:   proxyServer.URL + ",direct",
+			envGOPROXY:   func(proxyServerURL string) string { return proxyServerURL + ",direct" },
 			envGOSUMDB:   defaultEnvGOSUMDB,
-			wantURL:      "https://" + defaultEnvGOSUMDB,
+			wantURL:      func(_ string) string { return "https://" + defaultEnvGOSUMDB },
 		},
 		{
 			n:            6,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, -2) },
-			envGOPROXY:   proxyServer.URL + ",off",
+			envGOPROXY:   func(proxyServerURL string) string { return proxyServerURL + ",off" },
 			envGOSUMDB:   defaultEnvGOSUMDB,
-			wantURL:      "https://" + defaultEnvGOSUMDB,
+			wantURL:      func(_ string) string { return "https://" + defaultEnvGOSUMDB },
 		},
 		{
 			n:            7,
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseInternalServerError(rw, req) },
-			envGOPROXY:   proxyServer.URL,
+			envGOPROXY:   func(proxyServerURL string) string { return proxyServerURL },
 			envGOSUMDB:   defaultEnvGOSUMDB,
 			wantErr:      errBadUpstream,
 			doubleCheck:  true,
 		},
 	} {
-		setProxyHandler(tt.proxyHandler)
-		sco, err := newSumdbClientOps(tt.envGOPROXY, tt.envGOSUMDB, http.DefaultClient)
-		if err != nil {
-			t.Fatalf("test(%d): unexpected error %q", tt.n, err)
-		}
-		u, err := sco.url()
-		if tt.wantErr != nil {
-			if err == nil {
-				t.Fatalf("test(%d): expected error", tt.n)
-			} else if got, want := err, tt.wantErr; !compareErrors(got, want) {
-				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-			}
-		} else {
+		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+			proxyServer := newHTTPTestServer(t, tt.proxyHandler)
+			envGOPROXY := tt.envGOPROXY(proxyServer.URL)
+
+			sco, err := newSumdbClientOps(envGOPROXY, tt.envGOSUMDB, http.DefaultClient)
 			if err != nil {
-				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
+				t.Fatalf("unexpected error %q", err)
 			}
-			if got, want := u.String(), tt.wantURL; got != want {
-				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+
+			u, err := sco.url()
+			if tt.wantErr != nil {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				if got, want := err, tt.wantErr; !compareErrors(got, want) {
+					t.Errorf("got %q, want %q", got, want)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error %q", err)
+				}
+				if got, want := u.String(), tt.wantURL(proxyServer.URL); got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
 			}
-		}
-		if tt.doubleCheck {
-			u2, err2 := sco.url()
-			if got, want := err2, err; got != want {
-				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+
+			if tt.doubleCheck {
+				u2, err2 := sco.url()
+				if got, want := err2, err; got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
+				if got, want := u2, u; got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
 			}
-			if got, want := u2, u; got != want {
-				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-			}
-		}
+		})
 	}
 }
 
 func TestSumDBClientOpsReadRemote(t *testing.T) {
-	proxyServer, setProxyHandler := newHTTPTestServer()
-	defer proxyServer.Close()
 	for _, tt := range []struct {
 		n            int
 		proxyHandler http.HandlerFunc
@@ -162,26 +169,31 @@ func TestSumDBClientOpsReadRemote(t *testing.T) {
 			wantErr:      errBadUpstream,
 		},
 	} {
-		setProxyHandler(tt.proxyHandler)
-		sco, err := newSumdbClientOps(proxyServer.URL, defaultEnvGOSUMDB, http.DefaultClient)
-		if err != nil {
-			t.Fatalf("test(%d): unexpected error %q", tt.n, err)
-		}
-		b, err := sco.ReadRemote("file")
-		if tt.wantErr != nil {
-			if err == nil {
-				t.Fatalf("test(%d): expected error", tt.n)
-			} else if got, want := err, tt.wantErr; !compareErrors(got, want) {
-				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-			}
-		} else {
+		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+			proxyServer := newHTTPTestServer(t, tt.proxyHandler)
+
+			sco, err := newSumdbClientOps(proxyServer.URL, defaultEnvGOSUMDB, http.DefaultClient)
 			if err != nil {
-				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
+				t.Fatalf("unexpected error %q", err)
 			}
-			if got, want := string(b), tt.wantContent; got != want {
-				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+
+			b, err := sco.ReadRemote("file")
+			if tt.wantErr != nil {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				if got, want := err, tt.wantErr; !compareErrors(got, want) {
+					t.Errorf("got %q, want %q", got, want)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error %q", err)
+				}
+				if got, want := string(b), tt.wantContent; got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
 			}
-		}
+		})
 	}
 }
 
@@ -207,25 +219,29 @@ func TestSumDBClientOpsReadConfig(t *testing.T) {
 			wantErr: errors.New("unknown config file"),
 		},
 	} {
-		sco, err := newSumdbClientOps("direct", defaultEnvGOSUMDB, http.DefaultClient)
-		if err != nil {
-			t.Fatalf("test(%d): unexpected error %q", tt.n, err)
-		}
-		b, err := sco.ReadConfig(tt.file)
-		if tt.wantErr != nil {
-			if err == nil {
-				t.Fatalf("test(%d): expected error", tt.n)
-			} else if got, want := err, tt.wantErr; !compareErrors(got, want) {
-				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
-			}
-		} else {
+		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+			sco, err := newSumdbClientOps("direct", defaultEnvGOSUMDB, http.DefaultClient)
 			if err != nil {
-				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
+				t.Fatalf("unexpected error %q", err)
 			}
-			if got, want := string(b), tt.wantContent; got != want {
-				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+
+			b, err := sco.ReadConfig(tt.file)
+			if tt.wantErr != nil {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				if got, want := err, tt.wantErr; !compareErrors(got, want) {
+					t.Errorf("got %q, want %q", got, want)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error %q", err)
+				}
+				if got, want := string(b), tt.wantContent; got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
 			}
-		}
+		})
 	}
 }
 
@@ -271,17 +287,18 @@ func TestSumDBClientOpsExtraCalls(t *testing.T) {
 			wantErr: fs.ErrNotExist,
 		},
 	} {
-		err := tt.call(&sumdbClientOps{})
-		if tt.wantErr != nil {
-			if err == nil {
-				t.Fatalf("test(%d): expected error", tt.n)
-			} else if got, want := err, tt.wantErr; !compareErrors(got, want) {
-				t.Errorf("test(%d): got %q, want %q", tt.n, got, want)
+		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+			err := tt.call(&sumdbClientOps{})
+			if tt.wantErr != nil {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				if got, want := err, tt.wantErr; !compareErrors(got, want) {
+					t.Errorf("got %q, want %q", got, want)
+				}
+			} else if err != nil {
+				t.Fatalf("unexpected error %q", err)
 			}
-		} else {
-			if err != nil {
-				t.Fatalf("test(%d): unexpected error %q", tt.n, err)
-			}
-		}
+		})
 	}
 }
