@@ -1,11 +1,11 @@
 module github.com/goproxy/goproxy
 
-go 1.22.0
+go 1.23.0
 
 require (
-	github.com/minio/minio-go/v7 v7.0.86
-	github.com/spf13/cobra v1.9.0
-	golang.org/x/mod v0.23.0
+	github.com/minio/minio-go/v7 v7.0.88
+	github.com/spf13/cobra v1.9.1
+	golang.org/x/mod v0.24.0
 )
 
 require (
