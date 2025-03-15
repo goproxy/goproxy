@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.20.0](https://github.com/goproxy/goproxy/compare/v0.19.2...v0.20.0) (2025-03-15)
+
+
+### ⚠ BREAKING CHANGES
+
+* **Goproxy:** redesign `ErrorLogger` as `Logger` using `log/slog.Logger` ([#106](https://github.com/goproxy/goproxy/issues/106))
+
+### Features
+
+* **cmd/goproxy:** add `--log-format` to `server` command ([#109](https://github.com/goproxy/goproxy/issues/109)) ([efa2ced](https://github.com/goproxy/goproxy/commit/efa2ced1005faab49a4828e86c31c724e8454a30))
+
+
+### Code Refactoring
+
+* bump minimum required Go version to 1.23.0 ([#112](https://github.com/goproxy/goproxy/issues/112)) ([f1c66d7](https://github.com/goproxy/goproxy/commit/f1c66d79c98bc2bf01eb44d66ab01e4e343bf314))
+* **Goproxy:** redesign `ErrorLogger` as `Logger` using `log/slog.Logger` ([#106](https://github.com/goproxy/goproxy/issues/106)) ([ab925cf](https://github.com/goproxy/goproxy/commit/ab925cf087583688ac8745206355a5c53d6388cc))
+
+
+### Tests
+
+* improve test organization with subtests ([#110](https://github.com/goproxy/goproxy/issues/110)) ([5b2a4c8](https://github.com/goproxy/goproxy/commit/5b2a4c8ed731815ae519b8097987dbd62c99cbbe))
+
+
+### Miscellaneous Chores
+
+* **ci:** fix usage of codecov/codecov-action@v5 ([#108](https://github.com/goproxy/goproxy/issues/108)) ([bbf1666](https://github.com/goproxy/goproxy/commit/bbf1666550b726d7ab68a72fd62bcd6db6b6fe37))
+
 ## [0.19.2](https://github.com/goproxy/goproxy/compare/v0.19.1...v0.19.2) (2025-02-16)
 
 
