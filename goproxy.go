@@ -70,7 +70,7 @@ type Goproxy struct {
 	// Logger is used to log messages that occur during proxying. It is
 	// currently used only for error messages.
 	//
-	// If Logger is nil, [slog.Default] is used.
+	// If Logger is nil, [slog.Default] with group name "goproxy" is used.
 	Logger *slog.Logger
 
 	initOnce      sync.Once
