@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.20.1](https://github.com/goproxy/goproxy/compare/v0.20.0...v0.20.1) (2025-04-17)
+
+
+### Miscellaneous Chores
+
+* **deps:** bump golang.org/x/crypto from 0.33.0 to 0.35.0 ([#113](https://github.com/goproxy/goproxy/issues/113)) ([ad197dd](https://github.com/goproxy/goproxy/commit/ad197dd3f86075a5aad25a22d6313a97f92247d8))
+* **deps:** bump golang.org/x/net from 0.35.0 to 0.38.0 ([#115](https://github.com/goproxy/goproxy/issues/115)) ([239fd87](https://github.com/goproxy/goproxy/commit/239fd8753c2e9b0564d57f123fa721085e330da3))
+
 ## [0.20.0](https://github.com/goproxy/goproxy/compare/v0.19.2...v0.20.0) (2025-03-15)
 
 
