@@ -66,7 +66,7 @@ func TestResponseString(t *testing.T) {
 				t.Errorf("got %q, want %q", got, want)
 			}
 			if b, err := io.ReadAll(recr.Body); err != nil {
-				t.Errorf("unexpected error %q", err)
+				t.Errorf("unexpected error %v", err)
 			} else if got, want := string(b), tt.wantContent; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
@@ -106,7 +106,7 @@ func TestResponseNotFound(t *testing.T) {
 				t.Errorf("got %q, want %q", got, want)
 			}
 			if b, err := io.ReadAll(recr.Body); err != nil {
-				t.Errorf("unexpected error %q", err)
+				t.Errorf("unexpected error %v", err)
 			} else if got, want := string(b), tt.wantContent; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
@@ -128,7 +128,7 @@ func TestResponseMethodNotAllowed(t *testing.T) {
 		t.Errorf("got %q, want %q", got, want)
 	}
 	if b, err := io.ReadAll(recr.Body); err != nil {
-		t.Errorf("unexpected error %q", err)
+		t.Errorf("unexpected error %v", err)
 	} else if got, want := string(b), "method not allowed"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -148,7 +148,7 @@ func TestResponseInternalServerError(t *testing.T) {
 		t.Errorf("got %q, want %q", got, want)
 	}
 	if b, err := io.ReadAll(recr.Body); err != nil {
-		t.Errorf("unexpected error %q", err)
+		t.Errorf("unexpected error %v", err)
 	} else if got, want := string(b), "internal server error"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -287,7 +287,7 @@ func TestResponseSuccess(t *testing.T) {
 				t.Errorf("got %q, want %q", got, want)
 			}
 			if b, err := io.ReadAll(recr.Body); err != nil {
-				t.Errorf("unexpected error %q", err)
+				t.Errorf("unexpected error %v", err)
 			} else if got, want := string(b), tt.wantContent; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
@@ -368,7 +368,7 @@ func TestResponseError(t *testing.T) {
 				t.Errorf("got %q, want %q", got, want)
 			}
 			if b, err := io.ReadAll(recr.Body); err != nil {
-				t.Errorf("unexpected error %q", err)
+				t.Errorf("unexpected error %v", err)
 			} else if got, want := string(b), tt.wantContent; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}

@@ -27,11 +27,11 @@ func TestNewSumDBClientOps(t *testing.T) {
 					t.Fatal("expected error")
 				}
 				if got, want := err, tt.wantErr; !compareErrors(got, want) {
-					t.Errorf("got %q, want %q", got, want)
+					t.Errorf("got %v, want %v", got, want)
 				}
 			} else {
 				if err != nil {
-					t.Fatalf("unexpected error %q", err)
+					t.Fatalf("unexpected error %v", err)
 				}
 				if got, want := sco.name, defaultEnvGOSUMDB; got != want {
 					t.Errorf("got %q, want %q", got, want)
@@ -109,7 +109,7 @@ func TestSumDBClientOpsURL(t *testing.T) {
 
 			sco, err := newSumdbClientOps(envGOPROXY, tt.envGOSUMDB, http.DefaultClient)
 			if err != nil {
-				t.Fatalf("unexpected error %q", err)
+				t.Fatalf("unexpected error %v", err)
 			}
 
 			u, err := sco.url()
@@ -118,11 +118,11 @@ func TestSumDBClientOpsURL(t *testing.T) {
 					t.Fatal("expected error")
 				}
 				if got, want := err, tt.wantErr; !compareErrors(got, want) {
-					t.Errorf("got %q, want %q", got, want)
+					t.Errorf("got %v, want %v", got, want)
 				}
 			} else {
 				if err != nil {
-					t.Fatalf("unexpected error %q", err)
+					t.Fatalf("unexpected error %v", err)
 				}
 				if got, want := u.String(), tt.wantURL(proxyServer.URL); got != want {
 					t.Errorf("got %q, want %q", got, want)
@@ -174,7 +174,7 @@ func TestSumDBClientOpsReadRemote(t *testing.T) {
 
 			sco, err := newSumdbClientOps(proxyServer.URL, defaultEnvGOSUMDB, http.DefaultClient)
 			if err != nil {
-				t.Fatalf("unexpected error %q", err)
+				t.Fatalf("unexpected error %v", err)
 			}
 
 			b, err := sco.ReadRemote("file")
@@ -183,11 +183,11 @@ func TestSumDBClientOpsReadRemote(t *testing.T) {
 					t.Fatal("expected error")
 				}
 				if got, want := err, tt.wantErr; !compareErrors(got, want) {
-					t.Errorf("got %q, want %q", got, want)
+					t.Errorf("got %v, want %v", got, want)
 				}
 			} else {
 				if err != nil {
-					t.Fatalf("unexpected error %q", err)
+					t.Fatalf("unexpected error %v", err)
 				}
 				if got, want := string(b), tt.wantContent; got != want {
 					t.Errorf("got %q, want %q", got, want)
@@ -222,7 +222,7 @@ func TestSumDBClientOpsReadConfig(t *testing.T) {
 		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
 			sco, err := newSumdbClientOps("direct", defaultEnvGOSUMDB, http.DefaultClient)
 			if err != nil {
-				t.Fatalf("unexpected error %q", err)
+				t.Fatalf("unexpected error %v", err)
 			}
 
 			b, err := sco.ReadConfig(tt.file)
@@ -231,11 +231,11 @@ func TestSumDBClientOpsReadConfig(t *testing.T) {
 					t.Fatal("expected error")
 				}
 				if got, want := err, tt.wantErr; !compareErrors(got, want) {
-					t.Errorf("got %q, want %q", got, want)
+					t.Errorf("got %v, want %v", got, want)
 				}
 			} else {
 				if err != nil {
-					t.Fatalf("unexpected error %q", err)
+					t.Fatalf("unexpected error %v", err)
 				}
 				if got, want := string(b), tt.wantContent; got != want {
 					t.Errorf("got %q, want %q", got, want)
@@ -294,10 +294,10 @@ func TestSumDBClientOpsExtraCalls(t *testing.T) {
 					t.Fatal("expected error")
 				}
 				if got, want := err, tt.wantErr; !compareErrors(got, want) {
-					t.Errorf("got %q, want %q", got, want)
+					t.Errorf("got %v, want %v", got, want)
 				}
 			} else if err != nil {
-				t.Fatalf("unexpected error %q", err)
+				t.Fatalf("unexpected error %v", err)
 			}
 		})
 	}

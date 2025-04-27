@@ -207,7 +207,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 				t.Errorf("got %q, want %q", got, want)
 			}
 			if b, err := io.ReadAll(recr.Body); err != nil {
-				t.Errorf("unexpected error %q", err)
+				t.Errorf("unexpected error %v", err)
 			} else if got, want := string(b), tt.wantContent; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
@@ -221,7 +221,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 	mod := "module example.com"
 	zip, err := makeZip(map[string][]byte{"example.com@v1.0.0/go.mod": []byte(mod)})
 	if err != nil {
-		t.Fatalf("unexpected error %q", err)
+		t.Fatalf("unexpected error %v", err)
 	}
 	proxyServer := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		switch req.URL.Path {
@@ -505,7 +505,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 				t.Errorf("got %q, want %q", got, want)
 			}
 			if b, err := io.ReadAll(recr.Body); err != nil {
-				t.Errorf("unexpected error %q", err)
+				t.Errorf("unexpected error %v", err)
 			} else if got, want := string(b), tt.wantContent; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
@@ -591,7 +591,7 @@ func TestGoproxyServeFetchQuery(t *testing.T) {
 				t.Errorf("got %q, want %q", got, want)
 			}
 			if b, err := io.ReadAll(recr.Body); err != nil {
-				t.Errorf("unexpected error %q", err)
+				t.Errorf("unexpected error %v", err)
 			} else if got, want := string(b), tt.wantContent; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
@@ -669,7 +669,7 @@ func TestGoproxyServeFetchList(t *testing.T) {
 				t.Errorf("got %q, want %q", got, want)
 			}
 			if b, err := io.ReadAll(recr.Body); err != nil {
-				t.Errorf("unexpected error %q", err)
+				t.Errorf("unexpected error %v", err)
 			} else if got, want := string(b), tt.wantContent; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
@@ -682,7 +682,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 	mod := "module example.com"
 	zip, err := makeZip(map[string][]byte{"example.com@v1.0.0/go.mod": []byte(mod)})
 	if err != nil {
-		t.Fatalf("unexpected error %q", err)
+		t.Fatalf("unexpected error %v", err)
 	}
 	proxyHandler := func(rw http.ResponseWriter, req *http.Request) {
 		switch path.Ext(req.URL.Path) {
@@ -847,11 +847,11 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			}
 			modulePath, err := module.UnescapePath(escapedModulePath)
 			if err != nil {
-				t.Fatalf("unexpected error %q", err)
+				t.Fatalf("unexpected error %v", err)
 			}
 			moduleVersion, err := module.UnescapeVersion(strings.TrimSuffix(after, path.Ext(after)))
 			if err != nil {
-				t.Fatalf("unexpected error %q", err)
+				t.Fatalf("unexpected error %v", err)
 			}
 			rec := httptest.NewRecorder()
 			g.serveFetchDownload(rec, httptest.NewRequest("", "/", nil), tt.target, modulePath, moduleVersion, tt.noFetch)
@@ -866,7 +866,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 				t.Errorf("got %q, want %q", got, want)
 			}
 			if b, err := io.ReadAll(recr.Body); err != nil {
-				t.Errorf("unexpected error %q", err)
+				t.Errorf("unexpected error %v", err)
 			} else if got, want := string(b), tt.wantContent; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
@@ -1012,7 +1012,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 				t.Errorf("got %q, want %q", got, want)
 			}
 			if b, err := io.ReadAll(recr.Body); err != nil {
-				t.Errorf("unexpected error %q", err)
+				t.Errorf("unexpected error %v", err)
 			} else if got, want := string(b), tt.wantContent; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
@@ -1086,7 +1086,7 @@ func TestGoproxyServeCache(t *testing.T) {
 				t.Errorf("got %d, want %d", got, want)
 			}
 			if b, err := io.ReadAll(recr.Body); err != nil {
-				t.Errorf("unexpected error %q", err)
+				t.Errorf("unexpected error %v", err)
 			} else if got, want := string(b), tt.wantContent; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
@@ -1145,7 +1145,7 @@ func TestGoproxyServePutCache(t *testing.T) {
 				t.Errorf("got %d, want %d", got, want)
 			}
 			if b, err := io.ReadAll(recr.Body); err != nil {
-				t.Errorf("unexpected error %q", err)
+				t.Errorf("unexpected error %v", err)
 			} else if got, want := string(b), tt.wantContent; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
@@ -1184,7 +1184,7 @@ func TestGoproxyServePutCacheFile(t *testing.T) {
 			rec := httptest.NewRecorder()
 			file, err := tt.createFile()
 			if err != nil {
-				t.Fatalf("unexpected error %q", err)
+				t.Fatalf("unexpected error %v", err)
 			}
 			g.servePutCacheFile(rec, httptest.NewRequest("", "/", nil), "target", "", -2, file)
 			recr := rec.Result()
@@ -1192,7 +1192,7 @@ func TestGoproxyServePutCacheFile(t *testing.T) {
 				t.Errorf("got %d, want %d", got, want)
 			}
 			if b, err := io.ReadAll(recr.Body); err != nil {
-				t.Errorf("unexpected error %q", err)
+				t.Errorf("unexpected error %v", err)
 			} else if got, want := string(b), tt.wantContent; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
@@ -1204,21 +1204,21 @@ func TestGoproxyCache(t *testing.T) {
 	t.Run("Normal", func(t *testing.T) {
 		cacheDir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(cacheDir, "foo"), []byte("bar"), 0o644); err != nil {
-			t.Fatalf("unexpected error %q", err)
+			t.Fatalf("unexpected error %v", err)
 		}
 		g := &Goproxy{Cacher: DirCacher(cacheDir), TempDir: t.TempDir()}
 		g.initOnce.Do(g.init)
 
 		rc, err := g.cache(context.Background(), "foo")
 		if err != nil {
-			t.Fatalf("unexpected error %q", err)
+			t.Fatalf("unexpected error %v", err)
 		}
 		b, err := io.ReadAll(rc)
 		if err != nil {
-			t.Fatalf("unexpected error %q", err)
+			t.Fatalf("unexpected error %v", err)
 		}
 		if err := rc.Close(); err != nil {
-			t.Fatalf("unexpected error %q", err)
+			t.Fatalf("unexpected error %v", err)
 		}
 		if got, want := string(b), "bar"; got != want {
 			t.Errorf("got %q, want %q", got, want)
@@ -1234,7 +1234,7 @@ func TestGoproxyCache(t *testing.T) {
 			t.Fatal("expected error")
 		}
 		if got, want := err, fs.ErrNotExist; !compareErrors(got, want) {
-			t.Errorf("got %q, want %q", got, want)
+			t.Errorf("got %v, want %v", got, want)
 		}
 	})
 
@@ -1247,7 +1247,7 @@ func TestGoproxyCache(t *testing.T) {
 			t.Fatal("expected error")
 		}
 		if got, want := err, fs.ErrNotExist; !compareErrors(got, want) {
-			t.Errorf("got %q, want %q", got, want)
+			t.Errorf("got %v, want %v", got, want)
 		}
 	})
 }
@@ -1259,12 +1259,12 @@ func TestGoproxyPutCache(t *testing.T) {
 		g.initOnce.Do(g.init)
 
 		if err := g.putCache(context.Background(), "foo", strings.NewReader("bar")); err != nil {
-			t.Fatalf("unexpected error %q", err)
+			t.Fatalf("unexpected error %v", err)
 		}
 
 		b, err := os.ReadFile(filepath.Join(cacheDir, "foo"))
 		if err != nil {
-			t.Fatalf("unexpected error %q", err)
+			t.Fatalf("unexpected error %v", err)
 		}
 		if got, want := string(b), "bar"; got != want {
 			t.Errorf("got %q, want %q", got, want)
@@ -1276,7 +1276,7 @@ func TestGoproxyPutCache(t *testing.T) {
 		g.initOnce.Do(g.init)
 
 		if err := g.putCache(context.Background(), "foo", strings.NewReader("bar")); err != nil {
-			t.Errorf("unexpected error %q", err)
+			t.Errorf("unexpected error %v", err)
 		}
 	})
 }
@@ -1289,15 +1289,15 @@ func TestGoproxyPutCacheFile(t *testing.T) {
 
 		srcFile := filepath.Join(t.TempDir(), "foo-source")
 		if err := os.WriteFile(srcFile, []byte("bar"), 0o644); err != nil {
-			t.Fatalf("unexpected error %q", err)
+			t.Fatalf("unexpected error %v", err)
 		}
 		if err := g.putCacheFile(context.Background(), "foo", srcFile); err != nil {
-			t.Fatalf("unexpected error %q", err)
+			t.Fatalf("unexpected error %v", err)
 		}
 
 		b, err := os.ReadFile(filepath.Join(cacheDir, "foo"))
 		if err != nil {
-			t.Fatalf("unexpected error %q", err)
+			t.Fatalf("unexpected error %v", err)
 		}
 		if got, want := string(b), "bar"; got != want {
 			t.Errorf("got %q, want %q", got, want)
@@ -1313,7 +1313,7 @@ func TestGoproxyPutCacheFile(t *testing.T) {
 			t.Fatal("expected error")
 		}
 		if got, want := err, fs.ErrNotExist; !compareErrors(got, want) {
-			t.Errorf("got %q, want %q", got, want)
+			t.Errorf("got %v, want %v", got, want)
 		}
 	})
 }
