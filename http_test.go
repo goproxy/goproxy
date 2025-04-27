@@ -32,7 +32,7 @@ func TestNotExistError(t *testing.T) {
 		} {
 			t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
 				if got, want := tt.err, tt.wantErr; !compareErrors(got, want) {
-					t.Errorf("got %q, want %q", got, want)
+					t.Errorf("got %v, want %v", got, want)
 				}
 			})
 		}
@@ -194,11 +194,11 @@ func TestHTTPGet(t *testing.T) {
 						t.Fatal("expected error")
 					}
 					if got, want := err, wantErr; !compareErrors(got, want) {
-						t.Errorf("got %q, want %q", got, want)
+						t.Errorf("got %v, want %v", got, want)
 					}
 				} else {
 					if err != nil {
-						t.Fatalf("unexpected error %q", err)
+						t.Fatalf("unexpected error %v", err)
 					}
 					if got, want := content.String(), tt.wantContent; got != want {
 						t.Errorf("got %q, want %q", got, want)
@@ -254,19 +254,19 @@ func TestHTTPGetTemp(t *testing.T) {
 					t.Fatal("expected error")
 				}
 				if got, want := err, tt.wantErr; !compareErrors(got, want) {
-					t.Errorf("got %q, want %q", got, want)
+					t.Errorf("got %v, want %v", got, want)
 				}
 				if _, err := os.Stat(tempFile); err == nil {
 					t.Error("expected error")
 				} else if got, want := err, fs.ErrNotExist; !compareErrors(got, want) {
-					t.Errorf("got %q, want %q", got, want)
+					t.Errorf("got %v, want %v", got, want)
 				}
 			} else {
 				if err != nil {
-					t.Fatalf("unexpected error %q", err)
+					t.Fatalf("unexpected error %v", err)
 				}
 				if b, err := os.ReadFile(tempFile); err != nil {
-					t.Errorf("unexpected error %q", err)
+					t.Errorf("unexpected error %v", err)
 				} else if got, want := string(b), tt.wantContent; got != want {
 					t.Errorf("got %q, want %q", got, want)
 				}

@@ -16,29 +16,29 @@ func TestDirCacher(t *testing.T) {
 		dirCacher := DirCacher(t.TempDir())
 
 		if err := dirCacher.Put(context.Background(), "a/b/c", strings.NewReader("foobar")); err != nil {
-			t.Fatalf("unexpected error %q", err)
+			t.Fatalf("unexpected error %v", err)
 		}
 
 		if fi, err := os.Stat(filepath.Join(string(dirCacher), filepath.FromSlash("a/b"))); err != nil {
-			t.Errorf("unexpected error %q", err)
+			t.Errorf("unexpected error %v", err)
 		} else if got, want := fi.Mode().Perm(), os.FileMode(0o755).Perm(); got != want {
 			t.Errorf("got %d, want %d", got, want)
 		}
 
 		if fi, err := os.Stat(filepath.Join(string(dirCacher), filepath.FromSlash("a/b/c"))); err != nil {
-			t.Errorf("unexpected error %q", err)
+			t.Errorf("unexpected error %v", err)
 		} else if got, want := fi.Mode().Perm(), os.FileMode(0o644).Perm(); got != want {
 			t.Errorf("got %d, want %d", got, want)
 		}
 
 		if rc, err := dirCacher.Get(context.Background(), "a/b/c"); err != nil {
-			t.Errorf("unexpected error %q", err)
+			t.Errorf("unexpected error %v", err)
 		} else if rc == nil {
 			t.Error("unexpected nil")
 		} else if b, err := io.ReadAll(rc); err != nil {
-			t.Errorf("unexpected error %q", err)
+			t.Errorf("unexpected error %v", err)
 		} else if err := rc.Close(); err != nil {
-			t.Errorf("unexpected error %q", err)
+			t.Errorf("unexpected error %v", err)
 		} else if got, want := string(b), "foobar"; got != want {
 			t.Errorf("got %q, want %q", got, want)
 		}
@@ -52,7 +52,7 @@ func TestDirCacher(t *testing.T) {
 			t.Fatal("expected error")
 		}
 		if got, want := err, fs.ErrNotExist; !compareErrors(got, want) {
-			t.Errorf("got %q, want %q", got, want)
+			t.Errorf("got %v, want %v", got, want)
 		}
 		if got := rc; got != nil {
 			t.Errorf("got %#v, want nil", got)
@@ -73,17 +73,17 @@ func TestDirCacher(t *testing.T) {
 			t.Fatal("expected error")
 		}
 		if got, want := err, errRead; !compareErrors(got, want) {
-			t.Errorf("got %q, want %q", got, want)
+			t.Errorf("got %v, want %v", got, want)
 		}
 	})
 
 	t.Run("PutWithInvalidDirectory", func(t *testing.T) {
 		cacheDir := t.TempDir()
 		if err := os.MkdirAll(filepath.Join(cacheDir, filepath.FromSlash("a/b")), 0o755); err != nil {
-			t.Fatalf("unexpected error %q", err)
+			t.Fatalf("unexpected error %v", err)
 		}
 		if err := os.WriteFile(filepath.Join(cacheDir, filepath.FromSlash("a/b/c")), []byte("foobar"), 0o644); err != nil {
-			t.Fatalf("unexpected error %q", err)
+			t.Fatalf("unexpected error %v", err)
 		}
 		dirCacher := DirCacher(filepath.Join(cacheDir, filepath.FromSlash("a/b/c")))
 
