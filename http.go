@@ -45,8 +45,9 @@ func notExistErrorf(format string, v ...interface{}) error {
 
 // httpGet gets the content from the given url and writes it to the dst.
 func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer) error {
+	const maxRetries = 10
 	var lastErr error
-	for attempt := 0; attempt < 10; attempt++ {
+	for attempt := range maxRetries {
 		if attempt > 0 {
 			select {
 			case <-time.After(backoffSleep(100*time.Millisecond, time.Second, attempt)):
