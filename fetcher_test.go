@@ -1233,8 +1233,8 @@ func (misbehavingDoneContext) Done() <-chan struct{} {
 	close(ch)
 	return ch
 }
-func (misbehavingDoneContext) Err() error                        { return nil }
-func (misbehavingDoneContext) Value(key interface{}) interface{} { return nil }
+func (misbehavingDoneContext) Err() error        { return nil }
+func (misbehavingDoneContext) Value(key any) any { return nil }
 
 func TestGoFetcherExecGo(t *testing.T) {
 	t.Setenv("GOMODCACHE", t.TempDir())
