@@ -39,7 +39,7 @@ func (notExistError) Is(target error) bool { return target == fs.ErrNotExist }
 
 // notExistErrorf formats according to a format specifier and returns the string
 // as a value that satisfies error that is equivalent to [fs.ErrNotExist].
-func notExistErrorf(format string, v ...interface{}) error {
+func notExistErrorf(format string, v ...any) error {
 	return &notExistError{err: fmt.Errorf(format, v...)}
 }
 
