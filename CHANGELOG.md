@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.20.2](https://github.com/goproxy/goproxy/compare/v0.20.1...v0.20.2) (2025-06-07)
+
+
+### Miscellaneous Chores
+
+* **deps:** bump golang.org/x/mod and github.com/minio/minio-go/v7 ([#123](https://github.com/goproxy/goproxy/issues/123)) ([4eee47d](https://github.com/goproxy/goproxy/commit/4eee47de7c80acba9f3138f4a6400a54fe62c987))
+* update release workflow to separate tagging and publishing ([#122](https://github.com/goproxy/goproxy/issues/122)) ([33c5b1e](https://github.com/goproxy/goproxy/commit/33c5b1e9a3991d6f067f6a98f5190407f31d9e95))
+
 ## [0.20.1](https://github.com/goproxy/goproxy/compare/v0.20.0...v0.20.1) (2025-05-17)
 
 
