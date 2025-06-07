@@ -164,5 +164,4 @@ snapshot:
   version_template: '{{trimprefix .Summary "v"}}'
 
 release:
-  use_existing_draft: true
   prerelease: auto
