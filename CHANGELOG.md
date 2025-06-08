@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.3](https://github.com/goproxy/goproxy/compare/v0.20.2...v0.20.3) (2025-06-08)
+
+
+### Miscellaneous Chores
+
+* release 0.20.3 ([#127](https://github.com/goproxy/goproxy/issues/127)) ([927945e](https://github.com/goproxy/goproxy/commit/927945e93093bb454afd4c2497e3f54041ffc330))
+
 ## [0.20.2](https://github.com/goproxy/goproxy/compare/v0.20.1...v0.20.2) (2025-06-07)
 
 
