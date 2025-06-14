@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.21.0](https://github.com/goproxy/goproxy/compare/v0.20.3...v0.21.0) (2025-06-14)
+
+
+### Code Refactoring
+
+* **cmd/goproxy:** simplify binary version handling ([#129](https://github.com/goproxy/goproxy/issues/129)) ([1b19b35](https://github.com/goproxy/goproxy/commit/1b19b35c1e5035036f4bd64716f637f3c78bd414))
+
+
+### Miscellaneous Chores
+
+* **deps:** bump github.com/minio/minio-go/v7 from 7.0.92 to 7.0.93 ([#132](https://github.com/goproxy/goproxy/issues/132)) ([6cb0544](https://github.com/goproxy/goproxy/commit/6cb054430423fa8305e1711a287169e0d0a5c661))
+* **Dockerfile:** use `golang:1.24-alpine3.22` as base image ([#131](https://github.com/goproxy/goproxy/issues/131)) ([4c4128f](https://github.com/goproxy/goproxy/commit/4c4128f1aa74d2e2d023571cbec50026f8d45597))
+
 ## [0.20.3](https://github.com/goproxy/goproxy/compare/v0.20.2...v0.20.3) (2025-06-08)
 
 
