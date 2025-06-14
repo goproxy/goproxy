@@ -10,26 +10,16 @@ func Execute() int {
 	return 0
 }
 
-// Version is the version of the running binary set by the Go linker.
-var Version string
+// VersionOverride is the version set by the Go linker to override automatic detection.
+var VersionOverride string
 
-// binaryVersion returns the version of the running binary.
-func binaryVersion() string {
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return ""
+// Version returns the version of the running binary.
+func Version() string {
+	if VersionOverride != "" {
+		return VersionOverride
 	}
-	if Version != "" {
-		info.Main.Version = Version
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
+		return info.Main.Version
 	}
-	version := "Version: " + info.Main.Version + "\n"
-	for _, setting := range info.Settings {
-		switch setting.Key {
-		case "vcs.revision":
-			version += "Revision: " + setting.Value + "\n"
-		case "vcs.time":
-			version += "Build Time: " + setting.Value + "\n"
-		}
-	}
-	return version
+	return "(unknown)"
 }

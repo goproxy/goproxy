@@ -48,13 +48,7 @@ jobs:
       - name: Build Go binary
         env:
           CGO_ENABLED: 0
-        run: |
-          go build \
-            -v \
-            -trimpath \
-            -ldflags "-s -w -X github.com/goproxy/goproxy/cmd/goproxy/internal.Version=$(git describe --dirty --tags --always)" \
-            -o bin/ \
-            ./cmd/goproxy
+        run: go build -v -trimpath -ldflags "-s -w" -o bin/ ./cmd/goproxy
   test-docker-build:
     needs: test
     runs-on: ubuntu-latest

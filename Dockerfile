@@ -14,11 +14,7 @@ RUN set -eux; \
 	else \
 		apk add --no-cache git; \
 		go mod download; \
-		CGO_ENABLED=0 go build \
-			-trimpath \
-			-ldflags "-s -w -X github.com/goproxy/goproxy/cmd/goproxy/internal.Version=$(git describe --dirty --tags --always)" \
-			-o bin/ \
-			./cmd/goproxy; \
+		CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o bin/ ./cmd/goproxy; \
 	fi
 
 FROM ${GO_BASE_IMAGE}

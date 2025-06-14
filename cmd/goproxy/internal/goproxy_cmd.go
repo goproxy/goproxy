@@ -13,10 +13,9 @@ func newGoproxyCmd() *cobra.Command {
 		Long: strings.TrimSpace(`
 A minimalist Go module proxy handler.
 `),
-		Version:      binaryVersion(),
+		Version:      Version(),
 		SilenceUsage: true,
 	}
-	cmd.SetVersionTemplate("{{.Version}}")
 	cmd.SetHelpCommand(&cobra.Command{Hidden: true})
 	cmd.AddCommand(newServerCmd())
 	return cmd
