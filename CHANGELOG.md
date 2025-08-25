@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.21.1](https://github.com/goproxy/goproxy/compare/v0.21.0...v0.21.1) (2025-08-25)
+
+
+### Tests
+
+* cover Go 1.25 ([#133](https://github.com/goproxy/goproxy/issues/133)) ([1a3e11c](https://github.com/goproxy/goproxy/commit/1a3e11cca6576ae5b3ecb8f538cf5ef895e9b6b1))
+
+
+### Miscellaneous Chores
+
+* **ci:** bump actions/checkout from 4 to 5 ([#135](https://github.com/goproxy/goproxy/issues/135)) ([3e4fe2d](https://github.com/goproxy/goproxy/commit/3e4fe2d162844e4997d40f6dd6586eed7a8836bb))
+* **ci:** simplify .github/workflows/test.yaml ([#137](https://github.com/goproxy/goproxy/issues/137)) ([21c7a11](https://github.com/goproxy/goproxy/commit/21c7a1169fd2345ce801faf8631421379c67c6c8))
+* use Go 1.25 for releases ([#136](https://github.com/goproxy/goproxy/issues/136)) ([d04a91c](https://github.com/goproxy/goproxy/commit/d04a91cf376dbd5cdcbbf9762421a458d49f7927))
+
 ## [0.21.0](https://github.com/goproxy/goproxy/compare/v0.20.3...v0.21.0) (2025-06-14)
 
 
