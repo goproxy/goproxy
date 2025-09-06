@@ -2,15 +2,16 @@ ARG GO_BASE_IMAGE=golang:1.25-alpine3.22
 
 FROM ${GO_BASE_IMAGE} AS build
 
+ARG TARGETPLATFORM
 ARG USE_GORELEASER_ARTIFACTS=0
-ARG GORELEASER_ARTIFACTS_TARBALL
 
 WORKDIR /usr/local/src/goproxy
 COPY . .
 
 RUN set -eux; \
+	mkdir bin; \
 	if [ "${USE_GORELEASER_ARTIFACTS}" -eq 1 ]; then \
-		tar -xzf "${GORELEASER_ARTIFACTS_TARBALL}" bin/goproxy; \
+		cp "${TARGETPLATFORM}/bin/goproxy" bin/; \
 	else \
 		apk add --no-cache git; \
 		go mod download; \

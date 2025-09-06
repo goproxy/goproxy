@@ -31,134 +31,27 @@ builds:
       - windows_arm64
     mod_timestamp: "{{.CommitTimestamp}}"
 
-dockers:
-  - goarch: "386"
-    image_templates:
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-386"
-    use: buildx
-    build_flag_templates:
-      - --platform=linux/386
-      - --build-arg=USE_GORELEASER_ARTIFACTS=1
-      - --build-arg=GORELEASER_ARTIFACTS_TARBALL=./dist/{{.ProjectName}}_{{.Version}}_linux_386.tar.gz
-    extra_files:
-      - ./
-  - goarch: amd64
-    image_templates:
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-amd64"
-    use: buildx
-    build_flag_templates:
-      - --platform=linux/amd64
-      - --build-arg=USE_GORELEASER_ARTIFACTS=1
-      - --build-arg=GORELEASER_ARTIFACTS_TARBALL=./dist/{{.ProjectName}}_{{.Version}}_linux_amd64.tar.gz
-    extra_files:
-      - ./
-  - goarch: arm64
-    image_templates:
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-arm64"
-    use: buildx
-    build_flag_templates:
-      - --platform=linux/arm64
-      - --build-arg=USE_GORELEASER_ARTIFACTS=1
-      - --build-arg=GORELEASER_ARTIFACTS_TARBALL=./dist/{{.ProjectName}}_{{.Version}}_linux_arm64.tar.gz
-    extra_files:
-      - ./
-  - goarch: arm
-    goarm: "6"
-    image_templates:
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-armv6"
-    use: buildx
-    build_flag_templates:
-      - --platform=linux/arm/v6
-      - --build-arg=USE_GORELEASER_ARTIFACTS=1
-      - --build-arg=GORELEASER_ARTIFACTS_TARBALL=./dist/{{.ProjectName}}_{{.Version}}_linux_armv6.tar.gz
-    extra_files:
-      - ./
-  - goarch: arm
-    goarm: "7"
-    image_templates:
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-armv7"
-    use: buildx
-    build_flag_templates:
-      - --platform=linux/arm/v7
-      - --build-arg=USE_GORELEASER_ARTIFACTS=1
-      - --build-arg=GORELEASER_ARTIFACTS_TARBALL=./dist/{{.ProjectName}}_{{.Version}}_linux_armv7.tar.gz
-    extra_files:
-      - ./
-  - goarch: ppc64le
-    image_templates:
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-ppc64le"
-    use: buildx
-    build_flag_templates:
-      - --platform=linux/ppc64le
-      - --build-arg=USE_GORELEASER_ARTIFACTS=1
-      - --build-arg=GORELEASER_ARTIFACTS_TARBALL=./dist/{{.ProjectName}}_{{.Version}}_linux_ppc64le.tar.gz
-    extra_files:
-      - ./
-  - goarch: riscv64
-    image_templates:
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-riscv64"
-    use: buildx
-    build_flag_templates:
-      - --platform=linux/riscv64
-      - --build-arg=USE_GORELEASER_ARTIFACTS=1
-      - --build-arg=GORELEASER_ARTIFACTS_TARBALL=./dist/{{.ProjectName}}_{{.Version}}_linux_riscv64.tar.gz
-    extra_files:
-      - ./
-  - goarch: s390x
-    image_templates:
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-s390x"
-    use: buildx
-    build_flag_templates:
-      - --platform=linux/s390x
-      - --build-arg=USE_GORELEASER_ARTIFACTS=1
-      - --build-arg=GORELEASER_ARTIFACTS_TARBALL=./dist/{{.ProjectName}}_{{.Version}}_linux_s390x.tar.gz
-    extra_files:
-      - ./
-
-docker_manifests:
-  - name_template: "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}"
-    image_templates:
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-386"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-amd64"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-arm64"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-armv6"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-armv7"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-ppc64le"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-riscv64"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-s390x"
-  - name_template: "{{.Env.DOCKER_IMAGE_REPO}}:{{.Major}}.{{.Minor}}"
-    image_templates:
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-386"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-amd64"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-arm64"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-armv6"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-armv7"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-ppc64le"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-riscv64"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-s390x"
-    skip_push: auto
-  - name_template: "{{.Env.DOCKER_IMAGE_REPO}}:{{.Major}}"
-    image_templates:
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-386"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-amd64"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-arm64"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-armv6"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-armv7"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-ppc64le"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-riscv64"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-s390x"
-    skip_push: auto
-  - name_template: "{{.Env.DOCKER_IMAGE_REPO}}:latest"
-    image_templates:
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-386"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-amd64"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-arm64"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-armv6"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-armv7"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-ppc64le"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-riscv64"
-      - "{{.Env.DOCKER_IMAGE_REPO}}:{{.Version}}-s390x"
-    skip_push: auto
+dockers_v2:
+  - id: goproxy
+    dockerfile: Dockerfile
+    images:
+      - "{{.Env.DOCKER_IMAGE_REPO}}"
+    tags:
+      - "{{.Version}}"
+      - "{{.Major}}.{{.Minor}}"
+      - "{{.Major}}"
+      - latest
+    platforms:
+      - linux/386
+      - linux/amd64
+      - linux/arm64
+      - linux/arm/v6
+      - linux/arm/v7
+      - linux/ppc64le
+      - linux/riscv64
+      - linux/s390x
+    build_args:
+      USE_GORELEASER_ARTIFACTS: "1"
 
 snapshot:
   version_template: '{{trimprefix .Summary "v"}}'
