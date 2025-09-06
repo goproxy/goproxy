@@ -274,11 +274,9 @@ func (g *Goproxy) serveFetchDownload(rw http.ResponseWriter, req *http.Request, 
 		responseError(rw, req, err, false)
 		return
 	}
-	defer func() {
-		info.Close()
-		mod.Close()
-		zip.Close()
-	}()
+	defer info.Close()
+	defer mod.Close()
+	defer zip.Close()
 
 	targetWithoutExt := strings.TrimSuffix(target, path.Ext(target))
 	for _, cache := range []struct {
