@@ -261,6 +261,7 @@ func (g *Goproxy) serveFetchDownload(rw http.ResponseWriter, req *http.Request, 
 
 	if content, err := g.cache(req.Context(), target); err == nil {
 		responseSuccess(rw, req, content, contentType, cacheControlMaxAge)
+		content.Close()
 		return
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		g.logger.Error("failed to get cached module file", "error", err, "target", target)
@@ -268,47 +269,25 @@ func (g *Goproxy) serveFetchDownload(rw http.ResponseWriter, req *http.Request, 
 		return
 	}
 
-	info, mod, zip, err := g.fetcher.Download(req.Context(), modulePath, moduleVersion)
+	content, err := g.fetcher.Download(req.Context(), modulePath, moduleVersion, ext)
 	if err != nil {
 		g.logger.Error("failed to download module version", "error", err, "target", target)
 		responseError(rw, req, err, false)
 		return
 	}
-	defer info.Close()
-	defer mod.Close()
-	defer zip.Close()
 
-	targetWithoutExt := strings.TrimSuffix(target, path.Ext(target))
-	for _, cache := range []struct {
-		ext     string
-		content io.ReadSeeker
-	}{
-		{".info", info},
-		{".mod", mod},
-		{".zip", zip},
-	} {
-		if err := g.putCache(req.Context(), targetWithoutExt+cache.ext, cache.content); err != nil {
-			g.logger.Error("failed to cache module file", "error", err, "target", target)
-			responseInternalServerError(rw, req)
-			return
-		}
-	}
-
-	var content io.ReadSeeker
-	switch ext {
-	case ".info":
-		content = info
-	case ".mod":
-		content = mod
-	case ".zip":
-		content = zip
+	defer content.Close()
+	if err := g.putCache(req.Context(), target, content); err != nil {
+		g.logger.Error("failed to cache module file", "error", err, "target", target)
+		responseInternalServerError(rw, req)
+		return
 	}
 	if _, err := content.Seek(0, io.SeekStart); err != nil {
 		g.logger.Error("failed to seek content", "error", err)
 		responseInternalServerError(rw, req)
 		return
 	}
-	responseSuccess(rw, req, content, contentType, 604800)
+	responseSuccess(rw, req, content, contentType, cacheControlMaxAge)
 }
 
 // serveSumDB serves checksum database proxy requests.
