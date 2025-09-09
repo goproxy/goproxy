@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.1](https://github.com/goproxy/goproxy/compare/v0.22.0...v0.22.1) (2025-09-09)
+
+
+### Bug Fixes
+
+* **ci:** add Docker Buildx setup for GoReleaser `dockers_v2` support ([#145](https://github.com/goproxy/goproxy/issues/145)) ([eb0dc13](https://github.com/goproxy/goproxy/commit/eb0dc136d2e228abfda26bca3a43d6817b5e6375))
+
 ## [0.22.0](https://github.com/goproxy/goproxy/compare/v0.21.0...v0.22.0) (2025-09-09)
 
 
