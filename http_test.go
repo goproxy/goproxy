@@ -157,7 +157,7 @@ func TestHTTPGet(t *testing.T) {
 			},
 		} {
 			t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
-				ctx := context.Background()
+				ctx := t.Context()
 				switch tt.ctxTimeout {
 				case 0:
 				case -1:
@@ -209,7 +209,7 @@ func TestHTTPGet(t *testing.T) {
 	})
 
 	t.Run("InvalidURL", func(t *testing.T) {
-		if err := httpGet(context.Background(), http.DefaultClient, "::", nil); err == nil {
+		if err := httpGet(t.Context(), http.DefaultClient, "::", nil); err == nil {
 			t.Fatal("expected error")
 		}
 	})
@@ -248,7 +248,7 @@ func TestHTTPGetTemp(t *testing.T) {
 				tt.tempDir = t.TempDir()
 			}
 
-			tempFile, err := httpGetTemp(context.Background(), http.DefaultClient, server.URL, tt.tempDir)
+			tempFile, err := httpGetTemp(t.Context(), http.DefaultClient, server.URL, tt.tempDir)
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatal("expected error")

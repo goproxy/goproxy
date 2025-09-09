@@ -1,7 +1,6 @@
 package goproxy
 
 import (
-	"context"
 	"errors"
 	"io"
 	"io/fs"
@@ -15,7 +14,7 @@ func TestDirCacher(t *testing.T) {
 	t.Run("Normal", func(t *testing.T) {
 		dirCacher := DirCacher(t.TempDir())
 
-		if err := dirCacher.Put(context.Background(), "a/b/c", strings.NewReader("foobar")); err != nil {
+		if err := dirCacher.Put(t.Context(), "a/b/c", strings.NewReader("foobar")); err != nil {
 			t.Fatalf("unexpected error %v", err)
 		}
 
@@ -31,7 +30,7 @@ func TestDirCacher(t *testing.T) {
 			t.Errorf("got %d, want %d", got, want)
 		}
 
-		if rc, err := dirCacher.Get(context.Background(), "a/b/c"); err != nil {
+		if rc, err := dirCacher.Get(t.Context(), "a/b/c"); err != nil {
 			t.Errorf("unexpected error %v", err)
 		} else if rc == nil {
 			t.Error("unexpected nil")
@@ -47,7 +46,7 @@ func TestDirCacher(t *testing.T) {
 	t.Run("GetNonExistentFile", func(t *testing.T) {
 		dirCacher := DirCacher(t.TempDir())
 
-		rc, err := dirCacher.Get(context.Background(), "a/b/c")
+		rc, err := dirCacher.Get(t.Context(), "a/b/c")
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -63,7 +62,7 @@ func TestDirCacher(t *testing.T) {
 		dirCacher := DirCacher(t.TempDir())
 		errRead := errors.New("cannot read")
 
-		err := dirCacher.Put(context.Background(), "d/e/f", &testReadSeeker{
+		err := dirCacher.Put(t.Context(), "d/e/f", &testReadSeeker{
 			ReadSeeker: strings.NewReader("foobar"),
 			read: func(rs io.ReadSeeker, p []byte) (n int, err error) {
 				return 0, errRead
@@ -87,7 +86,7 @@ func TestDirCacher(t *testing.T) {
 		}
 		dirCacher := DirCacher(filepath.Join(cacheDir, filepath.FromSlash("a/b/c")))
 
-		err := dirCacher.Put(context.Background(), "d/e/f", strings.NewReader("foobar"))
+		err := dirCacher.Put(t.Context(), "d/e/f", strings.NewReader("foobar"))
 		if err == nil {
 			t.Fatal("expected error")
 		}

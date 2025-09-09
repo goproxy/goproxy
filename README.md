@@ -46,7 +46,7 @@ those who want to build their own proxies.
   docker pull ghcr.io/goproxy/goproxy
   ```
 
-## Quick Start
+## Quickstart
 
 <details><summary>Write code</summary>
 

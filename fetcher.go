@@ -531,9 +531,9 @@ func (gf *GoFetcher) execGo(ctx context.Context, args ...string) ([]byte, error)
 			return nil, err
 		}
 		var msg string
-		for _, line := range strings.Split(string(output), "\n") {
+		for line := range strings.Lines(string(output)) {
 			if !strings.HasPrefix(line, "go: finding") {
-				msg += line + "\n"
+				msg += line
 			}
 		}
 		msg = strings.TrimPrefix(msg, "go: ")
