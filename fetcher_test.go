@@ -244,7 +244,7 @@ func TestGoFetcherQuery(t *testing.T) {
 			gf.initOnce.Do(gf.init)
 			gf.env = append(gf.env, "GOPROXY="+proxyServer.URL+"/direct/")
 
-			version, time, err := gf.Query(context.Background(), tt.path, "latest")
+			version, time, err := gf.Query(t.Context(), tt.path, "latest")
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatal("expected error")
@@ -338,7 +338,7 @@ func TestGoFetcherProxyQuery(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error %v", err)
 			}
-			version, time, err := gf.proxyQuery(context.Background(), tt.path, tt.query, proxy)
+			version, time, err := gf.proxyQuery(t.Context(), tt.path, tt.query, proxy)
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatal("expected error")
@@ -398,7 +398,7 @@ func TestGoFetcherDirectQuery(t *testing.T) {
 			}
 			gf.env = append(gf.env, "GOPROXY="+proxyServer.URL)
 
-			version, time, err := gf.directQuery(context.Background(), tt.path, "latest")
+			version, time, err := gf.directQuery(t.Context(), tt.path, "latest")
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatal("expected error")
@@ -523,7 +523,7 @@ invalid
 			gf.initOnce.Do(gf.init)
 			gf.env = append(gf.env, "GOPROXY="+proxyServer.URL+"/direct/")
 
-			versions, err := gf.List(context.Background(), tt.path)
+			versions, err := gf.List(t.Context(), tt.path)
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatal("expected error")
@@ -588,7 +588,7 @@ func TestGoFetcherProxyList(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error %v", err)
 			}
-			versions, err := gf.proxyList(context.Background(), tt.path, proxy)
+			versions, err := gf.proxyList(t.Context(), tt.path, proxy)
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatal("expected error")
@@ -652,7 +652,7 @@ func TestGoFetcherDirectList(t *testing.T) {
 			}
 			gf.env = append(gf.env, "GOPROXY="+proxyServer.URL)
 
-			versions, err := gf.directList(context.Background(), tt.path)
+			versions, err := gf.directList(t.Context(), tt.path)
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatal("expected error")
@@ -937,7 +937,7 @@ func TestGoFetcherDownload(t *testing.T) {
 			gf.initOnce.Do(gf.init)
 			gf.env = append(gf.env, "GOPROXY="+proxyServer.URL+"/direct/")
 
-			info, mod, zip, err := gf.Download(context.Background(), tt.path, tt.version)
+			info, mod, zip, err := gf.Download(t.Context(), tt.path, tt.version)
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatal("expected error")
@@ -1089,7 +1089,7 @@ func TestGoFetcherProxyDownload(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error %v", err)
 			}
-			infoFile, modFile, zipFile, cleanup, err := gf.proxyDownload(context.Background(), tt.path, tt.version, proxy)
+			infoFile, modFile, zipFile, cleanup, err := gf.proxyDownload(t.Context(), tt.path, tt.version, proxy)
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatal("expected error")
@@ -1193,7 +1193,7 @@ func TestGoFetcherDirectDownload(t *testing.T) {
 			}
 			gf.env = append(gf.env, "GOPROXY="+proxyServer.URL)
 
-			infoFile, modFile, zipFile, err := gf.directDownload(context.Background(), tt.path, infoVersion)
+			infoFile, modFile, zipFile, err := gf.directDownload(t.Context(), tt.path, infoVersion)
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatal("expected error")
@@ -1239,7 +1239,7 @@ func (misbehavingDoneContext) Value(key any) any { return nil }
 func TestGoFetcherExecGo(t *testing.T) {
 	t.Setenv("GOMODCACHE", t.TempDir())
 
-	ctxCanceled, cancel := context.WithCancel(context.Background())
+	ctxCanceled, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	for _, tt := range []struct {
@@ -1254,19 +1254,19 @@ func TestGoFetcherExecGo(t *testing.T) {
 	}{
 		{
 			n:          1,
-			ctx:        context.Background(),
+			ctx:        t.Context(),
 			args:       []string{"env", "GOPROXY"},
 			wantOutput: "direct\n",
 		},
 		{
 			n:       2,
-			ctx:     context.Background(),
+			ctx:     t.Context(),
 			args:    []string{"foobar"},
 			wantErr: errors.New("go foobar: unknown command\nRun 'go help' for usage."),
 		},
 		{
 			n:       3,
-			ctx:     context.Background(),
+			ctx:     t.Context(),
 			args:    []string{"mod", "download", "-json", "foobar@latest"},
 			wantErr: errors.New(`foobar@latest: malformed module path "foobar": missing dot in first path element`),
 		},
@@ -1282,7 +1282,7 @@ func TestGoFetcherExecGo(t *testing.T) {
 		},
 		{
 			n:       6,
-			ctx:     context.Background(),
+			ctx:     t.Context(),
 			tempDir: filepath.Join(t.TempDir(), "404"),
 			wantErr: fs.ErrNotExist,
 		},
