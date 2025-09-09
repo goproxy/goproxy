@@ -110,10 +110,11 @@ func httpGetTemp(ctx context.Context, client *http.Client, url, tempDir string) 
 	}
 	defer func() {
 		if err != nil {
+			f.Close()
 			os.Remove(f.Name())
 		}
 	}()
-	if err := httpGet(ctx, client, url, f); err != nil {
+	if err = httpGet(ctx, client, url, f); err != nil {
 		return "", err
 	}
 	return f.Name(), f.Close()

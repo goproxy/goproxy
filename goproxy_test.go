@@ -1352,6 +1352,23 @@ func getenv(env []string, key string) string {
 	return ""
 }
 
+func firstError(errs ...error) error {
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func cleanupFuncs(funcs ...func()) {
+	for _, fn := range funcs {
+		if fn != nil {
+			fn()
+		}
+	}
+}
+
 func compareErrors(got, want error) bool {
 	if want != fs.ErrNotExist && errors.Is(want, fs.ErrNotExist) {
 		return errors.Is(got, fs.ErrNotExist) && got.Error() == want.Error()
