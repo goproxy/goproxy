@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.22.0](https://github.com/goproxy/goproxy/compare/v0.21.0...v0.22.0) (2025-09-09)
+
+
+### Bug Fixes
+
+* close downloaded files immediately ([#139](https://github.com/goproxy/goproxy/issues/139)) ([9ff4639](https://github.com/goproxy/goproxy/commit/9ff4639916d27c6f8b2c3225fd9762fc384b0766)), closes [#138](https://github.com/goproxy/goproxy/issues/138)
+
+
+### Code Refactoring
+
+* bump minimum required Go version to 1.24.0 ([#142](https://github.com/goproxy/goproxy/issues/142)) ([10c8ebb](https://github.com/goproxy/goproxy/commit/10c8ebb480a7a3d86eec590c5e85d8fafae6c089))
+
+
+### Tests
+
+* cover Go 1.25 ([#133](https://github.com/goproxy/goproxy/issues/133)) ([1a3e11c](https://github.com/goproxy/goproxy/commit/1a3e11cca6576ae5b3ecb8f538cf5ef895e9b6b1))
+
+
+### Miscellaneous Chores
+
+* **ci:** bump actions/checkout from 4 to 5 ([#135](https://github.com/goproxy/goproxy/issues/135)) ([3e4fe2d](https://github.com/goproxy/goproxy/commit/3e4fe2d162844e4997d40f6dd6586eed7a8836bb))
+* **ci:** bump actions/setup-go from 5 to 6 ([#143](https://github.com/goproxy/goproxy/issues/143)) ([fb08e31](https://github.com/goproxy/goproxy/commit/fb08e31221c30559752779d8ac8b1d151c72418d))
+* **ci:** simplify .github/workflows/test.yaml ([#137](https://github.com/goproxy/goproxy/issues/137)) ([21c7a11](https://github.com/goproxy/goproxy/commit/21c7a1169fd2345ce801faf8631421379c67c6c8))
+* migrate to `dockers_v2` from GoReleaser 2.12 ([#141](https://github.com/goproxy/goproxy/issues/141)) ([3764074](https://github.com/goproxy/goproxy/commit/37640745cd6168d5361584fd393202281de8a874))
+* release 0.22.0 ([#144](https://github.com/goproxy/goproxy/issues/144)) ([d79e26e](https://github.com/goproxy/goproxy/commit/d79e26e978e7fc85fabb0afa39749caef7547c96))
+* use Go 1.25 for releases ([#136](https://github.com/goproxy/goproxy/issues/136)) ([d04a91c](https://github.com/goproxy/goproxy/commit/d04a91cf376dbd5cdcbbf9762421a458d49f7927))
+
 ## [0.21.0](https://github.com/goproxy/goproxy/compare/v0.20.3...v0.21.0) (2025-06-14)
 
 
