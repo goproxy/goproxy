@@ -135,19 +135,7 @@ func runServerCmd(cmd *cobra.Command, args []string, cfg *serverCmdConfig) error
 	}
 	g.Logger = slog.New(logHandler)
 
-	handler := http.Handler(g)
-	if cfg.pathPrefix != "" {
-		handler = http.StripPrefix(cfg.pathPrefix, handler)
-	}
-	if cfg.fetchTimeout > 0 {
-		handler = func(h http.Handler) http.Handler {
-			return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-				ctx, cancel := context.WithTimeout(req.Context(), cfg.fetchTimeout)
-				h.ServeHTTP(rw, req.WithContext(ctx))
-				cancel()
-			})
-		}(handler)
-	}
+	handler := newServerHandler(cfg, g)
 
 	server := &http.Server{
 		Addr:        cfg.address,
@@ -177,6 +165,28 @@ func runServerCmd(cmd *cobra.Command, args []string, cfg *serverCmdConfig) error
 		defer cancel()
 	}
 	return server.Shutdown(shutdownCtx)
+}
+
+// newServerHandler creates a new [http.Handler] used by the server command.
+func newServerHandler(cfg *serverCmdConfig, base http.Handler) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("/", base)
+	mux.HandleFunc("GET /healthz", func(rw http.ResponseWriter, _ *http.Request) { rw.WriteHeader(http.StatusNoContent) })
+
+	handler := http.Handler(mux)
+	if cfg.pathPrefix != "" {
+		handler = http.StripPrefix(cfg.pathPrefix, handler)
+	}
+	if cfg.fetchTimeout > 0 {
+		handler = func(h http.Handler) http.Handler {
+			return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+				ctx, cancel := context.WithTimeout(req.Context(), cfg.fetchTimeout)
+				h.ServeHTTP(rw, req.WithContext(ctx))
+				cancel()
+			})
+		}(handler)
+	}
+	return handler
 }
 
 // httpDirFS implements [http.FileSystem] for the local file system.
