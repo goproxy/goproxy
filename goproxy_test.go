@@ -872,6 +872,52 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("CachedContentClosed", func(t *testing.T) {
+		// Track whether Close was called on the cached content
+		var closeCalled bool
+
+		// Create a custom cacher that returns closable content
+		cacher := &testCacher{
+			Cacher: DirCacher(t.TempDir()),
+			get: func(ctx context.Context, c Cacher, name string) (io.ReadCloser, error) {
+				return struct {
+					io.Reader
+					io.Closer
+				}{
+					Reader: strings.NewReader(info),
+					Closer: closerFunc(func() error {
+						closeCalled = true
+						return nil
+					}),
+				}, nil
+			},
+		}
+
+		g := &Goproxy{
+			Fetcher: &GoFetcher{
+				Env:     []string{"GOPROXY=off", "GOSUMDB=off"},
+				TempDir: t.TempDir(),
+			},
+			Cacher:  cacher,
+			TempDir: t.TempDir(),
+			Logger:  slog.New(slog.DiscardHandler),
+		}
+		g.initOnce.Do(g.init)
+
+		rec := httptest.NewRecorder()
+		target := "example.com/@v/v1.0.0.info"
+		g.serveFetchDownload(rec, httptest.NewRequest("", "/", nil), target, "example.com", "v1.0.0", false)
+
+		if !closeCalled {
+			t.Error("cached content was not closed, potential memory leak")
+		}
+
+		recr := rec.Result()
+		if got, want := recr.StatusCode, http.StatusOK; got != want {
+			t.Errorf("got status %d, want %d", got, want)
+		}
+	})
 }
 
 func TestGoproxyServeSumDB(t *testing.T) {
