@@ -881,9 +881,15 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 		cacher := &testCacher{
 			Cacher: DirCacher(t.TempDir()),
 			get: func(ctx context.Context, c Cacher, name string) (io.ReadCloser, error) {
-				return &testReadCloser{
+				return struct {
+					io.Reader
+					io.Closer
+				}{
 					Reader: strings.NewReader(info),
-					closed: &closeCalled,
+					Closer: closerFunc(func() error {
+						closeCalled = true
+						return nil
+					}),
 				}, nil
 			},
 		}
@@ -1480,14 +1486,4 @@ func (c *testCacher) Put(ctx context.Context, name string, content io.ReadSeeker
 		return c.put(ctx, c.Cacher, name, content)
 	}
 	return c.Cacher.Put(ctx, name, content)
-}
-
-type testReadCloser struct {
-	io.Reader
-	closed *bool
-}
-
-func (trc *testReadCloser) Close() error {
-	*trc.closed = true
-	return nil
 }
