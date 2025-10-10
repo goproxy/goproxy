@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.23.0](https://github.com/goproxy/goproxy/compare/v0.22.1...v0.23.0) (2025-10-10)
+
+
+### Features
+
+* **cmd/goproxy:** add `/healthz` probe handler to `server` command ([#149](https://github.com/goproxy/goproxy/issues/149)) ([4ff25f4](https://github.com/goproxy/goproxy/commit/4ff25f49a2841c3ef8dfc83a560bf2b2c65d09fa)), closes [#147](https://github.com/goproxy/goproxy/issues/147)
+
+
+### Bug Fixes
+
+* close cached content to prevent memory leak in `Goproxy.serveFetchDownload` ([#152](https://github.com/goproxy/goproxy/issues/152)) ([73b8724](https://github.com/goproxy/goproxy/commit/73b87248953678e737494eefbf071e231c7034c1))
+
+
+### Miscellaneous Chores
+
+* **deps:** bump golang.org/x/mod from 0.28.0 to 0.29.0 ([#154](https://github.com/goproxy/goproxy/issues/154)) ([2b69cff](https://github.com/goproxy/goproxy/commit/2b69cffa5c83e3e6f5d0fa417fa0cb6ef0943118))
+
 ## [0.22.1](https://github.com/goproxy/goproxy/compare/v0.22.0...v0.22.1) (2025-09-09)
 
 
