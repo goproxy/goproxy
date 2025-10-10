@@ -879,21 +879,14 @@ func TestGoproxyServeFetchDownload_CachedContentClosed(t *testing.T) {
 	
 	// Track whether Close was called on the cached content
 	var closeCalled bool
-	closableContent := &struct {
-		io.ReadSeeker
-		closed *bool
-	}{
-		ReadSeeker: strings.NewReader(info),
-		closed:     &closeCalled,
-	}
 	
-	// Create a custom cacher that returns our closable content
+	// Create a custom cacher that returns closable content
 	cacher := &testCacher{
 		Cacher: DirCacher(t.TempDir()),
 		get: func(ctx context.Context, c Cacher, name string) (io.ReadCloser, error) {
 			return &testReadCloser{
-				Reader: closableContent.ReadSeeker,
-				closed: closableContent.closed,
+				Reader: strings.NewReader(info),
+				closed: &closeCalled,
 			}, nil
 		},
 	}
