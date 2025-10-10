@@ -872,48 +872,46 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			}
 		})
 	}
-}
 
-func TestGoproxyServeFetchDownload_CachedContentClosed(t *testing.T) {
-	info := marshalInfo("v1.0.0", time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC))
-	
-	// Track whether Close was called on the cached content
-	var closeCalled bool
-	
-	// Create a custom cacher that returns closable content
-	cacher := &testCacher{
-		Cacher: DirCacher(t.TempDir()),
-		get: func(ctx context.Context, c Cacher, name string) (io.ReadCloser, error) {
-			return &testReadCloser{
-				Reader: strings.NewReader(info),
-				closed: &closeCalled,
-			}, nil
-		},
-	}
-	
-	g := &Goproxy{
-		Fetcher: &GoFetcher{
-			Env:     []string{"GOPROXY=off", "GOSUMDB=off"},
+	t.Run("CachedContentClosed", func(t *testing.T) {
+		// Track whether Close was called on the cached content
+		var closeCalled bool
+
+		// Create a custom cacher that returns closable content
+		cacher := &testCacher{
+			Cacher: DirCacher(t.TempDir()),
+			get: func(ctx context.Context, c Cacher, name string) (io.ReadCloser, error) {
+				return &testReadCloser{
+					Reader: strings.NewReader(info),
+					closed: &closeCalled,
+				}, nil
+			},
+		}
+
+		g := &Goproxy{
+			Fetcher: &GoFetcher{
+				Env:     []string{"GOPROXY=off", "GOSUMDB=off"},
+				TempDir: t.TempDir(),
+			},
+			Cacher:  cacher,
 			TempDir: t.TempDir(),
-		},
-		Cacher:  cacher,
-		TempDir: t.TempDir(),
-		Logger:  slog.New(slog.DiscardHandler),
-	}
-	g.initOnce.Do(g.init)
-	
-	rec := httptest.NewRecorder()
-	target := "example.com/@v/v1.0.0.info"
-	g.serveFetchDownload(rec, httptest.NewRequest("", "/", nil), target, "example.com", "v1.0.0", false)
-	
-	if !closeCalled {
-		t.Error("cached content was not closed, potential memory leak")
-	}
-	
-	recr := rec.Result()
-	if got, want := recr.StatusCode, http.StatusOK; got != want {
-		t.Errorf("got status %d, want %d", got, want)
-	}
+			Logger:  slog.New(slog.DiscardHandler),
+		}
+		g.initOnce.Do(g.init)
+
+		rec := httptest.NewRecorder()
+		target := "example.com/@v/v1.0.0.info"
+		g.serveFetchDownload(rec, httptest.NewRequest("", "/", nil), target, "example.com", "v1.0.0", false)
+
+		if !closeCalled {
+			t.Error("cached content was not closed, potential memory leak")
+		}
+
+		recr := rec.Result()
+		if got, want := recr.StatusCode, http.StatusOK; got != want {
+			t.Errorf("got status %d, want %d", got, want)
+		}
+	})
 }
 
 func TestGoproxyServeSumDB(t *testing.T) {

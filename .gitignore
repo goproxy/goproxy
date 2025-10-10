@@ -1,7 +1,0 @@
-# Build artifacts
-bin/
-*.out
-
-# Test coverage
-coverage.out
-coverage.html
