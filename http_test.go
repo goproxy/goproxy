@@ -117,7 +117,7 @@ func TestHTTPGet(t *testing.T) {
 					rw.WriteHeader(http.StatusInternalServerError)
 					fmt.Fprint(rw, "internal server error")
 				},
-				wantErr: func(_ string) error { return errBadUpstream },
+				wantErr: func(_ string) error { return context.DeadlineExceeded },
 			},
 			{
 				n:          7,
@@ -291,24 +291,6 @@ func TestIsRetryableHTTPClientDoError(t *testing.T) {
 	} {
 		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
 			if got, want := isRetryableHTTPClientDoError(tt.err), tt.wantIsRetryable; got != want {
-				t.Errorf("got %t, want %t", got, want)
-			}
-		})
-	}
-}
-
-func TestBackoffSleep(t *testing.T) {
-	for _, tt := range []struct {
-		n       int
-		base    time.Duration
-		cap     time.Duration
-		attempt int
-	}{
-		{1, 100 * time.Millisecond, time.Second, 0},
-		{2, time.Minute, time.Hour, 100},
-	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
-			if got, want := backoffSleep(tt.base, tt.cap, tt.attempt) <= tt.cap, true; got != want {
 				t.Errorf("got %t, want %t", got, want)
 			}
 		})
