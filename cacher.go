@@ -48,6 +48,7 @@ func (dc DirCacher) Get(ctx context.Context, name string) (io.ReadCloser, error)
 	}
 	fi, err := f.Stat()
 	if err != nil {
+		f.Close()
 		return nil, err
 	}
 	return &struct {
@@ -70,6 +71,7 @@ func (dc DirCacher) Put(ctx context.Context, name string, content io.ReadSeeker)
 	}
 	defer os.Remove(f.Name())
 	if _, err := io.Copy(f, content); err != nil {
+		f.Close()
 		return err
 	}
 	if err := f.Close(); err != nil {
