@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"math"
-	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"os"
 	"time"
+
+	"github.com/aofei/backoff"
 )
 
 var (
@@ -45,17 +45,14 @@ func notExistErrorf(format string, v ...any) error {
 
 // httpGet gets the content from the given url and writes it to the dst.
 func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer) error {
-	const maxRetries = 10
-	var lastErr error
-	for attempt := range maxRetries {
-		if attempt > 0 {
-			select {
-			case <-time.After(backoffSleep(100*time.Millisecond, time.Second, attempt)):
-			case <-ctx.Done():
-				return lastErr
-			}
-		}
+	const (
+		maxAttempts = 10
+		backoffBase = 100 * time.Millisecond
+		backoffCap  = time.Second
+	)
 
+	var lastErr error
+	for range backoff.Attempts(ctx, maxAttempts, backoffBase, backoffCap) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
 			return err
@@ -98,6 +95,9 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 			return fmt.Errorf("GET %s: %s: %s", resp.Request.URL.Redacted(), resp.Status, respBody)
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return lastErr
 }
 
@@ -137,22 +137,4 @@ func isRetryableHTTPClientDoError(err error) bool {
 		}
 	}
 	return true
-}
-
-// backoffSleep computes the exponential backoff sleep duration based on the
-// algorithm described in https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/.
-func backoffSleep(base, cap time.Duration, attempt int) time.Duration {
-	var pow time.Duration
-	if attempt < 63 {
-		pow = 1 << attempt
-	} else {
-		pow = math.MaxInt64
-	}
-
-	sleep := base * pow
-	if sleep > cap || sleep/pow != base {
-		sleep = cap
-	}
-	sleep = rand.N(sleep)
-	return sleep
 }
