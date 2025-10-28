@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.23.1](https://github.com/goproxy/goproxy/compare/v0.23.0...v0.23.1) (2025-10-28)
+
+
+### Bug Fixes
+
+* clean up resources on error paths ([#155](https://github.com/goproxy/goproxy/issues/155)) ([c75e57e](https://github.com/goproxy/goproxy/commit/c75e57e017d85f2408e655cbad0a46a2dd7b6f6f))
+
+
+### Code Refactoring
+
+* use github.com/aofei/backoff for retries ([#157](https://github.com/goproxy/goproxy/issues/157)) ([ca9f50b](https://github.com/goproxy/goproxy/commit/ca9f50b0ad4ee8e33adb65a410f6a0ec55dc6798))
+
 ## [0.23.0](https://github.com/goproxy/goproxy/compare/v0.22.1...v0.23.0) (2025-10-10)
 
 
