@@ -181,8 +181,8 @@ func newServerHandler(cfg *serverCmdConfig, base http.Handler) http.Handler {
 		handler = func(h http.Handler) http.Handler {
 			return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 				ctx, cancel := context.WithTimeout(req.Context(), cfg.fetchTimeout)
+				defer cancel()
 				h.ServeHTTP(rw, req.WithContext(ctx))
-				cancel()
 			})
 		}(handler)
 	}
