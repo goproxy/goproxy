@@ -11,6 +11,8 @@ builds:
   - id: goproxy
     main: ./cmd/goproxy
     binary: bin/goproxy
+    flags:
+      - -trimpath
     ldflags:
       - -s -w -X github.com/goproxy/goproxy/cmd/goproxy/internal.versionOverride=v{{.Version}}
     env:
