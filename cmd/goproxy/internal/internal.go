@@ -10,13 +10,13 @@ func Execute() int {
 	return 0
 }
 
-// VersionOverride is the version set by the Go linker to override automatic detection.
-var VersionOverride string
+// versionOverride is the version set by the Go linker to override automatic detection.
+var versionOverride string
 
 // Version returns the version of the running binary.
 func Version() string {
-	if VersionOverride != "" {
-		return VersionOverride
+	if versionOverride != "" {
+		return versionOverride
 	}
 	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
 		return info.Main.Version
