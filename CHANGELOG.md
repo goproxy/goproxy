@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.24.0](https://github.com/goproxy/goproxy/compare/v0.23.0...v0.24.0) (2025-12-07)
+
+
+### Bug Fixes
+
+* clean up resources on error paths ([#155](https://github.com/goproxy/goproxy/issues/155)) ([c75e57e](https://github.com/goproxy/goproxy/commit/c75e57e017d85f2408e655cbad0a46a2dd7b6f6f))
+
+
+### Code Refactoring
+
+* **cmd/goproxy:** make version override linker flag target unexported ([#159](https://github.com/goproxy/goproxy/issues/159)) ([ad2730e](https://github.com/goproxy/goproxy/commit/ad2730effe82939c4cf46ac4aa906fa90a9fedcc))
+* use github.com/aofei/backoff for retries ([#157](https://github.com/goproxy/goproxy/issues/157)) ([ca9f50b](https://github.com/goproxy/goproxy/commit/ca9f50b0ad4ee8e33adb65a410f6a0ec55dc6798))
+
+
+### Miscellaneous Chores
+
+* **.goreleaser.yaml:** add `-trimpath` flag for reproducible builds ([#160](https://github.com/goproxy/goproxy/issues/160)) ([58ebafc](https://github.com/goproxy/goproxy/commit/58ebafca122617f95ceb6847415c0a4deaf4e98f))
+* **ci:** bump actions/checkout from 5 to 6 ([#162](https://github.com/goproxy/goproxy/issues/162)) ([b436cb8](https://github.com/goproxy/goproxy/commit/b436cb852bc29ecbc935fa79be4bd70845d69138))
+* **deps:** bump modules ([#161](https://github.com/goproxy/goproxy/issues/161)) ([bb9f845](https://github.com/goproxy/goproxy/commit/bb9f845ddd6e3e5fa5e46fd4cc1bcccb47168839))
+* **Dockerfile:** use heredoc for build steps ([#158](https://github.com/goproxy/goproxy/issues/158)) ([e0b8fc7](https://github.com/goproxy/goproxy/commit/e0b8fc733b846e1288564c9004bf6bb649e592c4))
+
 ## [0.23.0](https://github.com/goproxy/goproxy/compare/v0.22.1...v0.23.0) (2025-10-10)
 
 
