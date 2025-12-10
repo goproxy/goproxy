@@ -6,7 +6,7 @@ require (
 	github.com/aofei/backoff v1.1.0
 	github.com/minio/minio-go/v7 v7.0.97
 	github.com/spf13/cobra v1.10.2
-	golang.org/x/mod v0.30.0
+	golang.org/x/mod v0.31.0
 )
 
 require (
