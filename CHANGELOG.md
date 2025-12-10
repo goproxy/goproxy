@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.25.0](https://github.com/goproxy/goproxy/compare/v0.24.0...v0.25.0) (2025-12-10)
+
+
+### Bug Fixes
+
+* **Dockerfile:** preserve file timestamps when copying GoReleaser artifacts ([#163](https://github.com/goproxy/goproxy/issues/163)) ([7fa2678](https://github.com/goproxy/goproxy/commit/7fa2678c0069e81d8f1f9c809eaf84cc991e1b1c))
+
+
+### Miscellaneous Chores
+
+* **deps:** bump golang.org/x/mod from 0.30.0 to 0.31.0 ([#166](https://github.com/goproxy/goproxy/issues/166)) ([e684384](https://github.com/goproxy/goproxy/commit/e6843840ce568607438e3a9719b43dec9afb50ba))
+* **Dockerfile:** use `golang:1.25-alpine3.23` as base image ([#165](https://github.com/goproxy/goproxy/issues/165)) ([e4d352c](https://github.com/goproxy/goproxy/commit/e4d352c3a79e371ee956954ccf5b3b4911309ae3))
+
 ## [0.24.0](https://github.com/goproxy/goproxy/compare/v0.23.0...v0.24.0) (2025-12-07)
 
 
