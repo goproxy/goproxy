@@ -14,7 +14,7 @@ set -eux
 mkdir -p bin
 
 if [ "${USE_GORELEASER_ARTIFACTS}" -eq 1 ]; then
-	cp "${TARGETPLATFORM}/bin/goproxy" bin/
+	cp -p "${TARGETPLATFORM}/bin/goproxy" bin/
 else
 	apk add --no-cache git
 	go mod download

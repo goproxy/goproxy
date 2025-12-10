@@ -14,7 +14,8 @@ builds:
     flags:
       - -trimpath
     ldflags:
-      - -s -w -X github.com/goproxy/goproxy/cmd/goproxy/internal.versionOverride=v{{.Version}}
+      - -s -w
+      - -X github.com/goproxy/goproxy/cmd/goproxy/internal.versionOverride=v{{.Version}}
     env:
       - CGO_ENABLED=0
     targets:
