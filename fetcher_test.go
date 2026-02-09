@@ -27,22 +27,28 @@ func TestGoFetcherInit(t *testing.T) {
 		env              []string
 		wantEnvGOPROXY   string
 		wantEnvGONOPROXY string
+		wantEnvGOSUMDB   string
+		wantEnvGONOSUMDB string
 		wantInitErr      error
 	}{
 		{
 			n:              1,
 			wantEnvGOPROXY: defaultEnvGOPROXY,
+			wantEnvGOSUMDB: defaultEnvGOSUMDB,
 		},
 		{
 			n:              2,
 			env:            append(os.Environ(), "GOPROXY=https://example.com"),
 			wantEnvGOPROXY: "https://example.com",
+			wantEnvGOSUMDB: defaultEnvGOSUMDB,
 		},
 		{
 			n:                3,
 			env:              append(os.Environ(), "GOPRIVATE=example.com"),
 			wantEnvGOPROXY:   defaultEnvGOPROXY,
 			wantEnvGONOPROXY: "example.com",
+			wantEnvGOSUMDB:   defaultEnvGOSUMDB,
+			wantEnvGONOSUMDB: "example.com",
 		},
 		{
 			n: 4,
@@ -54,6 +60,8 @@ func TestGoFetcherInit(t *testing.T) {
 			),
 			wantEnvGOPROXY:   defaultEnvGOPROXY,
 			wantEnvGONOPROXY: "alt1.example.com",
+			wantEnvGOSUMDB:   defaultEnvGOSUMDB,
+			wantEnvGONOSUMDB: "alt2.example.com",
 		},
 		{
 			n:           5,
@@ -94,10 +102,10 @@ func TestGoFetcherInit(t *testing.T) {
 				if got, want := gf.envGONOPROXY, tt.wantEnvGONOPROXY; got != want {
 					t.Errorf("got %q, want %q", got, want)
 				}
-				if got, want := getenv(gf.env, "GOSUMDB"), "off"; got != want {
+				if got, want := getenv(gf.env, "GOSUMDB"), tt.wantEnvGOSUMDB; got != want {
 					t.Errorf("got %q, want %q", got, want)
 				}
-				if got, want := getenv(gf.env, "GONOSUMDB"), ""; got != want {
+				if got, want := getenv(gf.env, "GONOSUMDB"), tt.wantEnvGONOSUMDB; got != want {
 					t.Errorf("got %q, want %q", got, want)
 				}
 				if got, want := getenv(gf.env, "GOPRIVATE"), ""; got != want {
@@ -191,7 +199,7 @@ func TestGoFetcherQuery(t *testing.T) {
 		{
 			n: 2,
 			env: func(proxyServerURL string) []string {
-				return append(os.Environ(), "GOPROXY="+proxyServerURL, "GONOPROXY=example.com")
+				return append(os.Environ(), "GOPROXY="+proxyServerURL, "GONOPROXY=example.com", "GOSUMDB=off")
 			},
 			path:        "example.com",
 			wantVersion: infoVersion,
@@ -210,7 +218,7 @@ func TestGoFetcherQuery(t *testing.T) {
 				}
 			},
 			env: func(proxyServerURL string) []string {
-				return append(os.Environ(), "GOPROXY="+proxyServerURL+",direct")
+				return append(os.Environ(), "GOPROXY="+proxyServerURL+",direct", "GOSUMDB=off")
 			},
 			path:        "example.com",
 			wantVersion: infoVersion,
@@ -391,7 +399,7 @@ func TestGoFetcherDirectQuery(t *testing.T) {
 		},
 	} {
 		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
-			gf := &GoFetcher{TempDir: t.TempDir()}
+			gf := &GoFetcher{Env: append(os.Environ(), "GOSUMDB=off"), TempDir: t.TempDir()}
 			gf.initOnce.Do(gf.init)
 			if gf.initErr != nil {
 				t.Fatalf("unexpected error %v", gf.initErr)
@@ -459,7 +467,7 @@ func TestGoFetcherList(t *testing.T) {
 		{
 			n: 2,
 			env: func(proxyServerURL string) []string {
-				return append(os.Environ(), "GOPROXY="+proxyServerURL, "GONOPROXY=example.com")
+				return append(os.Environ(), "GOPROXY="+proxyServerURL, "GONOPROXY=example.com", "GOSUMDB=off")
 			},
 			path:         "example.com",
 			wantVersions: []string{"v1.0.0", "v1.1.0"},
@@ -474,7 +482,7 @@ func TestGoFetcherList(t *testing.T) {
 				}
 			},
 			env: func(proxyServerURL string) []string {
-				return append(os.Environ(), "GOPROXY="+proxyServerURL+",direct")
+				return append(os.Environ(), "GOPROXY="+proxyServerURL+",direct", "GOSUMDB=off")
 			},
 			path:         "example.com",
 			wantVersions: []string{"v1.0.0", "v1.1.0"},
@@ -645,7 +653,7 @@ func TestGoFetcherDirectList(t *testing.T) {
 		},
 	} {
 		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
-			gf := &GoFetcher{TempDir: t.TempDir()}
+			gf := &GoFetcher{Env: append(os.Environ(), "GOSUMDB=off"), TempDir: t.TempDir()}
 			gf.initOnce.Do(gf.init)
 			if gf.initErr != nil {
 				t.Fatalf("unexpected error %v", gf.initErr)
@@ -1186,7 +1194,7 @@ func TestGoFetcherDirectDownload(t *testing.T) {
 		},
 	} {
 		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
-			gf := &GoFetcher{TempDir: t.TempDir()}
+			gf := &GoFetcher{Env: append(os.Environ(), "GOSUMDB=off"), TempDir: t.TempDir()}
 			gf.initOnce.Do(gf.init)
 			if gf.initErr != nil {
 				t.Fatalf("unexpected error %v", gf.initErr)

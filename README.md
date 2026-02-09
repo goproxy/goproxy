@@ -19,10 +19,12 @@ those who want to build their own proxies.
     [`goproxy.DirCacher`](https://pkg.go.dev/github.com/goproxy/goproxy#DirCacher)
   - Two interfaces: [`goproxy.Fetcher`](https://pkg.go.dev/github.com/goproxy/goproxy#Fetcher) and
     [`goproxy.Cacher`](https://pkg.go.dev/github.com/goproxy/goproxy#Cacher)
-- Built-in support for `GOPROXY`, `GONOPROXY`, `GOSUMDB`, `GONOSUMDB`, and `GOPRIVATE`
-- Supports serving under other Go module proxies by setting `GOPROXY`
-- Supports [proxying checksum databases](https://go.dev/design/25530-sumdb#proxying-a-checksum-database)
-- Supports `Disable-Module-Fetch` header
+  - Ready-to-use [CLI](https://github.com/goproxy/goproxy/releases) and
+    [Docker image](https://github.com/goproxy/goproxy/pkgs/container/goproxy)
+- Built-in implementation of `GOPROXY`, `GONOPROXY`, `GOSUMDB`, `GONOSUMDB`, and `GOPRIVATE`
+- Upstream proxy support
+- [Checksum database proxying](https://go.dev/design/25530-sumdb#proxying-a-checksum-database) support
+- `Disable-Module-Fetch` header support
 
 ## Installation
 

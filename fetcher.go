@@ -177,8 +177,8 @@ func (gf *GoFetcher) init() {
 		"GO111MODULE=on",
 		"GOPROXY=direct",
 		"GONOPROXY=",
-		"GOSUMDB=off",
-		"GONOSUMDB=",
+		"GOSUMDB="+envGOSUMDB,
+		"GONOSUMDB="+envGONOSUMDB,
 		"GOPRIVATE=",
 	)
 
@@ -346,6 +346,11 @@ func (gf *GoFetcher) Download(ctx context.Context, path, version string) (info, 
 	var (
 		infoFile, modFile, zipFile string
 
+		// fromProxy indicates whether the module files were fetched
+		// from an upstream proxy rather than directly using the local
+		// Go binary.
+		fromProxy bool
+
 		// cleanup is the cleanup function that will be called when the
 		// infoFile, modFile, and zipFile are no longer needed, or when
 		// an error occurs.
@@ -356,6 +361,7 @@ func (gf *GoFetcher) Download(ctx context.Context, path, version string) (info, 
 	} else {
 		err = walkEnvGOPROXY(gf.envGOPROXY, func(proxy *url.URL) error {
 			infoFile, modFile, zipFile, cleanup, err = gf.proxyDownload(ctx, path, version, proxy)
+			fromProxy = err == nil
 			return err
 		}, func() error {
 			infoFile, modFile, zipFile, err = gf.directDownload(ctx, path, version)
@@ -387,7 +393,10 @@ func (gf *GoFetcher) Download(ctx context.Context, path, version string) (info, 
 	if err != nil {
 		return
 	}
-	if gf.sumdbClient != nil {
+
+	// Verify against the checksum database only for proxy downloads. Direct
+	// downloads are verified by the local Go binary itself.
+	if gf.sumdbClient != nil && fromProxy {
 		err = verifyModFile(gf.sumdbClient, modFile, path, version)
 		if err != nil {
 			return
