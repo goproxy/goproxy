@@ -76,7 +76,7 @@ func newServerCmdConfig(cmd *cobra.Command) *serverCmdConfig {
 	fs.StringVar(&cfg.cacherDir, "cacher-dir", "caches", "directory for the dir cacher")
 	fs.StringVar(&cfg.s3CacherOpts.accessKeyID, "cacher-s3-access-key-id", "", "access key ID for the S3 cacher")
 	fs.StringVar(&cfg.s3CacherOpts.secretAccessKey, "cacher-s3-secret-access-key", "", "secret access key for the S3 cacher")
-	fs.StringVar(&cfg.s3CacherOpts.endpoint, "cacher-s3-endpoint", "s3.amazonaws.com", "endpoint for the S3 cacher")
+	fs.StringVar(&cfg.s3CacherOpts.endpoint, "cacher-s3-endpoint", defaultS3Endpoint, "endpoint for the S3 cacher")
 	fs.BoolVar(&cfg.s3CacherOpts.disableTLS, "cacher-s3-disable-tls", false, "disable TLS for the S3 cacher")
 	fs.StringVar(&cfg.s3CacherOpts.region, "cacher-s3-region", "us-east-1", "region for the S3 cacher")
 	fs.StringVar(&cfg.s3CacherOpts.bucket, "cacher-s3-bucket", "", "bucket name for the S3 cacher")
