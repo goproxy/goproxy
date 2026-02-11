@@ -1,4 +1,4 @@
-ARG GO_BASE_IMAGE=golang:1.25-alpine3.23
+ARG GO_BASE_IMAGE=golang:1.26-alpine3.23
 
 FROM ${GO_BASE_IMAGE} AS build
 
