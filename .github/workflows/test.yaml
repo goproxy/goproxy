@@ -10,6 +10,7 @@ jobs:
         go:
           - 1.24.x
           - 1.25.x
+          - 1.26.x
     steps:
       - name: Check out code
         uses: actions/checkout@v6
