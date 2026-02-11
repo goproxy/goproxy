@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.26.0](https://github.com/goproxy/goproxy/compare/v0.25.0...v0.26.0) (2026-02-11)
+
+
+### Bug Fixes
+
+* **GoFetcher:** stop hardcoding `GOSUMDB=off` in Go subprocess environment ([#169](https://github.com/goproxy/goproxy/issues/169)) ([b841258](https://github.com/goproxy/goproxy/commit/b841258d7c42d2e7f98dd90361c8c5cc08b68730)), closes [#168](https://github.com/goproxy/goproxy/issues/168)
+
+
+### Tests
+
+* cover Go 1.26 ([#171](https://github.com/goproxy/goproxy/issues/171)) ([075e10c](https://github.com/goproxy/goproxy/commit/075e10c1c5dc50f20c732e5a2b11d1e759639002))
+
+
+### Miscellaneous Chores
+
+* use Go 1.26 for releases ([#172](https://github.com/goproxy/goproxy/issues/172)) ([fb8454a](https://github.com/goproxy/goproxy/commit/fb8454a06512a7f2a5bdd24319b532e707a979f5))
+
 ## [0.25.0](https://github.com/goproxy/goproxy/compare/v0.24.0...v0.25.0) (2025-12-10)
 
 
