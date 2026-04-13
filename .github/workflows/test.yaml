@@ -22,7 +22,7 @@ jobs:
       - name: Test Go code
         run: go test -v -race -covermode atomic -coverprofile coverage.out ./...
       - name: Upload code coverage
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{secrets.CODECOV_TOKEN}}
           disable_search: true
