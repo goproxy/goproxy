@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.26.1](https://github.com/goproxy/goproxy/compare/v0.26.0...v0.26.1) (2026-04-13)
+
+
+### Miscellaneous Chores
+
+* **ci:** bump github.com/codecov/codecov-action from 5 to 6 ([#178](https://github.com/goproxy/goproxy/issues/178)) ([90aebfb](https://github.com/goproxy/goproxy/commit/90aebfb8ee738552cb9e686a86d317cb4ebfa78e))
+* **ci:** update release workflow to separate tagging and publishing ([#176](https://github.com/goproxy/goproxy/issues/176)) ([2715cd9](https://github.com/goproxy/goproxy/commit/2715cd9f468b7d27177ad7d365704ac3a66d2a38))
+
 ## [0.26.0](https://github.com/goproxy/goproxy/compare/v0.25.0...v0.26.0) (2026-03-11)
 
 
