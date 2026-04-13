@@ -33,5 +33,7 @@
 			"section": "Miscellaneous Chores"
 		}
 	],
+	"draft": true,
+	"force-tag-creation": true,
 	"draft-pull-request": true
 }
