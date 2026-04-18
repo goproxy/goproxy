@@ -43,22 +43,22 @@ conflicts. Misuse of a shared GOMODCACHE may lead to deadlocks.
 
 // serverCmdConfig is the configuration for server command.
 type serverCmdConfig struct {
-	address          string
-	tlsCertFile      string
-	tlsKeyFile       string
-	pathPrefix       string
-	goBin            string
-	maxDirectFetches int
-	proxiedSumDBs    []string
-	cacher           string
-	cacherDir        string
-	s3CacherOpts     s3CacherOptions
-	tempDir          string
-	insecure         bool
-	connectTimeout   time.Duration
-	fetchTimeout     time.Duration
-	shutdownTimeout  time.Duration
-	logFormat        string
+	address                    string
+	tlsCertFile                string
+	tlsKeyFile                 string
+	pathPrefix                 string
+	goBin                      string
+	maxConcurrentDirectFetches int
+	proxiedSumDBs              []string
+	cacher                     string
+	cacherDir                  string
+	s3CacherOpts               s3CacherOptions
+	tempDir                    string
+	insecure                   bool
+	connectTimeout             time.Duration
+	fetchTimeout               time.Duration
+	shutdownTimeout            time.Duration
+	logFormat                  string
 }
 
 // newServerCmdConfig creates a new [serverCmdConfig].
@@ -70,7 +70,7 @@ func newServerCmdConfig(cmd *cobra.Command) *serverCmdConfig {
 	fs.StringVar(&cfg.tlsKeyFile, "tls-key-file", "", "path to the TLS key file")
 	fs.StringVar(&cfg.pathPrefix, "path-prefix", "", "prefix for all request paths")
 	fs.StringVar(&cfg.goBin, "go-bin", "go", "path to the Go binary that is used to execute direct fetches")
-	fs.IntVar(&cfg.maxDirectFetches, "max-direct-fetches", 0, "maximum number (0 means no limit) of concurrent direct fetches")
+	fs.IntVar(&cfg.maxConcurrentDirectFetches, "max-concurrent-direct-fetches", 0, "maximum number (0 means no limit) of concurrent direct fetches")
 	fs.StringSliceVar(&cfg.proxiedSumDBs, "proxied-sumdbs", nil, "list of proxied checksum databases")
 	fs.StringVar(&cfg.cacher, "cacher", "dir", "cacher to use (valid values: dir, s3)")
 	fs.StringVar(&cfg.cacherDir, "cacher-dir", "caches", "directory for the dir cacher")
@@ -99,10 +99,10 @@ func runServerCmd(cmd *cobra.Command, args []string, cfg *serverCmdConfig) error
 	transport.RegisterProtocol("file", http.NewFileTransport(httpDirFS{}))
 	g := &goproxy.Goproxy{
 		Fetcher: &goproxy.GoFetcher{
-			GoBin:            cfg.goBin,
-			MaxDirectFetches: cfg.maxDirectFetches,
-			TempDir:          cfg.tempDir,
-			Transport:        transport,
+			GoBin:                      cfg.goBin,
+			MaxConcurrentDirectFetches: cfg.maxConcurrentDirectFetches,
+			TempDir:                    cfg.tempDir,
+			Transport:                  transport,
 		},
 		ProxiedSumDBs: cfg.proxiedSumDBs,
 		TempDir:       cfg.tempDir,

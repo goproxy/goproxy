@@ -76,10 +76,10 @@ func TestGoFetcherInit(t *testing.T) {
 	} {
 		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
 			gf := &GoFetcher{
-				Env:              tt.env,
-				MaxDirectFetches: 10,
-				TempDir:          t.TempDir(),
-				Transport:        http.DefaultTransport,
+				Env:                        tt.env,
+				MaxConcurrentDirectFetches: 10,
+				TempDir:                    t.TempDir(),
+				Transport:                  http.DefaultTransport,
 			}
 			gf.initOnce.Do(gf.init)
 			if tt.wantInitErr != nil {
@@ -1301,9 +1301,9 @@ func TestGoFetcherExecGo(t *testing.T) {
 			}
 
 			gf := &GoFetcher{
-				GoBin:            tt.goBin,
-				MaxDirectFetches: 1,
-				TempDir:          tt.tempDir,
+				GoBin:                      tt.goBin,
+				MaxConcurrentDirectFetches: 1,
+				TempDir:                    tt.tempDir,
 			}
 			gf.initOnce.Do(gf.init)
 			if gf.initErr != nil {

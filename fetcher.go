@@ -107,10 +107,11 @@ type GoFetcher struct {
 	// If GoBin is empty, "go" is used.
 	GoBin string
 
-	// MaxDirectFetches is the maximum number of concurrent direct fetches.
+	// MaxConcurrentDirectFetches is the maximum number of concurrent direct
+	// fetches.
 	//
-	// If MaxDirectFetches is zero, there is no limit.
-	MaxDirectFetches int
+	// If MaxConcurrentDirectFetches is zero, there is no limit.
+	MaxConcurrentDirectFetches int
 
 	// TempDir is the directory for storing temporary files.
 	//
@@ -182,8 +183,8 @@ func (gf *GoFetcher) init() {
 		"GOPRIVATE=",
 	)
 
-	if gf.MaxDirectFetches > 0 {
-		gf.directFetchWorkerPool = make(chan struct{}, gf.MaxDirectFetches)
+	if gf.MaxConcurrentDirectFetches > 0 {
+		gf.directFetchWorkerPool = make(chan struct{}, gf.MaxConcurrentDirectFetches)
 	}
 
 	gf.httpClient = &http.Client{Transport: gf.Transport}
