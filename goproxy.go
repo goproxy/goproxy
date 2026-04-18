@@ -48,11 +48,11 @@ type Goproxy struct {
 	// scheme. Invalid entries will be silently ignored.
 	//
 	// If ProxiedSumDBs contains duplicate checksum database names, only the
-	// last value in the slice for each duplicate checksum database name is
-	// used.
+	// last value in the slice for each duplicate name is used.
 	ProxiedSumDBs []string
 
-	// Cacher is used to cache module files.
+	// Cacher is used to cache content, such as module files and proxied
+	// checksum database responses.
 	//
 	// If Cacher is nil, caching is disabled.
 	Cacher Cacher
@@ -62,9 +62,13 @@ type Goproxy struct {
 	// If TempDir is empty, [os.TempDir] is used.
 	TempDir string
 
-	// Transport is used to execute outgoing requests.
+	// Transport is used to execute outgoing HTTP requests.
 	//
 	// If Transport is nil, [http.DefaultTransport] is used.
+	//
+	// If Fetcher is nil, the default [GoFetcher] also uses Transport to
+	// execute outgoing HTTP requests, excluding direct fetches initiated by
+	// the local Go binary.
 	Transport http.RoundTripper
 
 	// Logger is used to log messages that occur during proxying. It is
@@ -368,7 +372,7 @@ func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, target s
 	g.servePutCacheFile(rw, req, target, contentType, cacheControlMaxAge, file)
 }
 
-// serveCache serves requests with cached module files.
+// serveCache serves requests with cached content.
 func (g *Goproxy) serveCache(rw http.ResponseWriter, req *http.Request, name, contentType string, cacheControlMaxAge int, onNotFound func()) {
 	content, err := g.cache(req.Context(), name)
 	if err != nil {
@@ -380,7 +384,7 @@ func (g *Goproxy) serveCache(rw http.ResponseWriter, req *http.Request, name, co
 			}
 			return
 		}
-		g.logger.Error("failed to get cached module file", "error", err, "name", name)
+		g.logger.Error("failed to get cached content", "error", err, "name", name)
 		responseInternalServerError(rw, req)
 		return
 	}
@@ -391,7 +395,7 @@ func (g *Goproxy) serveCache(rw http.ResponseWriter, req *http.Request, name, co
 // servePutCache serves requests after putting the content to the g.Cacher.
 func (g *Goproxy) servePutCache(rw http.ResponseWriter, req *http.Request, name, contentType string, cacheControlMaxAge int, content io.ReadSeeker) {
 	if err := g.putCache(req.Context(), name, content); err != nil {
-		g.logger.Error("failed to cache module file", "error", err, "name", name)
+		g.logger.Error("failed to cache content", "error", err, "name", name)
 		responseInternalServerError(rw, req)
 		return
 	}

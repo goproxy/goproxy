@@ -118,8 +118,8 @@ type GoFetcher struct {
 	// If TempDir is empty, [os.TempDir] is used.
 	TempDir string
 
-	// Transport is used to execute outgoing requests, excluding those
-	// initiated by direct fetches.
+	// Transport is used to execute outgoing HTTP requests, excluding direct
+	// fetches initiated by the local Go binary.
 	//
 	// If Transport is nil, [http.DefaultTransport] is used.
 	Transport http.RoundTripper

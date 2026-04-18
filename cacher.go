@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 )
 
-// Cacher defines a set of intuitive methods used to cache module files for [Goproxy].
+// Cacher defines a set of intuitive methods used to cache content served by [Goproxy].
 type Cacher interface {
 	// Get gets the matched cache for the name. It returns [fs.ErrNotExist]
 	// if not found.
@@ -35,9 +35,10 @@ type Cacher interface {
 	Put(ctx context.Context, name string, content io.ReadSeeker) error
 }
 
-// DirCacher implements [Cacher] using a directory on the local disk. If the
-// directory does not exist, it will be created with 0755 permissions. Cache
-// files will be created with 0644 permissions.
+// DirCacher implements [Cacher] using a directory on the local disk.
+//
+// If the directory does not exist, it will be created with 0755 permissions.
+// Cache entries are stored as files with 0644 permissions.
 type DirCacher string
 
 // Get implements [Cacher].
