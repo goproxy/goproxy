@@ -1422,6 +1422,7 @@ func makeTempFile(t *testing.T, content []byte) (tempFile string, err error) {
 		return "", err
 	}
 	if _, err := f.Write(content); err != nil {
+		f.Close()
 		return "", err
 	}
 	if err := f.Close(); err != nil {

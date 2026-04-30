@@ -69,6 +69,7 @@ func (s3c *s3Cacher) Get(ctx context.Context, name string) (io.ReadCloser, error
 	}
 	oi, err := o.Stat()
 	if err != nil {
+		o.Close()
 		if minio.ToErrorResponse(err).StatusCode == http.StatusNotFound {
 			return nil, fs.ErrNotExist
 		}
