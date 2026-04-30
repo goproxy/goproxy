@@ -144,18 +144,23 @@ func runServerCmd(cmd *cobra.Command, args []string, cfg *serverCmdConfig) error
 	}
 	stopCtx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	var serverErr error
+	serverErrCh := make(chan error, 1)
 	go func() {
 		if cfg.tlsCertFile != "" && cfg.tlsKeyFile != "" {
-			serverErr = server.ListenAndServeTLS(cfg.tlsCertFile, cfg.tlsKeyFile)
+			serverErrCh <- server.ListenAndServeTLS(cfg.tlsCertFile, cfg.tlsKeyFile)
 		} else {
-			serverErr = server.ListenAndServe()
+			serverErrCh <- server.ListenAndServe()
 		}
 		stop()
 	}()
 	<-stopCtx.Done()
-	if serverErr != nil && !errors.Is(serverErr, http.ErrServerClosed) {
-		return serverErr
+	select {
+	case serverErr := <-serverErrCh:
+		if serverErr != nil && !errors.Is(serverErr, http.ErrServerClosed) {
+			return serverErr
+		}
+		return nil
+	default:
 	}
 
 	shutdownCtx := context.Background()
@@ -164,7 +169,11 @@ func runServerCmd(cmd *cobra.Command, args []string, cfg *serverCmdConfig) error
 		shutdownCtx, cancel = context.WithTimeout(shutdownCtx, cfg.shutdownTimeout)
 		defer cancel()
 	}
-	return server.Shutdown(shutdownCtx)
+	shutdownErr := server.Shutdown(shutdownCtx)
+	if serverErr := <-serverErrCh; serverErr != nil && !errors.Is(serverErr, http.ErrServerClosed) {
+		return serverErr
+	}
+	return shutdownErr
 }
 
 // newServerHandler creates a new [http.Handler] used by the server command.
