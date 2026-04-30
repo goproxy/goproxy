@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.27.0](https://github.com/goproxy/goproxy/compare/v0.26.1...v0.27.0) (2026-04-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* **GoFetcher:** clarify direct fetch concurrency naming ([#179](https://github.com/goproxy/goproxy/issues/179))
+
+### Bug Fixes
+
+* close resources on error paths ([#182](https://github.com/goproxy/goproxy/issues/182)) ([ce7f51d](https://github.com/goproxy/goproxy/commit/ce7f51dac4482e656b92829753d4dc8341792578))
+* **cmd/goproxy:** synchronize server error handling ([#183](https://github.com/goproxy/goproxy/issues/183)) ([80d3248](https://github.com/goproxy/goproxy/commit/80d3248f7359b0f0fa2e0b354441ef22f769b188))
+
+
+### Code Refactoring
+
+* **GoFetcher:** clarify direct fetch concurrency naming ([#179](https://github.com/goproxy/goproxy/issues/179)) ([500b563](https://github.com/goproxy/goproxy/commit/500b563bfe946b692df69b4c3392f8a05c053180))
+
+
+### Documentation
+
+* clarify cache and transport comments ([#181](https://github.com/goproxy/goproxy/issues/181)) ([a4ef088](https://github.com/goproxy/goproxy/commit/a4ef0881e1c4b24449ae61a84ed8755e8fa40d1b))
+
 ## [0.26.1](https://github.com/goproxy/goproxy/compare/v0.26.0...v0.26.1) (2026-04-13)
 
 
