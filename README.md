@@ -2,7 +2,6 @@
 
 [![Test](https://github.com/goproxy/goproxy/actions/workflows/test.yaml/badge.svg)](https://github.com/goproxy/goproxy/actions/workflows/test.yaml)
 [![codecov](https://codecov.io/gh/goproxy/goproxy/branch/master/graph/badge.svg)](https://codecov.io/gh/goproxy/goproxy)
-[![Go Report Card](https://goreportcard.com/badge/github.com/goproxy/goproxy)](https://goreportcard.com/report/github.com/goproxy/goproxy)
 [![Go Reference](https://pkg.go.dev/badge/github.com/goproxy/goproxy.svg)](https://pkg.go.dev/github.com/goproxy/goproxy)
 
 A minimalist Go module proxy handler.
