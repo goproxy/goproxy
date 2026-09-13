@@ -69,7 +69,7 @@ func newS3Cacher(opts s3CacherOptions) (*s3Cacher, error) {
 
 	var baseEndpoint *string
 	if !strings.EqualFold(endpoint.Host, defaultS3Endpoint) {
-		baseEndpoint = aws.String(endpoint.String())
+		baseEndpoint = new(endpoint.String())
 	}
 
 	var credentialsProvider aws.CredentialsProvider
@@ -99,7 +99,7 @@ func newS3Cacher(opts s3CacherOptions) (*s3Cacher, error) {
 
 	return &s3Cacher{
 		client:   client,
-		bucket:   aws.String(opts.bucket),
+		bucket:   new(opts.bucket),
 		partSize: opts.partSize,
 	}, nil
 }
@@ -134,7 +134,7 @@ func parseS3Endpoint(endpoint string, disableTLS bool) (*url.URL, error) {
 
 // Get implements [github.com/goproxy/goproxy.Cacher].
 func (s3c *s3Cacher) Get(ctx context.Context, name string) (io.ReadCloser, error) {
-	key := aws.String(name)
+	key := new(name)
 	headOutput, err := s3c.client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: s3c.bucket,
 		Key:    key,
@@ -151,7 +151,7 @@ func (s3c *s3Cacher) Get(ctx context.Context, name string) (io.ReadCloser, error
 		openAt: func(pos int64) (io.ReadCloser, error) {
 			input := getObjectInput
 			if pos > 0 {
-				input.Range = aws.String(fmt.Sprintf("bytes=%d-", pos))
+				input.Range = new(fmt.Sprintf("bytes=%d-", pos))
 			}
 			getOutput, err := s3c.client.GetObject(ctx, &input)
 			if err != nil {
@@ -207,11 +207,11 @@ func (s3c *s3Cacher) putObject(ctx context.Context, name string, contentType str
 	}
 	_, err = s3c.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:        s3c.bucket,
-		Key:           aws.String(name),
+		Key:           new(name),
 		Body:          content,
-		ContentLength: aws.Int64(size),
-		ContentMD5:    aws.String(contentMD5),
-		ContentType:   aws.String(contentType),
+		ContentLength: new(size),
+		ContentMD5:    new(contentMD5),
+		ContentType:   new(contentType),
 	})
 	return err
 }
@@ -224,11 +224,11 @@ func (s3c *s3Cacher) putObjectMultipart(ctx context.Context, name string, conten
 		return fmt.Errorf("S3 object size %d exceeds the maximum for part size %d", size, s3c.partSize)
 	}
 
-	key := aws.String(name)
+	key := new(name)
 	createOutput, err := s3c.client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
 		Bucket:      s3c.bucket,
 		Key:         key,
-		ContentType: aws.String(contentType),
+		ContentType: new(contentType),
 	})
 	if err != nil {
 		return err
@@ -267,17 +267,17 @@ func (s3c *s3Cacher) putObjectMultipart(ctx context.Context, name string, conten
 			Bucket:        s3c.bucket,
 			Key:           key,
 			UploadId:      uploadID,
-			PartNumber:    aws.Int32(partNumber),
+			PartNumber:    new(partNumber),
 			Body:          part,
-			ContentLength: aws.Int64(partSize),
-			ContentMD5:    aws.String(contentMD5),
+			ContentLength: new(partSize),
+			ContentMD5:    new(contentMD5),
 		})
 		if err != nil {
 			return err
 		}
 		parts = append(parts, types.CompletedPart{
 			ETag:       partOutput.ETag,
-			PartNumber: aws.Int32(partNumber),
+			PartNumber: new(partNumber),
 		})
 	}
 
@@ -317,8 +317,7 @@ func (r readSeekerAt) ReadAt(p []byte, offset int64) (int, error) {
 
 // translateS3NotFoundError maps an S3 404 response to [fs.ErrNotExist].
 func translateS3NotFoundError(err error) error {
-	var respErr *awshttp.ResponseError
-	if errors.As(err, &respErr) && respErr.HTTPStatusCode() == http.StatusNotFound {
+	if respErr, ok := errors.AsType[*awshttp.ResponseError](err); ok && respErr.HTTPStatusCode() == http.StatusNotFound {
 		return fs.ErrNotExist
 	}
 	return err
@@ -357,7 +356,7 @@ func (s3c *s3Cache) Read(p []byte) (int, error) {
 	n, err := s3c.body.Read(p)
 	s3c.pos += int64(n)
 	if err != nil || s3c.pos >= s3c.size {
-		_ = s3c.closeBody()
+		s3c.closeBody()
 	}
 	return n, err
 }
@@ -386,7 +385,7 @@ func (s3c *s3Cache) Seek(offset int64, whence int) (int64, error) {
 		return pos, nil
 	}
 
-	_ = s3c.closeBody()
+	s3c.closeBody()
 	s3c.pos = pos
 	return pos, nil
 }

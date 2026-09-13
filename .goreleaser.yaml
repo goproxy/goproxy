@@ -41,9 +41,17 @@ dockers_v2:
       - "{{.Env.DOCKER_IMAGE_REPO}}"
     tags:
       - "{{.Version}}"
-      - "{{.Major}}.{{.Minor}}"
-      - "{{.Major}}"
-      - latest
+      - "{{if and (not .IsSnapshot) (not .Prerelease)}}{{.Major}}.{{.Minor}}{{end}}"
+      - "{{if and (not .IsSnapshot) (not .Prerelease)}}{{.Major}}{{end}}"
+      - "{{if and (not .IsSnapshot) (not .Prerelease)}}latest{{end}}"
+    labels:
+      org.opencontainers.image.title: Goproxy
+      org.opencontainers.image.description: A minimalist Go module proxy handler.
+      org.opencontainers.image.source: https://github.com/goproxy/goproxy
+      org.opencontainers.image.licenses: MIT
+      org.opencontainers.image.version: "{{.Version}}"
+      org.opencontainers.image.revision: "{{.FullCommit}}"
+      org.opencontainers.image.created: "{{.Date}}"
     platforms:
       - linux/386
       - linux/amd64

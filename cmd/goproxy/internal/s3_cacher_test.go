@@ -207,6 +207,37 @@ func TestNewS3Cacher(t *testing.T) {
 	}
 }
 
+func TestParseS3Endpoint(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		endpoint string
+		wantErr  bool
+	}{
+		{name: "IPv4", endpoint: "127.0.0.1:9000"},
+		{name: "IPv6", endpoint: "[::1]"},
+		{name: "IPv6WithPort", endpoint: "[::1]:9000"},
+		{name: "UnbracketedIPv6", endpoint: "::1", wantErr: true},
+		{name: "UnbracketedIPv6WithPort", endpoint: "::1:9000", wantErr: true},
+		{name: "MultiplePorts", endpoint: "localhost:9000:9001", wantErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			endpoint, err := parseS3Endpoint(tt.endpoint, false)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, want := endpoint.String(), "https://"+tt.endpoint; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+		})
+	}
+}
+
 func TestS3CacherGet(t *testing.T) {
 	t.Run("NotFound", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
