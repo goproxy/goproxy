@@ -1,4 +1,4 @@
-ARG GO_BASE_IMAGE=golang:1.26-alpine3.23
+ARG GO_BASE_IMAGE=golang:1.27-alpine3.24
 
 FROM ${GO_BASE_IMAGE} AS build
 
@@ -8,7 +8,7 @@ ARG USE_GORELEASER_ARTIFACTS=0
 WORKDIR /usr/local/src/goproxy
 COPY . .
 
-RUN << EOF
+RUN <<'EOF'
 set -eux
 
 mkdir -p bin
@@ -26,12 +26,13 @@ FROM ${GO_BASE_IMAGE}
 
 COPY --from=build /usr/local/src/goproxy/bin/ /usr/local/bin/
 
-RUN apk add --no-cache git git-lfs openssh gpg subversion fossil mercurial breezy
+RUN apk add --no-cache git git-lfs openssh gpg subversion fossil mercurial
 RUN git lfs install --system
 
-USER nobody
 WORKDIR /goproxy
 VOLUME /goproxy
 EXPOSE 8080
+
+USER nobody
 ENTRYPOINT ["/usr/local/bin/goproxy"]
 CMD ["server", "--address", ":8080"]

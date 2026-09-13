@@ -561,7 +561,7 @@ func cleanEnvGOPROXY(envGOPROXY string) (string, error) {
 	if envGOPROXY == "" || envGOPROXY == defaultEnvGOPROXY {
 		return defaultEnvGOPROXY, nil
 	}
-	var cleaned string
+	var cleaned strings.Builder
 	for envGOPROXY != "" {
 		var proxy, sep string
 		if i := strings.IndexAny(envGOPROXY, ",|"); i >= 0 {
@@ -587,12 +587,13 @@ func cleanEnvGOPROXY(envGOPROXY string) (string, error) {
 				return "", fmt.Errorf("invalid GOPROXY URL: %w", err)
 			}
 		}
-		cleaned += proxy + sep
+		cleaned.WriteString(proxy)
+		cleaned.WriteString(sep)
 	}
-	if cleaned == "" {
+	if cleaned.Len() == 0 {
 		return "", errors.New("GOPROXY list is not the empty string, but contains no entries")
 	}
-	return cleaned, nil
+	return cleaned.String(), nil
 }
 
 // walkEnvGOPROXY walks through the proxy list parsed from the envGOPROXY.
