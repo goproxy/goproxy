@@ -178,6 +178,42 @@ func TestGoFetcherQuery(t *testing.T) {
 		responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
 	}
 
+	t.Run("InvalidInfoFallback", func(t *testing.T) {
+		for _, tt := range []struct {
+			name    string
+			version string
+		}{
+			{"NoncanonicalVersion", "v1"},
+			{"BuildMetadata", "v1.0.0+build"},
+			{"WrongMajor", "v2.0.0"},
+			{"WrongVersion", "v1.1.0"},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				proxyServer := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+					if strings.HasPrefix(req.URL.Path, "/fallback/") {
+						proxyHandler(rw, req)
+					} else {
+						responseSuccess(rw, req, strings.NewReader(marshalInfo(tt.version, infoTime)), "application/json; charset=utf-8", -2)
+					}
+				}))
+				gf := &GoFetcher{
+					Env:     append(os.Environ(), "GOPROXY="+proxyServer.URL+","+proxyServer.URL+"/fallback", "GOSUMDB=off"),
+					TempDir: t.TempDir(),
+				}
+				version, time, err := gf.Query(t.Context(), "example.com", infoVersion)
+				if err != nil {
+					t.Fatalf("unexpected error %v", err)
+				}
+				if got, want := version, infoVersion; got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
+				if got, want := time, infoTime; !got.Equal(want) {
+					t.Errorf("got %q, want %q", got, want)
+				}
+			})
+		}
+	})
+
 	for _, tt := range []struct {
 		n            int
 		proxyHandler http.HandlerFunc
@@ -279,6 +315,75 @@ func TestGoFetcherProxyQuery(t *testing.T) {
 	infoVersion := "v1.0.0"
 	infoTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 	info := marshalInfo(infoVersion, infoTime)
+
+	t.Run("InfoVersion", func(t *testing.T) {
+		for _, tt := range []struct {
+			name    string
+			path    string
+			query   string
+			version string
+			wantErr bool
+		}{
+			{"Latest", "example.com", "latest", "v1.0.0", false},
+			{"MajorZero", "example.com", "latest", "v0.1.0", false},
+			{"VersionPrefix", "example.com", "v1.2", "v1.2.3", false},
+			{"Branch", "example.com", "main", "v1.2.3", false},
+			{"PseudoVersion", "example.com", "main", "v0.0.0-20000101000000-0123456789ab", false},
+			{"Prerelease", "example.com", "latest", "v1.0.0-RC.1", false},
+			{"ExactVersion", "example.com", "v1.0.0", "v1.0.0", false},
+			{"MajorSuffix", "example.com/v2", "latest", "v2.0.0", false},
+			{"Incompatible", "example.com", "latest", "v2.0.0+incompatible", false},
+			{"ExactIncompatible", "example.com", "v2.0.0+incompatible", "v2.0.0+incompatible", false},
+			{"IncompatibleQuery", "example.com", "v2.0.0", "v2.0.0+incompatible", false},
+			{"MetadataQuery", "example.com", "v1.0.0+build", "v1.0.0", false},
+			{"GopkgIn", "gopkg.in/yaml.v2", "latest", "v2.4.0", false},
+			{"GopkgInUnstable", "gopkg.in/yaml.v2-unstable", "latest", "v2.4.0", false},
+			{"GopkgInLegacyPseudoVersion", "gopkg.in/check.v1", "latest", "v0.0.0-20161208181325-20d25e280405", false},
+			{"MajorOnly", "example.com", "latest", "v1", true},
+			{"MinorOnly", "example.com", "latest", "v1.2", true},
+			{"BuildMetadata", "example.com", "latest", "v1.2.3+build", true},
+			{"WrongMajor", "example.com", "latest", "v2.0.0", true},
+			{"WrongMajorSuffix", "example.com/v2", "latest", "v1.0.0", true},
+			{"WrongGopkgInMajor", "gopkg.in/yaml.v2", "latest", "v1.0.0", true},
+			{"WrongVersion", "example.com", "v1.0.0", "v1.1.0", true},
+			{"WrongIncompatibleVersion", "example.com", "v2.0.0+incompatible", "v2.1.0+incompatible", true},
+			{"AddedIncompatibleSuffix", "example.com", "v1.0.0", "v1.0.0+incompatible", true},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				proxyServer := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+					responseSuccess(rw, req, strings.NewReader(marshalInfo(tt.version, infoTime)), "application/json; charset=utf-8", -2)
+				}))
+				gf := &GoFetcher{TempDir: t.TempDir()}
+				gf.initOnce.Do(gf.init)
+				if gf.initErr != nil {
+					t.Fatalf("unexpected error %v", gf.initErr)
+				}
+				proxy, err := url.Parse(proxyServer.URL)
+				if err != nil {
+					t.Fatalf("unexpected error %v", err)
+				}
+				version, time, err := gf.proxyQuery(t.Context(), tt.path, tt.query, proxy)
+				if tt.wantErr {
+					if !errors.Is(err, fs.ErrNotExist) {
+						t.Fatalf("got error %v, want an error matching %v", err, fs.ErrNotExist)
+					}
+					if !strings.HasPrefix(err.Error(), "invalid info response: ") {
+						t.Errorf("unexpected error %v", err)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatalf("unexpected error %v", err)
+				}
+				if got, want := version, tt.version; got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
+				if got, want := time, infoTime; !got.Equal(want) {
+					t.Errorf("got %q, want %q", got, want)
+				}
+			})
+		}
+	})
 
 	t.Run("EscapedURLs", func(t *testing.T) {
 		for _, prefix := range []struct {
@@ -783,6 +888,52 @@ func TestGoFetcherDownload(t *testing.T) {
 			responseNotFound(rw, req, -2)
 		}
 	}
+
+	t.Run("InfoVersion", func(t *testing.T) {
+		for _, tt := range []struct {
+			name    string
+			version string
+		}{
+			{"MajorOnly", "v1"},
+			{"MinorOnly", "v1.0"},
+			{"BuildMetadata", "v1.0.0+build"},
+			{"WrongVersion", "v1.1.0"},
+			{"WrongMajor", "v2.0.0"},
+			{"Prerelease", "v1.0.0-rc.1"},
+			{"IncompatibleSuffix", "v1.0.0+incompatible"},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				proxyServer := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+					if req.URL.Path == "/example.com/@v/v1.0.0.info" {
+						responseSuccess(rw, req, strings.NewReader(marshalInfo(tt.version, time.Time{})), "application/json; charset=utf-8", -2)
+					} else {
+						proxyHandler(rw, req)
+					}
+				}))
+				gf := &GoFetcher{
+					Env:     append(os.Environ(), "GOPROXY="+proxyServer.URL, "GOSUMDB=off"),
+					TempDir: t.TempDir(),
+				}
+				info, mod, zip, err := gf.Download(t.Context(), "example.com", infoVersion)
+				for _, content := range []io.ReadSeekCloser{info, mod, zip} {
+					if content != nil {
+						content.Close()
+						t.Error("unexpected module content")
+					}
+				}
+				if !errors.Is(err, fs.ErrNotExist) {
+					t.Errorf("got error %v, want an error matching %v", err, fs.ErrNotExist)
+				} else if got, want := err.Error(), fmt.Sprintf("invalid info file: version %s does not match requested version %s", tt.version, infoVersion); got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
+				if des, err := os.ReadDir(gf.TempDir); err != nil {
+					t.Errorf("unexpected error %v", err)
+				} else if got, want := len(des), 0; got != want {
+					t.Errorf("got %d, want %d", got, want)
+				}
+			})
+		}
+	})
 
 	zipFile, err := makeTempFile(t, zip)
 	if err != nil {

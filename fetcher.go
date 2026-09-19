@@ -248,8 +248,15 @@ func (gf *GoFetcher) proxyQuery(ctx context.Context, path, query string, proxy *
 		return
 	}
 	version, time, err = unmarshalInfo(info.String())
+	if err == nil {
+		err = checkCanonicalVersion(path, version)
+	}
 	if err != nil {
 		err = notExistErrorf("invalid info response: %w", err)
+		return
+	}
+	if version != query && checkCanonicalVersion(path, query) == nil {
+		err = notExistErrorf("invalid info response: version %s does not match requested version %s", version, query)
 		return
 	}
 	return
@@ -384,6 +391,10 @@ func (gf *GoFetcher) Download(ctx context.Context, path, version string) (info, 
 
 	infoVersion, infoTime, err := unmarshalInfoFile(infoFile)
 	if err != nil {
+		return
+	}
+	if infoVersion != version {
+		err = notExistErrorf("invalid info file: version %s does not match requested version %s", infoVersion, version)
 		return
 	}
 	err = checkModFile(modFile)
