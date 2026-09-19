@@ -19,6 +19,7 @@ import (
 	"sync"
 
 	"golang.org/x/mod/module"
+	"golang.org/x/mod/sumdb/tlog"
 )
 
 // tempDirPattern is the pattern for creating temporary directories.
@@ -343,9 +344,35 @@ func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, target s
 		contentType = "text/plain; charset=utf-8"
 		cacheControlMaxAge = 3600
 	case strings.HasPrefix(path, "/lookup/"):
+		escapedModulePath, escapedModuleVersion, ok := strings.Cut(strings.TrimPrefix(path, "/lookup/"), "@")
+		if !ok {
+			responseNotFound(rw, req, 86400)
+			return
+		}
+		modulePath, err := module.UnescapePath(escapedModulePath)
+		if err != nil {
+			responseNotFound(rw, req, 86400)
+			return
+		}
+		moduleVersion, err := module.UnescapeVersion(escapedModuleVersion)
+		if err != nil || checkCanonicalVersion(modulePath, moduleVersion) != nil {
+			responseNotFound(rw, req, 86400)
+			return
+		}
+
 		contentType = "text/plain; charset=utf-8"
 		cacheControlMaxAge = 86400
 	case strings.HasPrefix(path, "/tile/"):
+		// maxTileLevel is the maximum level documented by [tlog.Tile],
+		// which [tlog.ParseTilePath] does not enforce.
+		const maxTileLevel = 63
+
+		tile, err := tlog.ParseTilePath(path[1:])
+		if err != nil || tile.L > maxTileLevel {
+			responseNotFound(rw, req, 86400)
+			return
+		}
+
 		contentType = "application/octet-stream"
 		cacheControlMaxAge = 86400
 	default:
