@@ -279,6 +279,86 @@ func TestGoFetcherProxyQuery(t *testing.T) {
 	infoVersion := "v1.0.0"
 	infoTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 	info := marshalInfo(infoVersion, infoTime)
+
+	t.Run("EscapedURLs", func(t *testing.T) {
+		for _, prefix := range []struct {
+			name     string
+			path     string
+			wantPath string
+		}{
+			{"Root", "", ""},
+			{"Prefix", "/proxy", "/proxy"},
+			{"TrailingSlash", "/proxy/", "/proxy"},
+			{"EscapedPrefix", "/proxy%20path/%25/%2F", "/proxy path/%//"},
+		} {
+			t.Run(prefix.name, func(t *testing.T) {
+				for _, tt := range []struct {
+					name     string
+					query    string
+					wantPath string
+				}{
+					{"Latest", "latest", "/example.com/!project/@latest"},
+					{"Version", "v1.0.0", "/example.com/!project/@v/v1.0.0.info"},
+					{"ShortVersion", "v1", "/example.com/!project/@v/v1.info"},
+					{"Branch", "main", "/example.com/!project/@v/main.info"},
+					{"Uppercase", "Release", "/example.com/!project/@v/!release.info"},
+					{"LiteralPercent", "release%", "/example.com/!project/@v/release%.info"},
+					{"PercentOnly", "%", "/example.com/!project/@v/%.info"},
+					{"RepeatedPercent", "release%%", "/example.com/!project/@v/release%%.info"},
+					{"InvalidEscape", "release%zz", "/example.com/!project/@v/release%zz.info"},
+					{"EscapedSlash", "release%2fchild", "/example.com/!project/@v/release%2fchild.info"},
+					{"EscapedTraversal", "release%2f..%2f..%2fprivate", "/example.com/!project/@v/release%2f..%2f..%2fprivate.info"},
+					{"EscapedNUL", "release%00", "/example.com/!project/@v/release%00.info"},
+					{"DoubleEscape", "release%252fchild", "/example.com/!project/@v/release%252fchild.info"},
+					{"UppercaseEscape", "Release%2Fchild", "/example.com/!project/@v/!release%2!fchild.info"},
+					{"Fragment", "release#next", "/example.com/!project/@v/release#next.info"},
+					{"Plus", "release+next", "/example.com/!project/@v/release+next.info"},
+					{"Space", "release next", "/example.com/!project/@v/release next.info"},
+				} {
+					t.Run(tt.name, func(t *testing.T) {
+						proxyServer := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+							if got, want := req.URL.Path, prefix.wantPath+tt.wantPath; got != want {
+								t.Errorf("got path %q, want %q", got, want)
+							}
+							if got, want := req.URL.EscapedPath(), strings.TrimSuffix(prefix.path, "/")+"/"; !strings.HasPrefix(got, want) {
+								t.Errorf("got escaped path %q, want prefix %q", got, want)
+							}
+							if got, want := req.URL.RawQuery, "source=test"; got != want {
+								t.Errorf("got query %q, want %q", got, want)
+							}
+							responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
+						}))
+
+						gf := &GoFetcher{TempDir: t.TempDir()}
+						gf.initOnce.Do(gf.init)
+						if gf.initErr != nil {
+							t.Fatalf("unexpected error %v", gf.initErr)
+						}
+
+						proxyURL := proxyServer.URL + prefix.path + "?source=test"
+						proxy, err := url.Parse(proxyURL)
+						if err != nil {
+							t.Fatalf("unexpected error %v", err)
+						}
+						version, time, err := gf.proxyQuery(t.Context(), "example.com/Project", tt.query, proxy)
+						if err != nil {
+							t.Fatalf("unexpected error %v", err)
+						}
+						if got, want := version, infoVersion; got != want {
+							t.Errorf("got %q, want %q", got, want)
+						}
+						if got, want := time, infoTime; !got.Equal(want) {
+							t.Errorf("got %q, want %q", got, want)
+						}
+						if got, want := proxy.String(), proxyURL; got != want {
+							t.Errorf("got proxy URL %q, want %q", got, want)
+						}
+					})
+				}
+			})
+		}
+	})
+
 	proxyHandler := func(rw http.ResponseWriter, req *http.Request) {
 		responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
 	}

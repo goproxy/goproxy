@@ -240,7 +240,7 @@ func (gf *GoFetcher) proxyQuery(ctx context.Context, path, query string, proxy *
 	if escapedQuery == "latest" {
 		u = proxy.JoinPath(escapedPath + "/@latest")
 	} else {
-		u = proxy.JoinPath(escapedPath + "/@v/" + escapedQuery + ".info")
+		u = proxy.JoinPath(escapedPath + "/@v/" + url.PathEscape(escapedQuery) + ".info")
 	}
 	var info bytes.Buffer
 	err = httpGet(ctx, gf.httpClient, u.String(), &info)
