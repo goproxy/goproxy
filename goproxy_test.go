@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -921,6 +922,146 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 }
 
 func TestGoproxyServeSumDB(t *testing.T) {
+	t.Run("Paths", func(t *testing.T) {
+		var upstreamRequests atomic.Int32
+		sumdbServer := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			upstreamRequests.Add(1)
+			fmt.Fprint(rw, req.URL.Path)
+		}))
+		for _, tt := range []struct {
+			name  string
+			path  string
+			valid bool
+		}{
+			{"Lookup", "/lookup/example.com/project@v1.2.3", true},
+			{"LookupEscapedModule", "/lookup/example.com/!project@v1.2.3", true},
+			{"LookupEscapedVersion", "/lookup/example.com/project@v1.2.3-!r!c1", true},
+			{"LookupMajorSuffix", "/lookup/example.com/project/v2@v2.0.0", true},
+			{"LookupGopkgIn", "/lookup/gopkg.in/yaml.v3@v3.0.1", true},
+			{"LookupIncompatible", "/lookup/example.com/project@v2.0.0+incompatible", true},
+			{"LookupPseudoVersion", "/lookup/example.com/project@v0.0.0-20200101000000-0123456789ab", true},
+			{"LookupToolchain", "/lookup/golang.org/toolchain@v0.0.1-go1.26.0.darwin-arm64", true},
+			{"LookupURLEncoding", "/lookup/example.com/%21project%40v1.2.3", true},
+			{"HashTile", "/tile/8/0/001", true},
+			{"PartialHashTile", "/tile/8/0/001.p/10", true},
+			{"DataTile", "/tile/8/data/001", true},
+			{"PartialDataTile", "/tile/8/data/001.p/1", true},
+			{"GroupedTile", "/tile/8/1/x001/234", true},
+			{"MaximumTileHeight", "/tile/30/0/000.p/1", true},
+			{"MaximumTileLevel", "/tile/1/63/000", true},
+			{"TileURLEncoding", "/tile/%38/%30/%30%30%31", true},
+			{"EmptyLookup", "/lookup/", false},
+			{"LookupMissingVersion", "/lookup/example.com/project", false},
+			{"LookupEmptyModule", "/lookup/@v1.2.3", false},
+			{"LookupInvalidModule", "/lookup/invalid@v1.2.3", false},
+			{"LookupUnescapedModule", "/lookup/example.com/Project@v1.2.3", false},
+			{"LookupInvalidModuleEscape", "/lookup/example.com/project!@v1.2.3", false},
+			{"LookupEmptyVersion", "/lookup/example.com/project@", false},
+			{"LookupLatestVersion", "/lookup/example.com/project@latest", false},
+			{"LookupBranchVersion", "/lookup/example.com/project@main", false},
+			{"LookupShortVersion", "/lookup/example.com/project@v1.2", false},
+			{"LookupBuildMetadata", "/lookup/example.com/project@v1.2.3+build", false},
+			{"LookupMismatchedMajor", "/lookup/example.com/project/v2@v1.2.3", false},
+			{"LookupMissingMajorSuffix", "/lookup/example.com/project@v2.0.0", false},
+			{"LookupUnescapedVersion", "/lookup/example.com/project@v1.2.3-RC1", false},
+			{"LookupInvalidVersionEscape", "/lookup/example.com/project@v1.2.3-!!rc", false},
+			{"LookupMultipleVersions", "/lookup/example.com/project@v1.2.3@v1.2.4", false},
+			{"LookupGoModSuffix", "/lookup/example.com/project@v1.2.3/go.mod", false},
+			{"LookupBackslash", "/lookup/example.com/project%5Cextra@v1.2.3", false},
+			{"LookupNUL", "/lookup/example.com/project@v1.2.3%00", false},
+			{"LookupLiteralPercent", "/lookup/example.com/project%252fextra@v1.2.3", false},
+			{"IncompleteTile", "/tile/8/0", false},
+			{"InvalidTileNumber", "/tile/8/0/invalid", false},
+			{"ZeroTileHeight", "/tile/0/0/001", false},
+			{"ExcessiveTileHeight", "/tile/31/0/001", false},
+			{"NegativeTileLevel", "/tile/8/-1/001", false},
+			{"ExcessiveTileLevel", "/tile/8/64/001", false},
+			{"LargeTileLevel", "/tile/8/2147483647/001", false},
+			{"UnpaddedTileNumber", "/tile/8/0/1", false},
+			{"InvalidTileGrouping", "/tile/8/0/x001/x234", false},
+			{"EmptyPartialTile", "/tile/8/0/001.p/0", false},
+			{"FullPartialTile", "/tile/8/0/001.p/256", false},
+			{"OversizedPartialTile", "/tile/8/0/001.p/257", false},
+			{"OverflowingTileNumber", "/tile/8/0/x999/x999/x999/x999/x999/x999/x999/999", false},
+			{"TileBackslash", "/tile/8/0/001%5Cextra", false},
+			{"TileNUL", "/tile/8/0/001%00", false},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				for _, method := range []string{http.MethodGet, http.MethodHead} {
+					t.Run(method, func(t *testing.T) {
+						req := httptest.NewRequest(method, "/sumdb/sumdb.example.com"+tt.path, nil)
+						wantContent := "/base" + strings.TrimPrefix(req.URL.Path, "/sumdb/sumdb.example.com")
+						cacheWrites := 0
+						g := &Goproxy{
+							ProxiedSumDBs: []string{"sumdb.example.com " + sumdbServer.URL + "/base"},
+							Cacher: &testCacher{
+								get: func(ctx context.Context, c Cacher, name string) (io.ReadCloser, error) {
+									t.Errorf("unexpected cache read %q", name)
+									return nil, fs.ErrNotExist
+								},
+								put: func(ctx context.Context, c Cacher, name string, content io.ReadSeeker) error {
+									cacheWrites++
+									if got, want := name, strings.TrimPrefix(req.URL.Path, "/"); got != want {
+										t.Errorf("got cache name %q, want %q", got, want)
+									}
+									if b, err := io.ReadAll(content); err != nil {
+										t.Errorf("unexpected error %v", err)
+									} else if got, want := string(b), wantContent; got != want {
+										t.Errorf("got cached content %q, want %q", got, want)
+									}
+									return nil
+								},
+							},
+							TempDir: t.TempDir(),
+							Logger:  slog.New(slog.DiscardHandler),
+						}
+						rec := httptest.NewRecorder()
+						g.ServeHTTP(rec, req)
+						wantStatusCode, wantCalls := http.StatusNotFound, 0
+						if tt.valid {
+							wantStatusCode, wantCalls = http.StatusOK, 1
+						} else {
+							wantContent = "not found"
+						}
+						if got, want := rec.Code, wantStatusCode; got != want {
+							t.Errorf("got status %d, want %d", got, want)
+						}
+						if got, want := rec.Header().Get("Cache-Control"), "public, max-age=86400"; got != want {
+							t.Errorf("got cache control %q, want %q", got, want)
+						}
+						if method == http.MethodHead {
+							wantContent = ""
+						}
+						if got, want := rec.Body.String(), wantContent; got != want {
+							t.Errorf("got content %q, want %q", got, want)
+						}
+						if got, want := int(upstreamRequests.Swap(0)), wantCalls; got != want {
+							t.Errorf("got %d upstream requests, want %d", got, want)
+						}
+						if got, want := cacheWrites, wantCalls; got != want {
+							t.Errorf("got %d cache writes, want %d", got, want)
+						}
+					})
+				}
+			})
+		}
+	})
+
+	t.Run("InvalidPathsWithoutTempDir", func(t *testing.T) {
+		g := &Goproxy{
+			ProxiedSumDBs: []string{"sumdb.example.com"},
+			TempDir:       filepath.Join(t.TempDir(), "404"),
+			Logger:        slog.New(slog.DiscardHandler),
+		}
+		for _, path := range []string{"/lookup/example.com@main", "/tile/8/0/1"} {
+			rec := httptest.NewRecorder()
+			g.ServeHTTP(rec, httptest.NewRequest("", "/sumdb/sumdb.example.com"+path, nil))
+			if got, want := rec.Code, http.StatusNotFound; got != want {
+				t.Errorf("path %q: got status %d, want %d", path, got, want)
+			}
+		}
+	})
+
 	for _, tt := range []struct {
 		n                int
 		sumdbHandler     http.HandlerFunc
@@ -956,11 +1097,11 @@ func TestGoproxyServeSumDB(t *testing.T) {
 		},
 		{
 			n:                4,
-			target:           "sumdb/sumdb.example.com/tile/2/0/0",
+			target:           "sumdb/sumdb.example.com/tile/2/0/000",
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "application/octet-stream",
 			wantCacheControl: "public, max-age=86400",
-			wantContent:      "/tile/2/0/0",
+			wantContent:      "/tile/2/0/000",
 		},
 		{
 			n:                5,
