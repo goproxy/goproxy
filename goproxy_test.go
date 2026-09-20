@@ -422,11 +422,23 @@ func TestGoproxyServeFetch(t *testing.T) {
 									t.Fatal(err)
 								}
 								defer resp.Body.Close()
-								if got, want := resp.StatusCode, mode.wantStatusCode; got != want {
+								wantStatusCode, wantCacheControl := mode.wantStatusCode, mode.wantCacheControl
+								if method == http.MethodHead && (wantStatusCode == http.StatusPartialContent || wantStatusCode == http.StatusRequestedRangeNotSatisfiable) {
+									wantStatusCode, wantCacheControl = http.StatusOK, tt.cacheControl
+								}
+								if got, want := resp.StatusCode, wantStatusCode; got != want {
 									t.Errorf("got status %d, want %d", got, want)
 								}
-								if got, want := resp.Header.Get("Cache-Control"), mode.wantCacheControl; got != want {
+								if got, want := resp.Header.Get("Cache-Control"), wantCacheControl; got != want {
 									t.Errorf("got cache control %q, want %q", got, want)
+								}
+								if method == http.MethodHead && wantStatusCode == http.StatusOK {
+									if got, want := resp.Header.Get("Content-Length"), strconv.Itoa(len(tt.content)); got != want {
+										t.Errorf("got content length %q, want %q", got, want)
+									}
+									if got, want := resp.Header.Get("Content-Range"), ""; got != want {
+										t.Errorf("got content range %q, want %q", got, want)
+									}
 								}
 								if got, want := resp.Header.Values("Vary"), []string{"Accept-Encoding", "Accept-Language", "Disable-Module-Fetch"}; !slices.Equal(got, want) {
 									t.Errorf("got vary %q, want %q", got, want)

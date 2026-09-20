@@ -105,6 +105,11 @@ func responseSuccess(rw http.ResponseWriter, req *http.Request, content io.Reade
 	}
 
 	if content, ok := content.(io.ReadSeeker); ok {
+		// Ignore Range on HEAD requests as required by RFC 9110, Section 14.2.
+		if req.Method == http.MethodHead && req.Header.Get("Range") != "" {
+			req = req.Clone(req.Context())
+			req.Header.Del("Range")
+		}
 		http.ServeContent(serveContentResponseWriter{rw}, req, "", lastModified, content)
 		return
 	}
