@@ -122,6 +122,9 @@ func TestResponseMethodNotAllowed(t *testing.T) {
 	if got, want := recr.StatusCode, http.StatusMethodNotAllowed; got != want {
 		t.Errorf("got %d, want %d", got, want)
 	}
+	if got, want := recr.Header.Get("Allow"), "GET, HEAD"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
 	if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
