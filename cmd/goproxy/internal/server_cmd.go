@@ -180,7 +180,10 @@ func runServerCmd(cmd *cobra.Command, args []string, cfg *serverCmdConfig) error
 func newServerHandler(cfg *serverCmdConfig, base http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/", base)
-	mux.HandleFunc("GET /healthz", func(rw http.ResponseWriter, _ *http.Request) { rw.WriteHeader(http.StatusNoContent) })
+	mux.HandleFunc("GET /healthz", func(rw http.ResponseWriter, _ *http.Request) {
+		rw.Header().Set("Cache-Control", "no-store")
+		rw.WriteHeader(http.StatusNoContent)
+	})
 
 	handler := http.Handler(mux)
 	if cfg.pathPrefix != "" {

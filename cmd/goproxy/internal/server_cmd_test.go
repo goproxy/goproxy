@@ -15,19 +15,22 @@ func TestNewServerHandler(t *testing.T) {
 		method            string
 		path              string
 		wantStatusCode    int
+		wantCacheControl  string
 		wantContentLength int64
 		wantHandledPath   string
 	}{
 		{
-			name:           "HealthzGET",
-			path:           "/healthz",
-			wantStatusCode: http.StatusNoContent,
+			name:             "HealthzGET",
+			path:             "/healthz",
+			wantStatusCode:   http.StatusNoContent,
+			wantCacheControl: "no-store",
 		},
 		{
-			name:           "HealthzHEAD",
-			method:         http.MethodHead,
-			path:           "/healthz",
-			wantStatusCode: http.StatusNoContent,
+			name:             "HealthzHEAD",
+			method:           http.MethodHead,
+			path:             "/healthz",
+			wantStatusCode:   http.StatusNoContent,
+			wantCacheControl: "no-store",
 		},
 		{
 			name:            "Passthrough",
@@ -36,10 +39,19 @@ func TestNewServerHandler(t *testing.T) {
 			wantHandledPath: "/anything",
 		},
 		{
-			name:           "HealthzWithPrefix",
-			cfg:            serverCmdConfig{pathPrefix: "/proxy"},
-			path:           "/proxy/healthz",
-			wantStatusCode: http.StatusNoContent,
+			name:             "HealthzWithPrefix",
+			cfg:              serverCmdConfig{pathPrefix: "/proxy"},
+			path:             "/proxy/healthz",
+			wantStatusCode:   http.StatusNoContent,
+			wantCacheControl: "no-store",
+		},
+		{
+			name:             "HealthzHEADWithPrefix",
+			cfg:              serverCmdConfig{pathPrefix: "/proxy"},
+			method:           http.MethodHead,
+			path:             "/proxy/healthz",
+			wantStatusCode:   http.StatusNoContent,
+			wantCacheControl: "no-store",
 		},
 		{
 			name:            "PassthroughWithPrefix",
@@ -77,6 +89,9 @@ func TestNewServerHandler(t *testing.T) {
 			recr := rec.Result()
 			if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
 				t.Errorf("got %d, want %d", got, want)
+			}
+			if got, want := recr.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
+				t.Errorf("got %q, want %q", got, want)
 			}
 			if got, want := int64(rec.Body.Len()), tt.wantContentLength; got != want {
 				t.Errorf("got %d, want %d", got, want)
