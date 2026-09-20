@@ -332,8 +332,9 @@ func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, target s
 	}
 
 	var (
-		contentType        string
-		cacheControlMaxAge int
+		contentType           string
+		cacheControlMaxAge    int
+		expectedContentLength int64
 	)
 	switch {
 	case path == "/supported":
@@ -375,6 +376,9 @@ func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, target s
 
 		contentType = "application/octet-stream"
 		cacheControlMaxAge = 86400
+		if tile.L >= 0 {
+			expectedContentLength = int64(tile.W) * tlog.HashSize
+		}
 	default:
 		responseNotFound(rw, req, 86400)
 		return
@@ -389,6 +393,17 @@ func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, target s
 	defer os.RemoveAll(tempDir)
 
 	file, err := httpGetTemp(req.Context(), g.httpClient, u.JoinPath(path).String(), tempDir)
+	if err == nil {
+		fi, statErr := os.Stat(file)
+		if statErr != nil {
+			g.logger.Error("failed to stat file", "error", statErr)
+			responseInternalServerError(rw, req)
+			return
+		}
+		if fi.Size() == 0 || expectedContentLength > 0 && fi.Size() != expectedContentLength {
+			err = errBadUpstream
+		}
+	}
 	if err != nil {
 		g.serveCache(rw, req, target, contentType, cacheControlMaxAge, func() {
 			g.logger.Error("failed to proxy checksum database", "error", err, "target", target)
