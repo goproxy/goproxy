@@ -1025,29 +1025,30 @@ func TestGoproxyServeSumDB(t *testing.T) {
 
 	t.Run("ResponseBodies", func(t *testing.T) {
 		for _, tt := range []struct {
-			name  string
-			path  string
-			body  string
-			valid bool
+			name            string
+			path            string
+			body            string
+			valid           bool
+			wantContentType string
 		}{
-			{"Latest", "/latest", "latest", true},
-			{"EmptyLatest", "/latest", "", false},
-			{"Lookup", "/lookup/example.com@v1.0.0", "lookup", true},
-			{"EmptyLookup", "/lookup/example.com@v1.0.0", "", false},
-			{"DataTile", "/tile/2/data/000", strings.Repeat("record\n\n", 4), true},
-			{"PartialDataTile", "/tile/2/data/000.p/1", strings.Repeat("record", 20) + "\n\n", true},
-			{"EmptyDataTile", "/tile/2/data/000", "", false},
-			{"EmptyPartialDataTile", "/tile/2/data/000.p/1", "", false},
-			{"HashTile", "/tile/2/0/000", strings.Repeat("x", 128), true},
-			{"EmptyHashTile", "/tile/2/0/000", "", false},
-			{"ShortHashTile", "/tile/2/0/000", strings.Repeat("x", 127), false},
-			{"LongHashTile", "/tile/2/0/000", strings.Repeat("x", 129), false},
-			{"PartialHashTile", "/tile/2/0/000.p/2", strings.Repeat("x", 64), true},
-			{"EmptyPartialHashTile", "/tile/2/0/000.p/2", "", false},
-			{"ShortPartialHashTile", "/tile/2/0/000.p/2", strings.Repeat("x", 63), false},
-			{"LongPartialHashTile", "/tile/2/0/000.p/2", strings.Repeat("x", 65), false},
-			{"FullTileForPartialTile", "/tile/2/0/000.p/2", strings.Repeat("x", 128), false},
-			{"MaximumTileHeight", "/tile/30/0/000", "x", false},
+			{"Latest", "/latest", "latest", true, "text/plain; charset=utf-8"},
+			{"EmptyLatest", "/latest", "", false, "text/plain; charset=utf-8"},
+			{"Lookup", "/lookup/example.com@v1.0.0", "lookup", true, "text/plain; charset=utf-8"},
+			{"EmptyLookup", "/lookup/example.com@v1.0.0", "", false, "text/plain; charset=utf-8"},
+			{"DataTile", "/tile/2/data/000", strings.Repeat("record\n\n", 4), true, "text/plain; charset=utf-8"},
+			{"PartialDataTile", "/tile/2/data/000.p/1", strings.Repeat("record", 20) + "\n\n", true, "text/plain; charset=utf-8"},
+			{"EmptyDataTile", "/tile/2/data/000", "", false, "text/plain; charset=utf-8"},
+			{"EmptyPartialDataTile", "/tile/2/data/000.p/1", "", false, "text/plain; charset=utf-8"},
+			{"HashTile", "/tile/2/0/000", strings.Repeat("x", 128), true, "application/octet-stream"},
+			{"EmptyHashTile", "/tile/2/0/000", "", false, "application/octet-stream"},
+			{"ShortHashTile", "/tile/2/0/000", strings.Repeat("x", 127), false, "application/octet-stream"},
+			{"LongHashTile", "/tile/2/0/000", strings.Repeat("x", 129), false, "application/octet-stream"},
+			{"PartialHashTile", "/tile/2/0/000.p/2", strings.Repeat("x", 64), true, "application/octet-stream"},
+			{"EmptyPartialHashTile", "/tile/2/0/000.p/2", "", false, "application/octet-stream"},
+			{"ShortPartialHashTile", "/tile/2/0/000.p/2", strings.Repeat("x", 63), false, "application/octet-stream"},
+			{"LongPartialHashTile", "/tile/2/0/000.p/2", strings.Repeat("x", 65), false, "application/octet-stream"},
+			{"FullTileForPartialTile", "/tile/2/0/000.p/2", strings.Repeat("x", 128), false, "application/octet-stream"},
+			{"MaximumTileHeight", "/tile/30/0/000", "x", false, "application/octet-stream"},
 		} {
 			for _, mode := range []struct {
 				name    string
@@ -1059,6 +1060,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 				{"GET", http.MethodGet, false, false, false},
 				{"HEAD", http.MethodHead, false, false, false},
 				{"Cached", http.MethodGet, true, false, false},
+				{"CachedHEAD", http.MethodHead, true, false, false},
 				{"Chunked", http.MethodGet, false, true, false},
 				{"Gzip", http.MethodGet, false, false, true},
 			} {
@@ -1105,6 +1107,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 					rec := httptest.NewRecorder()
 					g.ServeHTTP(rec, httptest.NewRequest(mode.method, "/sumdb/sumdb.example.com"+tt.path, nil))
 					wantStatusCode, wantContent := http.StatusOK, tt.body
+					wantContentType := tt.wantContentType
 					wantCacheControl := "public, max-age=86400"
 					if tt.path == "/latest" {
 						wantCacheControl = "public, max-age=3600"
@@ -1116,6 +1119,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 							wantContent = "cached"
 						} else {
 							wantStatusCode, wantContent = http.StatusNotFound, "not found: bad upstream"
+							wantContentType = "text/plain; charset=utf-8"
 							wantCacheControl = "must-revalidate, no-cache, no-store"
 						}
 					}
@@ -1124,6 +1128,9 @@ func TestGoproxyServeSumDB(t *testing.T) {
 					}
 					if got, want := rec.Code, wantStatusCode; got != want {
 						t.Errorf("got status %d, want %d", got, want)
+					}
+					if got, want := rec.Header().Get("Content-Type"), wantContentType; got != want {
+						t.Errorf("got content type %q, want %q", got, want)
 					}
 					if got, want := rec.Header().Get("Cache-Control"), wantCacheControl; got != want {
 						t.Errorf("got cache control %q, want %q", got, want)

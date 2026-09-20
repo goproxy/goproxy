@@ -374,9 +374,10 @@ func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, target s
 			return
 		}
 
-		contentType = "application/octet-stream"
+		contentType = "text/plain; charset=utf-8"
 		cacheControlMaxAge = 86400
 		if tile.L >= 0 {
+			contentType = "application/octet-stream"
 			expectedContentLength = int64(tile.W) * tlog.HashSize
 		}
 	default:
