@@ -1,6 +1,7 @@
 package goproxy
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"io/fs"
@@ -20,7 +21,7 @@ func TestSetResponseCacheControlHeader(t *testing.T) {
 	}{
 		{1, 60, "public, max-age=60"},
 		{2, 0, "public, max-age=0"},
-		{3, -1, "must-revalidate, no-cache, no-store"},
+		{3, -1, "no-store"},
 		{4, -2, ""},
 	} {
 		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
@@ -135,22 +136,41 @@ func TestResponseMethodNotAllowed(t *testing.T) {
 }
 
 func TestResponseInternalServerError(t *testing.T) {
-	rec := httptest.NewRecorder()
-	responseInternalServerError(rec, httptest.NewRequest("", "/", nil))
-	recr := rec.Result()
-	if got, want := recr.StatusCode, http.StatusInternalServerError; got != want {
-		t.Errorf("got %d, want %d", got, want)
-	}
-	if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-	if got, want := recr.Header.Get("Cache-Control"), ""; got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-	if b, err := io.ReadAll(recr.Body); err != nil {
-		t.Errorf("unexpected error %v", err)
-	} else if got, want := string(b), "internal server error"; got != want {
-		t.Errorf("got %q, want %q", got, want)
+	for _, tt := range []struct {
+		name         string
+		cacheControl string
+	}{
+		{"NoCacheControl", ""},
+		{"PublicCacheControl", "public, max-age=604800"},
+	} {
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			t.Run(tt.name+"/"+method, func(t *testing.T) {
+				rec := httptest.NewRecorder()
+				if tt.cacheControl != "" {
+					rec.Header().Set("Cache-Control", tt.cacheControl)
+				}
+				responseInternalServerError(rec, httptest.NewRequest(method, "/", nil))
+				recr := rec.Result()
+				if got, want := recr.StatusCode, http.StatusInternalServerError; got != want {
+					t.Errorf("got %d, want %d", got, want)
+				}
+				if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
+				if got, want := recr.Header.Get("Cache-Control"), "no-store"; got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
+				wantContent := "internal server error"
+				if method == http.MethodHead {
+					wantContent = ""
+				}
+				if b, err := io.ReadAll(recr.Body); err != nil {
+					t.Errorf("unexpected error %v", err)
+				} else if got, want := string(b), wantContent; got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
+			})
+		}
 	}
 }
 
@@ -183,6 +203,163 @@ type successResponseBody_ETag struct {
 func (srb successResponseBody_ETag) ETag() string { return srb.etag }
 
 func TestResponseSuccess(t *testing.T) {
+	t.Run("CacheControl", func(t *testing.T) {
+		for _, keepHeaders := range []string{"0", "1"} {
+			t.Run("KeepHeaders"+keepHeaders, func(t *testing.T) {
+				t.Setenv("GODEBUG", "httpservecontentkeepheaders="+keepHeaders)
+				for _, tt := range []struct {
+					name             string
+					header           http.Header
+					seekError        bool
+					wantStatusCode   int
+					wantCacheControl string
+					wantContentRange string
+					wantContent      string
+				}{
+					{
+						name:             "FullContent",
+						wantStatusCode:   http.StatusOK,
+						wantCacheControl: "public, max-age=604800",
+						wantContent:      "foobar",
+					},
+					{
+						name:             "PartialContent",
+						header:           http.Header{"Range": {"bytes=0-2"}},
+						wantStatusCode:   http.StatusPartialContent,
+						wantCacheControl: "public, max-age=604800",
+						wantContentRange: "bytes 0-2/6",
+						wantContent:      "foo",
+					},
+					{
+						name:             "NotModifiedETag",
+						header:           http.Header{"If-None-Match": {`"foobar"`}},
+						wantStatusCode:   http.StatusNotModified,
+						wantCacheControl: "public, max-age=604800",
+					},
+					{
+						name:             "NotModifiedDate",
+						header:           http.Header{"If-Modified-Since": {"Sat, 01 Jan 2000 00:00:00 GMT"}},
+						wantStatusCode:   http.StatusNotModified,
+						wantCacheControl: "public, max-age=604800",
+					},
+					{
+						name:             "FailedIfMatch",
+						header:           http.Header{"If-Match": {`"other"`}},
+						wantStatusCode:   http.StatusPreconditionFailed,
+						wantCacheControl: "no-store",
+					},
+					{
+						name:             "FailedIfUnmodifiedSince",
+						header:           http.Header{"If-Unmodified-Since": {"Fri, 31 Dec 1999 00:00:00 GMT"}},
+						wantStatusCode:   http.StatusPreconditionFailed,
+						wantCacheControl: "no-store",
+					},
+					{
+						name:             "InvalidRange",
+						header:           http.Header{"Range": {"bytes=invalid"}},
+						wantStatusCode:   http.StatusRequestedRangeNotSatisfiable,
+						wantCacheControl: "no-store",
+						wantContent:      "invalid range\n",
+					},
+					{
+						name:             "UnsatisfiableRange",
+						header:           http.Header{"Range": {"bytes=6-"}},
+						wantStatusCode:   http.StatusRequestedRangeNotSatisfiable,
+						wantCacheControl: "no-store",
+						wantContentRange: "bytes */6",
+						wantContent:      "invalid range: failed to overlap\n",
+					},
+					{
+						name:             "SeekError",
+						seekError:        true,
+						wantStatusCode:   http.StatusInternalServerError,
+						wantCacheControl: "no-store",
+						wantContent:      "seeker can't seek\n",
+					},
+				} {
+					t.Run(tt.name, func(t *testing.T) {
+						server := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+							content := struct {
+								io.ReadSeeker
+								successResponseBody_ModTime
+								successResponseBody_ETag
+							}{
+								strings.NewReader("foobar"),
+								successResponseBody_ModTime{modTime: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)},
+								successResponseBody_ETag{etag: `"foobar"`},
+							}
+							if tt.seekError {
+								content.ReadSeeker = &testReadSeeker{
+									ReadSeeker: content.ReadSeeker,
+									seek: func(rs io.ReadSeeker, offset int64, whence int) (int64, error) {
+										return 0, errors.New("cannot seek")
+									},
+								}
+							}
+							responseSuccess(rw, req, content, "text/plain; charset=utf-8", 604800)
+						}))
+						for _, method := range []string{http.MethodGet, http.MethodHead} {
+							t.Run(method, func(t *testing.T) {
+								req, err := http.NewRequest(method, server.URL, nil)
+								if err != nil {
+									t.Fatal(err)
+								}
+								req.Header = tt.header.Clone()
+								resp, err := server.Client().Do(req)
+								if err != nil {
+									t.Fatal(err)
+								}
+								defer resp.Body.Close()
+								if got, want := resp.StatusCode, tt.wantStatusCode; got != want {
+									t.Errorf("got status %d, want %d", got, want)
+								}
+								if got, want := resp.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
+									t.Errorf("got cache control %q, want %q", got, want)
+								}
+								if got, want := resp.Header.Get("Content-Range"), tt.wantContentRange; got != want {
+									t.Errorf("got content range %q, want %q", got, want)
+								}
+								if resp.StatusCode == http.StatusNotModified {
+									if got, want := resp.Header.Get("ETag"), `"foobar"`; got != want {
+										t.Errorf("got ETag %q, want %q", got, want)
+									}
+								}
+								wantContent := tt.wantContent
+								if method == http.MethodHead {
+									wantContent = ""
+								}
+								if b, err := io.ReadAll(resp.Body); err != nil {
+									t.Errorf("unexpected error %v", err)
+								} else if got, want := string(b), wantContent; got != want {
+									t.Errorf("got content %q, want %q", got, want)
+								}
+							})
+						}
+					})
+				}
+			})
+		}
+	})
+
+	t.Run("ReaderFrom", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		var buf bytes.Buffer
+		rw := struct {
+			http.ResponseWriter
+			io.ReaderFrom
+		}{rec, &buf}
+		responseSuccess(rw, httptest.NewRequest(http.MethodGet, "/", nil), strings.NewReader("foobar"), "text/plain; charset=utf-8", 60)
+		if got, want := buf.String(), "foobar"; got != want {
+			t.Errorf("got content %q, want %q", got, want)
+		}
+		if got, want := rec.Code, http.StatusOK; got != want {
+			t.Errorf("got status %d, want %d", got, want)
+		}
+		if got, want := rec.Result().Header.Get("Cache-Control"), "public, max-age=60"; got != want {
+			t.Errorf("got cache control %q, want %q", got, want)
+		}
+	})
+
 	for _, tt := range []struct {
 		n                 int
 		method            string
@@ -315,14 +492,14 @@ func TestResponseError(t *testing.T) {
 			n:                2,
 			err:              errBadUpstream,
 			wantStatusCode:   http.StatusNotFound,
-			wantCacheControl: "must-revalidate, no-cache, no-store",
+			wantCacheControl: "no-store",
 			wantContent:      "not found: bad upstream",
 		},
 		{
 			n:                3,
 			err:              errFetchTimedOut,
 			wantStatusCode:   http.StatusNotFound,
-			wantCacheControl: "must-revalidate, no-cache, no-store",
+			wantCacheControl: "no-store",
 			wantContent:      "not found: fetch timed out",
 		},
 		{
@@ -337,21 +514,22 @@ func TestResponseError(t *testing.T) {
 			n:                5,
 			err:              notExistErrorf("not found: bad upstream"),
 			wantStatusCode:   http.StatusNotFound,
-			wantCacheControl: "must-revalidate, no-cache, no-store",
+			wantCacheControl: "no-store",
 			wantContent:      "not found: bad upstream",
 		},
 		{
 			n:                6,
 			err:              notExistErrorf("not found: fetch timed out"),
 			wantStatusCode:   http.StatusNotFound,
-			wantCacheControl: "must-revalidate, no-cache, no-store",
+			wantCacheControl: "no-store",
 			wantContent:      "not found: fetch timed out",
 		},
 		{
-			n:              7,
-			err:            errors.New("internal server error"),
-			wantStatusCode: http.StatusInternalServerError,
-			wantContent:    "internal server error",
+			n:                7,
+			err:              errors.New("internal server error"),
+			wantStatusCode:   http.StatusInternalServerError,
+			wantCacheControl: "no-store",
+			wantContent:      "internal server error",
 		},
 	} {
 		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {

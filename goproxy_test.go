@@ -789,10 +789,11 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 					return nil, errors.New("cannot get")
 				},
 			},
-			target:          "example.com/@v/v1.0.0.info",
-			wantStatusCode:  http.StatusInternalServerError,
-			wantContentType: "text/plain; charset=utf-8",
-			wantContent:     "internal server error",
+			target:           "example.com/@v/v1.0.0.info",
+			wantStatusCode:   http.StatusInternalServerError,
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "no-store",
+			wantContent:      "internal server error",
 		},
 		{
 			n: 9,
@@ -802,10 +803,11 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 					return errors.New("cannot put")
 				},
 			},
-			target:          "example.com/@v/v1.0.0.info",
-			wantStatusCode:  http.StatusInternalServerError,
-			wantContentType: "text/plain; charset=utf-8",
-			wantContent:     "internal server error",
+			target:           "example.com/@v/v1.0.0.info",
+			wantStatusCode:   http.StatusInternalServerError,
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "no-store",
+			wantContent:      "internal server error",
 		},
 		{
 			n: 10,
@@ -818,10 +820,11 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 					return content.(io.Closer).Close()
 				},
 			},
-			target:          "example.com/@v/v1.0.0.mod",
-			wantStatusCode:  http.StatusInternalServerError,
-			wantContentType: "text/plain; charset=utf-8",
-			wantContent:     "internal server error",
+			target:           "example.com/@v/v1.0.0.mod",
+			wantStatusCode:   http.StatusInternalServerError,
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "no-store",
+			wantContent:      "internal server error",
 		},
 	} {
 		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
@@ -955,6 +958,9 @@ func TestGoproxyServeSumDB(t *testing.T) {
 		if got, want := rec.Code, http.StatusInternalServerError; got != want {
 			t.Errorf("got status %d, want %d", got, want)
 		}
+		if got, want := rec.Result().Header.Get("Cache-Control"), "no-store"; got != want {
+			t.Errorf("got cache control %q, want %q", got, want)
+		}
 		if got, want := rec.Body.String(), "internal server error"; got != want {
 			t.Errorf("got content %q, want %q", got, want)
 		}
@@ -998,7 +1004,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 				}
 				rec := httptest.NewRecorder()
 				g.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/sumdb/sumdb.example.com/tile/2/0/000", nil))
-				wantStatusCode, wantContent, wantCacheControl := http.StatusInternalServerError, "internal server error", ""
+				wantStatusCode, wantContent, wantCacheControl := http.StatusInternalServerError, "internal server error", "no-store"
 				if tt.cached {
 					wantStatusCode, wantContent, wantCacheControl = http.StatusOK, body, "public, max-age=86400"
 				}
@@ -1120,7 +1126,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 						} else {
 							wantStatusCode, wantContent = http.StatusNotFound, "not found: bad upstream"
 							wantContentType = "text/plain; charset=utf-8"
-							wantCacheControl = "must-revalidate, no-cache, no-store"
+							wantCacheControl = "no-store"
 						}
 					}
 					if mode.method == http.MethodHead {
@@ -1368,10 +1374,11 @@ func TestGoproxyServeSumDB(t *testing.T) {
 					return errors.New("cannot put")
 				},
 			},
-			target:          "sumdb/sumdb.example.com/latest",
-			wantStatusCode:  http.StatusInternalServerError,
-			wantContentType: "text/plain; charset=utf-8",
-			wantContent:     "internal server error",
+			target:           "sumdb/sumdb.example.com/latest",
+			wantStatusCode:   http.StatusInternalServerError,
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "no-store",
+			wantContent:      "internal server error",
 		},
 		{
 			n:                7,
@@ -1406,12 +1413,13 @@ func TestGoproxyServeSumDB(t *testing.T) {
 			wantContent:      "not found",
 		},
 		{
-			n:               11,
-			tempDir:         filepath.Join(t.TempDir(), "404"),
-			target:          "sumdb/sumdb.example.com/latest",
-			wantStatusCode:  http.StatusInternalServerError,
-			wantContentType: "text/plain; charset=utf-8",
-			wantContent:     "internal server error",
+			n:                11,
+			tempDir:          filepath.Join(t.TempDir(), "404"),
+			target:           "sumdb/sumdb.example.com/latest",
+			wantStatusCode:   http.StatusInternalServerError,
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "no-store",
+			wantContent:      "internal server error",
 		},
 	} {
 		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
