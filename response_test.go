@@ -2,11 +2,14 @@ package goproxy
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -559,7 +562,68 @@ func TestResponseSuccess(t *testing.T) {
 	}
 }
 
+type testTimeoutError struct {
+	error
+	timeout bool
+}
+
+func (e testTimeoutError) Timeout() bool { return e.timeout }
+
 func TestResponseError(t *testing.T) {
+	t.Run("Timeout", func(t *testing.T) {
+		timeoutErr := testTimeoutError{errors.New("operation timed out"), true}
+		nonTimeoutErr := testTimeoutError{errors.New("operation failed"), false}
+		for _, tt := range []struct {
+			name           string
+			err            error
+			wantStatusCode int
+			wantContent    string
+		}{
+			{"Direct", timeoutErr, http.StatusNotFound, "not found: fetch timed out"},
+			{"Wrapped", fmt.Errorf("fetch failed: %w", timeoutErr), http.StatusNotFound, "not found: fetch timed out"},
+			{"Nested", fmt.Errorf("fetch failed: %w", fmt.Errorf("read failed: %w", timeoutErr)), http.StatusNotFound, "not found: fetch timed out"},
+			{"Joined", errors.Join(errors.New("operation failed"), timeoutErr), http.StatusNotFound, "not found: fetch timed out"},
+			{"IODeadline", os.ErrDeadlineExceeded, http.StatusNotFound, "not found: fetch timed out"},
+			{"WrappedIODeadline", fmt.Errorf("read failed: %w", os.ErrDeadlineExceeded), http.StatusNotFound, "not found: fetch timed out"},
+			{"ContextDeadline", context.DeadlineExceeded, http.StatusNotFound, "not found: fetch timed out"},
+			{"WrappedContextDeadline", fmt.Errorf("fetch failed: %w", context.DeadlineExceeded), http.StatusNotFound, "not found: fetch timed out"},
+			{"WrappedFetchTimeout", fmt.Errorf("fetch failed: %w", errFetchTimedOut), http.StatusNotFound, "not found: fetch timed out"},
+			{"BadUpstream", errors.Join(errBadUpstream, timeoutErr), http.StatusNotFound, "not found: bad upstream"},
+			{"NonTimeout", nonTimeoutErr, http.StatusInternalServerError, "internal server error"},
+			{"WrappedNonTimeout", fmt.Errorf("fetch failed: %w", nonTimeoutErr), http.StatusInternalServerError, "internal server error"},
+			{"ContextCanceled", context.Canceled, http.StatusInternalServerError, "internal server error"},
+			{"WrappedContextCanceled", fmt.Errorf("fetch failed: %w", context.Canceled), http.StatusInternalServerError, "internal server error"},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				for _, method := range []string{http.MethodGet, http.MethodHead} {
+					t.Run(method, func(t *testing.T) {
+						for _, cacheSensitive := range []bool{false, true} {
+							rec := httptest.NewRecorder()
+							responseError(rec, httptest.NewRequest(method, "/", nil), tt.err, cacheSensitive)
+							resp := rec.Result()
+							if got, want := resp.StatusCode, tt.wantStatusCode; got != want {
+								t.Errorf("cache sensitive %t: got status %d, want %d", cacheSensitive, got, want)
+							}
+							if got, want := resp.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+								t.Errorf("cache sensitive %t: got content type %q, want %q", cacheSensitive, got, want)
+							}
+							if got, want := resp.Header.Get("Cache-Control"), "no-store"; got != want {
+								t.Errorf("cache sensitive %t: got cache control %q, want %q", cacheSensitive, got, want)
+							}
+							wantContent := tt.wantContent
+							if method == http.MethodHead {
+								wantContent = ""
+							}
+							if got, want := rec.Body.String(), wantContent; got != want {
+								t.Errorf("cache sensitive %t: got content %q, want %q", cacheSensitive, got, want)
+							}
+						}
+					})
+				}
+			})
+		}
+	})
+
 	for _, tt := range []struct {
 		n                int
 		err              error
@@ -617,6 +681,13 @@ func TestResponseError(t *testing.T) {
 			wantStatusCode:   http.StatusInternalServerError,
 			wantCacheControl: "no-store",
 			wantContent:      "internal server error",
+		},
+		{
+			n:                8,
+			err:              notExistErrorf("%w", testTimeoutError{errors.New("operation timed out"), true}),
+			wantStatusCode:   http.StatusNotFound,
+			wantCacheControl: "public, max-age=600",
+			wantContent:      "not found: operation timed out",
 		},
 	} {
 		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {

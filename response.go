@@ -150,7 +150,10 @@ func responseError(rw http.ResponseWriter, req *http.Request, err error, cacheSe
 		responseNotFound(rw, req, cacheControlMaxAge, msg)
 	} else if errors.Is(err, errBadUpstream) {
 		responseNotFound(rw, req, -1, errBadUpstream)
-	} else if t, ok := err.(interface{ Timeout() bool }); (ok && t.Timeout()) ||
+	} else if t, ok := errors.AsType[interface {
+		error
+		Timeout() bool
+	}](err); (ok && t.Timeout()) ||
 		errors.Is(err, context.DeadlineExceeded) ||
 		errors.Is(err, errFetchTimedOut) {
 		responseNotFound(rw, req, -1, errFetchTimedOut)
