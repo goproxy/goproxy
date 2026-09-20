@@ -57,6 +57,7 @@ func responseNotFound(rw http.ResponseWriter, req *http.Request, cacheControlMax
 // responseMethodNotAllowed responses "method not allowed" to the client with
 // the cacheControlMaxAge.
 func responseMethodNotAllowed(rw http.ResponseWriter, req *http.Request, cacheControlMaxAge int) {
+	rw.Header().Set("Allow", "GET, HEAD")
 	responseString(rw, req, http.StatusMethodNotAllowed, cacheControlMaxAge, "method not allowed")
 }
 

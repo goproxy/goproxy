@@ -107,6 +107,47 @@ func TestGoproxyInit(t *testing.T) {
 }
 
 func TestGoproxyServeHTTP(t *testing.T) {
+	t.Run("MethodNotAllowed", func(t *testing.T) {
+		g := &Goproxy{ProxiedSumDBs: []string{"sumdb.example.com"}}
+		for _, tt := range []struct {
+			name string
+			path string
+		}{
+			{"Module", "/example.com/@latest"},
+			{"SumDB", "/sumdb/sumdb.example.com/supported"},
+		} {
+			for _, method := range []string{
+				http.MethodPost,
+				http.MethodPut,
+				http.MethodPatch,
+				http.MethodDelete,
+				http.MethodConnect,
+				http.MethodOptions,
+				http.MethodTrace,
+			} {
+				t.Run(tt.name+"/"+method, func(t *testing.T) {
+					rec := httptest.NewRecorder()
+					g.ServeHTTP(rec, httptest.NewRequest(method, tt.path, nil))
+					recr := rec.Result()
+					if got, want := recr.StatusCode, http.StatusMethodNotAllowed; got != want {
+						t.Errorf("got %d, want %d", got, want)
+					}
+					if got, want := recr.Header.Get("Allow"), "GET, HEAD"; got != want {
+						t.Errorf("got %q, want %q", got, want)
+					}
+					if got, want := recr.Header.Get("Cache-Control"), "public, max-age=86400"; got != want {
+						t.Errorf("got %q, want %q", got, want)
+					}
+					if b, err := io.ReadAll(recr.Body); err != nil {
+						t.Errorf("unexpected error %v", err)
+					} else if got, want := string(b), "method not allowed"; got != want {
+						t.Errorf("got %q, want %q", got, want)
+					}
+				})
+			}
+		}
+	})
+
 	info := marshalInfo("v1.0.0", time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC))
 	proxyServer := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
@@ -116,6 +157,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 		method           string
 		path             string
 		wantStatusCode   int
+		wantAllow        string
 		wantContentType  string
 		wantCacheControl string
 		wantVary         string
@@ -144,6 +186,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 			method:           http.MethodPost,
 			path:             "/example.com/@latest",
 			wantStatusCode:   http.StatusMethodNotAllowed,
+			wantAllow:        "GET, HEAD",
 			wantContentType:  "text/plain; charset=utf-8",
 			wantCacheControl: "public, max-age=86400",
 			wantContent:      "method not allowed",
@@ -205,6 +248,9 @@ func TestGoproxyServeHTTP(t *testing.T) {
 			recr := rec.Result()
 			if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
 				t.Errorf("got %d, want %d", got, want)
+			}
+			if got, want := recr.Header.Get("Allow"), tt.wantAllow; got != want {
+				t.Errorf("got %q, want %q", got, want)
 			}
 			if got, want := recr.Header.Get("Content-Type"), tt.wantContentType; got != want {
 				t.Errorf("got %q, want %q", got, want)
