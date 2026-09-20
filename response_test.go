@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 )
 
@@ -209,7 +210,142 @@ type successResponseBody_ETag struct {
 
 func (srb successResponseBody_ETag) ETag() string { return srb.etag }
 
+type testResponseWriter struct {
+	http.ResponseWriter
+	write func([]byte) (int, error)
+}
+
+func (rw testResponseWriter) Write(p []byte) (int, error) { return rw.write(p) }
+
 func TestResponseSuccess(t *testing.T) {
+	t.Run("CopyError", func(t *testing.T) {
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			t.Run(method, func(t *testing.T) {
+				readErr := errors.New("read failed")
+				for _, tt := range []struct {
+					name        string
+					content     io.Reader
+					write       func([]byte) (int, error)
+					readerFrom  bool
+					wantContent string
+				}{
+					{name: "ReadError", content: iotest.ErrReader(readErr)},
+					{name: "PartialReadError", content: io.MultiReader(strings.NewReader("foo"), iotest.ErrReader(readErr)), wantContent: "foo"},
+					{name: "DataAndReadError", content: iotest.DataErrReader(io.MultiReader(strings.NewReader("foo"), iotest.ErrReader(readErr))), wantContent: "foo"},
+					{name: "WriteError", content: strings.NewReader("foobar"), write: func([]byte) (int, error) { return 0, errors.New("write failed") }},
+					{name: "ShortWrite", content: strings.NewReader("foobar"), write: func([]byte) (int, error) { return 1, nil }},
+					{name: "ReaderFromError", content: io.MultiReader(strings.NewReader("foo"), iotest.ErrReader(readErr)), readerFrom: true, wantContent: "foo"},
+				} {
+					t.Run(tt.name, func(t *testing.T) {
+						rec := httptest.NewRecorder()
+						var rw http.ResponseWriter = rec
+						if tt.write != nil {
+							rw = testResponseWriter{rw, tt.write}
+						}
+						if tt.readerFrom {
+							rw = serveContentResponseWriter{rw}
+						}
+						var wantPanic any = http.ErrAbortHandler
+						wantContent := tt.wantContent
+						if method == http.MethodHead {
+							wantPanic, wantContent = nil, ""
+						}
+						func() {
+							defer func() {
+								if got := recover(); got != wantPanic {
+									t.Errorf("got panic %v, want %v", got, wantPanic)
+								}
+							}()
+							responseSuccess(rw, httptest.NewRequest(method, "/", nil), struct{ io.Reader }{tt.content}, "text/plain; charset=utf-8", 60)
+						}()
+						if got, want := rec.Body.String(), wantContent; got != want {
+							t.Errorf("got content %q, want %q", got, want)
+						}
+					})
+				}
+			})
+		}
+	})
+
+	t.Run("Streaming", func(t *testing.T) {
+		for _, protoMajor := range []int{1, 2} {
+			for _, method := range []string{http.MethodGet, http.MethodHead} {
+				for _, tt := range []struct {
+					name    string
+					content string
+					readErr error
+					flush   bool
+				}{
+					{"FullContent", "foobar", nil, false},
+					{"FlushedFullContent", "foobar", nil, true},
+					{"EmptyContent", "", nil, false},
+					{"ReadError", "", errors.New("read failed"), false},
+					{"PartialReadError", "foo", errors.New("read failed"), false},
+					{"FlushedReadError", "foo", errors.New("read failed"), true},
+				} {
+					t.Run("HTTP"+strconv.Itoa(protoMajor)+"/"+method+"/"+tt.name, func(t *testing.T) {
+						server := httptest.NewUnstartedServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+							var content io.Reader = strings.NewReader(tt.content)
+							if tt.readErr != nil {
+								content = io.MultiReader(content, iotest.ErrReader(tt.readErr))
+							}
+							var writer http.ResponseWriter = rw
+							if tt.flush {
+								writer = testResponseWriter{rw, func(p []byte) (int, error) {
+									n, err := rw.Write(p)
+									rw.(http.Flusher).Flush()
+									return n, err
+								}}
+							}
+							responseSuccess(writer, req, struct{ io.Reader }{content}, "text/plain; charset=utf-8", 60)
+						}))
+						server.EnableHTTP2 = protoMajor == 2
+						server.StartTLS()
+						t.Cleanup(server.Close)
+						req, err := http.NewRequest(method, server.URL, nil)
+						if err != nil {
+							t.Fatal(err)
+						}
+						wantError := method == http.MethodGet && tt.readErr != nil
+						resp, err := server.Client().Do(req)
+						if err != nil {
+							if !wantError {
+								t.Fatal(err)
+							}
+							return
+						}
+						defer resp.Body.Close()
+						if got, want := resp.ProtoMajor, protoMajor; got != want {
+							t.Errorf("got protocol major %d, want %d", got, want)
+						}
+						if got, want := resp.StatusCode, http.StatusOK; got != want {
+							t.Errorf("got status %d, want %d", got, want)
+						}
+						if got, want := resp.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+							t.Errorf("got content type %q, want %q", got, want)
+						}
+						if got, want := resp.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
+							t.Errorf("got cache control %q, want %q", got, want)
+						}
+						content, err := io.ReadAll(resp.Body)
+						if got, want := err != nil, wantError; got != want {
+							t.Errorf("got read error %v, want error %t", err, want)
+						}
+						if !wantError {
+							wantContent := tt.content
+							if method == http.MethodHead {
+								wantContent = ""
+							}
+							if got, want := string(content), wantContent; got != want {
+								t.Errorf("got content %q, want %q", got, want)
+							}
+						}
+					})
+				}
+			}
+		}
+	})
+
 	t.Run("CacheControl", func(t *testing.T) {
 		for _, keepHeaders := range []string{"0", "1"} {
 			t.Run("KeepHeaders"+keepHeaders, func(t *testing.T) {
