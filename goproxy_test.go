@@ -118,6 +118,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 		wantStatusCode   int
 		wantContentType  string
 		wantCacheControl string
+		wantVary         string
 		wantContent      string
 	}{
 		{
@@ -126,6 +127,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "application/json; charset=utf-8",
 			wantCacheControl: "public, max-age=60",
+			wantVary:         "Disable-Module-Fetch",
 			wantContent:      info,
 		},
 		{
@@ -135,6 +137,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "application/json; charset=utf-8",
 			wantCacheControl: "public, max-age=60",
+			wantVary:         "Disable-Module-Fetch",
 		},
 		{
 			n:                3,
@@ -209,6 +212,9 @@ func TestGoproxyServeHTTP(t *testing.T) {
 			if got, want := recr.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
+			if got, want := recr.Header.Get("Vary"), tt.wantVary; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
 			if b, err := io.ReadAll(recr.Body); err != nil {
 				t.Errorf("unexpected error %v", err)
 			} else if got, want := string(b), tt.wantContent; got != want {
@@ -226,7 +232,10 @@ func TestGoproxyServeFetch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error %v", err)
 	}
+
+	var upstreamRequests atomic.Int64
 	proxyServer := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		upstreamRequests.Add(1)
 		switch req.URL.Path {
 		case "/example.com/@latest":
 			responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
@@ -245,6 +254,159 @@ func TestGoproxyServeFetch(t *testing.T) {
 			}
 		}
 	}))
+
+	t.Run("CacheControl", func(t *testing.T) {
+		for _, tt := range []struct {
+			name         string
+			target       string
+			content      string
+			cacheControl string
+		}{
+			{"Latest", "example.com/@latest", info, "public, max-age=60"},
+			{"List", "example.com/@v/list", list, "public, max-age=60"},
+			{"Query", "example.com/@v/master.info", info, "public, max-age=60"},
+			{"Info", "example.com/@v/v1.0.0.info", info, "public, max-age=604800"},
+			{"Mod", "example.com/@v/v1.0.0.mod", mod, "public, max-age=604800"},
+			{"Zip", "example.com/@v/v1.0.0.zip", string(zip), "public, max-age=604800"},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				for _, method := range []string{http.MethodGet, http.MethodHead} {
+					t.Run(method, func(t *testing.T) {
+						for _, mode := range []struct {
+							name             string
+							noCache          bool
+							cached           bool
+							noFetch          bool
+							header           http.Header
+							wantStatusCode   int
+							wantCacheControl string
+							wantContent      string
+						}{
+							{
+								name:             "Fetch",
+								header:           http.Header{"Disable-Module-Fetch": {"false"}},
+								wantStatusCode:   http.StatusOK,
+								wantCacheControl: tt.cacheControl,
+								wantContent:      tt.content,
+							},
+							{
+								name:             "CacheMiss",
+								noFetch:          true,
+								wantStatusCode:   http.StatusNotFound,
+								wantCacheControl: "no-store",
+								wantContent:      "not found: temporarily unavailable",
+							},
+							{
+								name:             "CacheDisabled",
+								noCache:          true,
+								noFetch:          true,
+								wantStatusCode:   http.StatusNotFound,
+								wantCacheControl: "no-store",
+								wantContent:      "not found: temporarily unavailable",
+							},
+							{
+								name:             "CacheHit",
+								cached:           true,
+								noFetch:          true,
+								wantStatusCode:   http.StatusOK,
+								wantCacheControl: tt.cacheControl,
+								wantContent:      tt.content,
+							},
+							{
+								name:             "NotModified",
+								cached:           true,
+								noFetch:          true,
+								header:           http.Header{"If-None-Match": {"*"}},
+								wantStatusCode:   http.StatusNotModified,
+								wantCacheControl: tt.cacheControl,
+							},
+							{
+								name:             "PartialContent",
+								cached:           true,
+								noFetch:          true,
+								header:           http.Header{"Range": {"bytes=0-0"}},
+								wantStatusCode:   http.StatusPartialContent,
+								wantCacheControl: tt.cacheControl,
+								wantContent:      tt.content[:1],
+							},
+							{
+								name:             "InvalidRange",
+								cached:           true,
+								noFetch:          true,
+								header:           http.Header{"Range": {"bytes=invalid"}},
+								wantStatusCode:   http.StatusRequestedRangeNotSatisfiable,
+								wantCacheControl: "no-store",
+								wantContent:      "invalid range\n",
+							},
+						} {
+							t.Run(mode.name, func(t *testing.T) {
+								g := &Goproxy{
+									Fetcher: &GoFetcher{
+										Env:     []string{"GOPROXY=" + proxyServer.URL, "GOSUMDB=off"},
+										TempDir: t.TempDir(),
+									},
+									TempDir: t.TempDir(),
+								}
+								if !mode.noCache {
+									g.Cacher = DirCacher(t.TempDir())
+								}
+								if mode.cached {
+									if err := g.Cacher.Put(t.Context(), tt.target, strings.NewReader(tt.content)); err != nil {
+										t.Fatal(err)
+									}
+								}
+								server := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+									rw.Header().Add("Vary", "Accept-Encoding")
+									rw.Header().Add("Vary", "Accept-Language")
+									g.ServeHTTP(rw, req)
+								}))
+								req, err := http.NewRequest(method, server.URL+"/"+tt.target, nil)
+								if err != nil {
+									t.Fatal(err)
+								}
+								for key, values := range mode.header {
+									req.Header[key] = values
+								}
+								if mode.noFetch {
+									req.Header.Set("Disable-Module-Fetch", "true")
+								}
+								requestsBefore := upstreamRequests.Load()
+								resp, err := server.Client().Do(req)
+								if err != nil {
+									t.Fatal(err)
+								}
+								defer resp.Body.Close()
+								if got, want := resp.StatusCode, mode.wantStatusCode; got != want {
+									t.Errorf("got status %d, want %d", got, want)
+								}
+								if got, want := resp.Header.Get("Cache-Control"), mode.wantCacheControl; got != want {
+									t.Errorf("got cache control %q, want %q", got, want)
+								}
+								if got, want := resp.Header.Values("Vary"), []string{"Accept-Encoding", "Accept-Language", "Disable-Module-Fetch"}; !slices.Equal(got, want) {
+									t.Errorf("got vary %q, want %q", got, want)
+								}
+								wantContent := mode.wantContent
+								if method == http.MethodHead {
+									wantContent = ""
+								}
+								if b, err := io.ReadAll(resp.Body); err != nil {
+									t.Errorf("unexpected error %v", err)
+								} else if got, want := string(b), wantContent; got != want {
+									t.Errorf("got content %q, want %q", got, want)
+								}
+								if mode.noFetch {
+									if got, want := upstreamRequests.Load(), requestsBefore; got != want {
+										t.Errorf("got upstream requests %d, want %d", got, want)
+									}
+								}
+							})
+						}
+					})
+				}
+			})
+		}
+	})
+
 	for _, tt := range []struct {
 		n                  int
 		cacher             Cacher
@@ -505,6 +667,9 @@ func TestGoproxyServeFetch(t *testing.T) {
 				t.Errorf("got %q, want %q", got, want)
 			}
 			if got, want := recr.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+			if got, want := recr.Header.Get("Vary"), "Disable-Module-Fetch"; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
 			if b, err := io.ReadAll(recr.Body); err != nil {
@@ -778,7 +943,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			noFetch:          true,
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
-			wantCacheControl: "public, max-age=60",
+			wantCacheControl: "no-store",
 			wantContent:      "not found: temporarily unavailable",
 		},
 		{
