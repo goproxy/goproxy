@@ -145,6 +145,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 // serveFetch serves fetch requests.
 func (g *Goproxy) serveFetch(rw http.ResponseWriter, req *http.Request, target string) {
+	rw.Header().Add("Vary", "Disable-Module-Fetch")
 	noFetch, _ := strconv.ParseBool(req.Header.Get("Disable-Module-Fetch"))
 
 	escapedModulePath, after, ok := strings.Cut(target, "/@")
@@ -423,7 +424,7 @@ func (g *Goproxy) serveCache(rw http.ResponseWriter, req *http.Request, name, co
 			if onNotFound != nil {
 				onNotFound()
 			} else {
-				responseNotFound(rw, req, 60, "temporarily unavailable")
+				responseNotFound(rw, req, -1, "temporarily unavailable")
 			}
 			return
 		}
