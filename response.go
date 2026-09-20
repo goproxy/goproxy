@@ -125,8 +125,13 @@ func responseSuccess(rw http.ResponseWriter, req *http.Request, content io.Reade
 	}
 
 	rw.WriteHeader(http.StatusOK)
-	if req.Method != http.MethodHead {
-		io.Copy(rw, content)
+	if req.Method == http.MethodHead {
+		return
+	}
+
+	if _, err := io.Copy(rw, content); err != nil {
+		// Abort the response so incomplete content is not treated as complete.
+		panic(http.ErrAbortHandler)
 	}
 }
 
