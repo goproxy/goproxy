@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -313,13 +314,17 @@ func TestResponseSuccess(t *testing.T) {
 									t.Fatal(err)
 								}
 								defer resp.Body.Close()
-								if got, want := resp.StatusCode, tt.wantStatusCode; got != want {
+								wantStatusCode, wantCacheControl, wantContentRange := tt.wantStatusCode, tt.wantCacheControl, tt.wantContentRange
+								if method == http.MethodHead && (wantStatusCode == http.StatusPartialContent || wantStatusCode == http.StatusRequestedRangeNotSatisfiable) {
+									wantStatusCode, wantCacheControl, wantContentRange = http.StatusOK, "public, max-age=604800", ""
+								}
+								if got, want := resp.StatusCode, wantStatusCode; got != want {
 									t.Errorf("got status %d, want %d", got, want)
 								}
-								if got, want := resp.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
+								if got, want := resp.Header.Get("Cache-Control"), wantCacheControl; got != want {
 									t.Errorf("got cache control %q, want %q", got, want)
 								}
-								if got, want := resp.Header.Get("Content-Range"), tt.wantContentRange; got != want {
+								if got, want := resp.Header.Get("Content-Range"), wantContentRange; got != want {
 									t.Errorf("got content range %q, want %q", got, want)
 								}
 								if resp.StatusCode == http.StatusNotModified {
@@ -339,6 +344,85 @@ func TestResponseSuccess(t *testing.T) {
 							})
 						}
 					})
+				}
+			})
+		}
+	})
+
+	t.Run("HeadRange", func(t *testing.T) {
+		for _, tt := range []struct {
+			name           string
+			header         http.Header
+			wantStatusCode int
+		}{
+			{"SingleRange", http.Header{"Range": {"bytes=0-2"}}, http.StatusOK},
+			{"MultipleRanges", http.Header{"Range": {"bytes=0-0,2-2"}}, http.StatusOK},
+			{"InvalidRange", http.Header{"Range": {"bytes=invalid"}}, http.StatusOK},
+			{"UnsatisfiableRange", http.Header{"Range": {"bytes=6-"}}, http.StatusOK},
+			{"MatchingIfRangeETag", http.Header{"Range": {"bytes=0-2"}, "If-Range": {`"foobar"`}}, http.StatusOK},
+			{"MismatchedIfRangeETag", http.Header{"Range": {"bytes=0-2"}, "If-Range": {`"other"`}}, http.StatusOK},
+			{"MatchingIfRangeDate", http.Header{"Range": {"bytes=0-2"}, "If-Range": {"Sat, 01 Jan 2000 00:00:00 GMT"}}, http.StatusOK},
+			{"MismatchedIfRangeDate", http.Header{"Range": {"bytes=0-2"}, "If-Range": {"Fri, 31 Dec 1999 00:00:00 GMT"}}, http.StatusOK},
+			{"MatchingIfNoneMatch", http.Header{"Range": {"bytes=invalid"}, "If-None-Match": {`"foobar"`}}, http.StatusNotModified},
+			{"MismatchedIfNoneMatch", http.Header{"Range": {"bytes=0-2"}, "If-None-Match": {`"other"`}}, http.StatusOK},
+			{"NotModifiedSince", http.Header{"Range": {"bytes=invalid"}, "If-Modified-Since": {"Sat, 01 Jan 2000 00:00:00 GMT"}}, http.StatusNotModified},
+			{"ModifiedSince", http.Header{"Range": {"bytes=0-2"}, "If-Modified-Since": {"Fri, 31 Dec 1999 00:00:00 GMT"}}, http.StatusOK},
+			{"MatchingIfMatch", http.Header{"Range": {"bytes=0-2"}, "If-Match": {`"foobar"`}}, http.StatusOK},
+			{"MismatchedIfMatch", http.Header{"Range": {"bytes=invalid"}, "If-Match": {`"other"`}}, http.StatusPreconditionFailed},
+			{"UnmodifiedSince", http.Header{"Range": {"bytes=0-2"}, "If-Unmodified-Since": {"Sat, 01 Jan 2000 00:00:00 GMT"}}, http.StatusOK},
+			{"NotUnmodifiedSince", http.Header{"Range": {"bytes=invalid"}, "If-Unmodified-Since": {"Fri, 31 Dec 1999 00:00:00 GMT"}}, http.StatusPreconditionFailed},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				content := struct {
+					io.ReadSeeker
+					successResponseBody_ModTime
+					successResponseBody_ETag
+				}{
+					strings.NewReader("foobar"),
+					successResponseBody_ModTime{modTime: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)},
+					successResponseBody_ETag{etag: `"foobar"`},
+				}
+				req := httptest.NewRequest(http.MethodHead, "/", nil)
+				req.Header = tt.header.Clone()
+				rec := httptest.NewRecorder()
+				responseSuccess(rec, req, content, "text/plain; charset=utf-8", 604800)
+				resp := rec.Result()
+				if got, want := resp.StatusCode, tt.wantStatusCode; got != want {
+					t.Errorf("got status %d, want %d", got, want)
+				}
+				if got, want := req.Header, tt.header; !reflect.DeepEqual(got, want) {
+					t.Errorf("got request headers %v, want %v", got, want)
+				}
+				if got, want := req.Method, http.MethodHead; got != want {
+					t.Errorf("got method %q, want %q", got, want)
+				}
+				if got, want := rec.Body.String(), ""; got != want {
+					t.Errorf("got content %q, want %q", got, want)
+				}
+				if got, want := resp.Header.Get("Content-Range"), ""; got != want {
+					t.Errorf("got content range %q, want %q", got, want)
+				}
+				if got, want := resp.Header.Get("ETag"), `"foobar"`; got != want {
+					t.Errorf("got ETag %q, want %q", got, want)
+				}
+				wantCacheControl := "public, max-age=604800"
+				if tt.wantStatusCode == http.StatusPreconditionFailed {
+					wantCacheControl = "no-store"
+				}
+				if got, want := resp.Header.Get("Cache-Control"), wantCacheControl; got != want {
+					t.Errorf("got cache control %q, want %q", got, want)
+				}
+				if tt.wantStatusCode == http.StatusOK {
+					for key, want := range map[string]string{
+						"Content-Length": "6",
+						"Content-Type":   "text/plain; charset=utf-8",
+						"Last-Modified":  "Sat, 01 Jan 2000 00:00:00 GMT",
+						"Accept-Ranges":  "bytes",
+					} {
+						if got := resp.Header.Get(key); got != want {
+							t.Errorf("got %s %q, want %q", key, got, want)
+						}
+					}
 				}
 			})
 		}
