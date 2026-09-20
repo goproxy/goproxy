@@ -3,6 +3,7 @@ package goproxy
 import (
 	"archive/zip"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -24,6 +25,7 @@ import (
 	"time"
 
 	"golang.org/x/mod/module"
+	"golang.org/x/mod/sumdb/tlog"
 )
 
 var dialableTCPAddrs sync.Map
@@ -922,10 +924,239 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 }
 
 func TestGoproxyServeSumDB(t *testing.T) {
+	t.Run("StatError", func(t *testing.T) {
+		tempDir := t.TempDir()
+		removeErr := make(chan error, 1)
+		server := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			removeErr <- os.RemoveAll(tempDir)
+			fmt.Fprint(rw, "latest")
+		}))
+		cacheCalls := 0
+		g := &Goproxy{
+			ProxiedSumDBs: []string{"sumdb.example.com " + server.URL},
+			TempDir:       tempDir,
+			Logger:        slog.New(slog.DiscardHandler),
+			Cacher: &testCacher{
+				get: func(ctx context.Context, c Cacher, name string) (io.ReadCloser, error) {
+					cacheCalls++
+					return nil, fs.ErrNotExist
+				},
+				put: func(ctx context.Context, c Cacher, name string, content io.ReadSeeker) error {
+					cacheCalls++
+					return nil
+				},
+			},
+		}
+		rec := httptest.NewRecorder()
+		g.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/sumdb/sumdb.example.com/latest", nil))
+		if err := <-removeErr; err != nil {
+			t.Skipf("cannot remove open temporary file: %v", err)
+		}
+		if got, want := rec.Code, http.StatusInternalServerError; got != want {
+			t.Errorf("got status %d, want %d", got, want)
+		}
+		if got, want := rec.Body.String(), "internal server error"; got != want {
+			t.Errorf("got content %q, want %q", got, want)
+		}
+		if got, want := cacheCalls, 0; got != want {
+			t.Errorf("got %d cache calls, want %d", got, want)
+		}
+	})
+
+	t.Run("ReadError", func(t *testing.T) {
+		body := strings.Repeat("x", 128)
+		server := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			rw.Header().Set("Content-Length", "129")
+			fmt.Fprint(rw, body)
+		}))
+		for _, tt := range []struct {
+			name   string
+			cached bool
+		}{
+			{"CacheMiss", false},
+			{"CacheHit", true},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				cacheReads := 0
+				g := &Goproxy{
+					ProxiedSumDBs: []string{"sumdb.example.com " + server.URL},
+					TempDir:       t.TempDir(),
+					Logger:        slog.New(slog.DiscardHandler),
+					Cacher: &testCacher{
+						get: func(ctx context.Context, c Cacher, name string) (io.ReadCloser, error) {
+							cacheReads++
+							if tt.cached {
+								return io.NopCloser(strings.NewReader(body)), nil
+							}
+							return nil, fs.ErrNotExist
+						},
+						put: func(ctx context.Context, c Cacher, name string, content io.ReadSeeker) error {
+							t.Error("unexpected cache write")
+							return nil
+						},
+					},
+				}
+				rec := httptest.NewRecorder()
+				g.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/sumdb/sumdb.example.com/tile/2/0/000", nil))
+				wantStatusCode, wantContent, wantCacheControl := http.StatusInternalServerError, "internal server error", ""
+				if tt.cached {
+					wantStatusCode, wantContent, wantCacheControl = http.StatusOK, body, "public, max-age=86400"
+				}
+				if got, want := rec.Code, wantStatusCode; got != want {
+					t.Errorf("got status %d, want %d", got, want)
+				}
+				if got, want := rec.Body.String(), wantContent; got != want {
+					t.Errorf("got content %q, want %q", got, want)
+				}
+				if got, want := rec.Header().Get("Cache-Control"), wantCacheControl; got != want {
+					t.Errorf("got cache control %q, want %q", got, want)
+				}
+				if got, want := cacheReads, 1; got != want {
+					t.Errorf("got %d cache reads, want %d", got, want)
+				}
+				if entries, err := os.ReadDir(g.TempDir); err != nil {
+					t.Errorf("unexpected error %v", err)
+				} else if len(entries) != 0 {
+					t.Errorf("unexpected temporary files %v", entries)
+				}
+			})
+		}
+	})
+
+	t.Run("ResponseBodies", func(t *testing.T) {
+		for _, tt := range []struct {
+			name  string
+			path  string
+			body  string
+			valid bool
+		}{
+			{"Latest", "/latest", "latest", true},
+			{"EmptyLatest", "/latest", "", false},
+			{"Lookup", "/lookup/example.com@v1.0.0", "lookup", true},
+			{"EmptyLookup", "/lookup/example.com@v1.0.0", "", false},
+			{"DataTile", "/tile/2/data/000", strings.Repeat("record\n\n", 4), true},
+			{"PartialDataTile", "/tile/2/data/000.p/1", strings.Repeat("record", 20) + "\n\n", true},
+			{"EmptyDataTile", "/tile/2/data/000", "", false},
+			{"EmptyPartialDataTile", "/tile/2/data/000.p/1", "", false},
+			{"HashTile", "/tile/2/0/000", strings.Repeat("x", 128), true},
+			{"EmptyHashTile", "/tile/2/0/000", "", false},
+			{"ShortHashTile", "/tile/2/0/000", strings.Repeat("x", 127), false},
+			{"LongHashTile", "/tile/2/0/000", strings.Repeat("x", 129), false},
+			{"PartialHashTile", "/tile/2/0/000.p/2", strings.Repeat("x", 64), true},
+			{"EmptyPartialHashTile", "/tile/2/0/000.p/2", "", false},
+			{"ShortPartialHashTile", "/tile/2/0/000.p/2", strings.Repeat("x", 63), false},
+			{"LongPartialHashTile", "/tile/2/0/000.p/2", strings.Repeat("x", 65), false},
+			{"FullTileForPartialTile", "/tile/2/0/000.p/2", strings.Repeat("x", 128), false},
+			{"MaximumTileHeight", "/tile/30/0/000", "x", false},
+		} {
+			for _, mode := range []struct {
+				name    string
+				method  string
+				cached  bool
+				chunked bool
+				gzip    bool
+			}{
+				{"GET", http.MethodGet, false, false, false},
+				{"HEAD", http.MethodHead, false, false, false},
+				{"Cached", http.MethodGet, true, false, false},
+				{"Chunked", http.MethodGet, false, true, false},
+				{"Gzip", http.MethodGet, false, false, true},
+			} {
+				t.Run(tt.name+"/"+mode.name, func(t *testing.T) {
+					sumdbServer := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+						switch {
+						case mode.gzip:
+							rw.Header().Set("Content-Encoding", "gzip")
+							zw := gzip.NewWriter(rw)
+							defer zw.Close()
+							fmt.Fprint(zw, tt.body)
+							return
+						case mode.chunked:
+							rw.(http.Flusher).Flush()
+						default:
+							rw.Header().Set("Content-Length", strconv.Itoa(len(tt.body)))
+						}
+						fmt.Fprint(rw, tt.body)
+					}))
+					cacheReads, cacheWrites := 0, 0
+					g := &Goproxy{
+						ProxiedSumDBs: []string{"sumdb.example.com " + sumdbServer.URL},
+						TempDir:       t.TempDir(),
+						Logger:        slog.New(slog.DiscardHandler),
+						Cacher: &testCacher{
+							get: func(ctx context.Context, c Cacher, name string) (io.ReadCloser, error) {
+								cacheReads++
+								if mode.cached {
+									return io.NopCloser(strings.NewReader("cached")), nil
+								}
+								return nil, fs.ErrNotExist
+							},
+							put: func(ctx context.Context, c Cacher, name string, content io.ReadSeeker) error {
+								cacheWrites++
+								if b, err := io.ReadAll(content); err != nil {
+									t.Errorf("unexpected error %v", err)
+								} else if got, want := string(b), tt.body; got != want {
+									t.Errorf("got cached content %q, want %q", got, want)
+								}
+								return nil
+							},
+						},
+					}
+					rec := httptest.NewRecorder()
+					g.ServeHTTP(rec, httptest.NewRequest(mode.method, "/sumdb/sumdb.example.com"+tt.path, nil))
+					wantStatusCode, wantContent := http.StatusOK, tt.body
+					wantCacheControl := "public, max-age=86400"
+					if tt.path == "/latest" {
+						wantCacheControl = "public, max-age=3600"
+					}
+					wantReads, wantWrites := 0, 1
+					if !tt.valid {
+						wantReads, wantWrites = 1, 0
+						if mode.cached {
+							wantContent = "cached"
+						} else {
+							wantStatusCode, wantContent = http.StatusNotFound, "not found: bad upstream"
+							wantCacheControl = "must-revalidate, no-cache, no-store"
+						}
+					}
+					if mode.method == http.MethodHead {
+						wantContent = ""
+					}
+					if got, want := rec.Code, wantStatusCode; got != want {
+						t.Errorf("got status %d, want %d", got, want)
+					}
+					if got, want := rec.Header().Get("Cache-Control"), wantCacheControl; got != want {
+						t.Errorf("got cache control %q, want %q", got, want)
+					}
+					if got, want := rec.Body.String(), wantContent; got != want {
+						t.Errorf("got content %q, want %q", got, want)
+					}
+					if got, want := cacheReads, wantReads; got != want {
+						t.Errorf("got %d cache reads, want %d", got, want)
+					}
+					if got, want := cacheWrites, wantWrites; got != want {
+						t.Errorf("got %d cache writes, want %d", got, want)
+					}
+					if entries, err := os.ReadDir(g.TempDir); err != nil {
+						t.Errorf("unexpected error %v", err)
+					} else if len(entries) != 0 {
+						t.Errorf("unexpected temporary files %v", entries)
+					}
+				})
+			}
+		}
+	})
+
 	t.Run("Paths", func(t *testing.T) {
 		var upstreamRequests atomic.Int32
+		var upstreamPath atomic.Value
 		sumdbServer := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 			upstreamRequests.Add(1)
+			upstreamPath.Store(req.URL.Path)
+			if tile, err := tlog.ParseTilePath(strings.TrimPrefix(req.URL.Path, "/base/")); err == nil && tile.L >= 0 {
+				fmt.Fprint(rw, strings.Repeat("x", tile.W*tlog.HashSize))
+				return
+			}
 			fmt.Fprint(rw, req.URL.Path)
 		}))
 		for _, tt := range []struct {
@@ -990,7 +1221,13 @@ func TestGoproxyServeSumDB(t *testing.T) {
 				for _, method := range []string{http.MethodGet, http.MethodHead} {
 					t.Run(method, func(t *testing.T) {
 						req := httptest.NewRequest(method, "/sumdb/sumdb.example.com"+tt.path, nil)
-						wantContent := "/base" + strings.TrimPrefix(req.URL.Path, "/sumdb/sumdb.example.com")
+						wantPath := "/base" + strings.TrimPrefix(req.URL.Path, "/sumdb/sumdb.example.com")
+						wantContent := wantPath
+						if tt.valid {
+							if tile, err := tlog.ParseTilePath(strings.TrimPrefix(wantPath, "/base/")); err == nil && tile.L >= 0 {
+								wantContent = strings.Repeat("x", tile.W*tlog.HashSize)
+							}
+						}
 						cacheWrites := 0
 						g := &Goproxy{
 							ProxiedSumDBs: []string{"sumdb.example.com " + sumdbServer.URL + "/base"},
@@ -1020,6 +1257,9 @@ func TestGoproxyServeSumDB(t *testing.T) {
 						wantStatusCode, wantCalls := http.StatusNotFound, 0
 						if tt.valid {
 							wantStatusCode, wantCalls = http.StatusOK, 1
+							if got, want := upstreamPath.Load(), wantPath; got != want {
+								t.Errorf("got upstream path %q, want %q", got, want)
+							}
 						} else {
 							wantContent = "not found"
 						}
@@ -1097,11 +1337,12 @@ func TestGoproxyServeSumDB(t *testing.T) {
 		},
 		{
 			n:                4,
+			sumdbHandler:     func(rw http.ResponseWriter, req *http.Request) { fmt.Fprint(rw, strings.Repeat("x", 128)) },
 			target:           "sumdb/sumdb.example.com/tile/2/0/000",
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "application/octet-stream",
 			wantCacheControl: "public, max-age=86400",
-			wantContent:      "/tile/2/0/000",
+			wantContent:      strings.Repeat("x", 128),
 		},
 		{
 			n:                5,
