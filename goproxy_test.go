@@ -105,6 +105,42 @@ func TestGoproxyInit(t *testing.T) {
 	} else if got := g.httpClient.Transport; got != nil {
 		t.Errorf("got %#v, want nil", got)
 	}
+
+	t.Run("ProxiedSumDBs", func(t *testing.T) {
+		for _, tt := range []struct {
+			name    string
+			entries []string
+			want    map[string]string
+		}{
+			{"Empty", nil, nil},
+			{"Invalid", []string{"", " \t", "example.com/v2 ://invalid"}, nil},
+			{
+				"Duplicate",
+				[]string{"example.com/v2 https://first.example.com", "example.com", "example.com/v2 https://last.example.com/base"},
+				map[string]string{"example.com/v2": "https://last.example.com/base", "example.com": "https://example.com"},
+			},
+			{
+				"InvalidDuplicate",
+				[]string{"example.com/v2 https://first.example.com", "example.com/v2 ://invalid"},
+				map[string]string{"example.com/v2": "https://first.example.com"},
+			},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				g := &Goproxy{ProxiedSumDBs: slices.Clone(tt.entries)}
+				g.initOnce.Do(g.init)
+				got := make(map[string]string, len(g.proxiedSumDBs))
+				for name, u := range g.proxiedSumDBs {
+					got[name] = u.String()
+				}
+				if !maps.Equal(got, tt.want) {
+					t.Errorf("got %q, want %q", got, tt.want)
+				}
+				if !slices.Equal(g.ProxiedSumDBs, tt.entries) {
+					t.Errorf("configuration changed: got %q, want %q", g.ProxiedSumDBs, tt.entries)
+				}
+			})
+		}
+	})
 }
 
 func TestGoproxyServeHTTP(t *testing.T) {
@@ -1217,6 +1253,182 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 }
 
 func TestGoproxyServeSumDB(t *testing.T) {
+	t.Run("NamePaths", func(t *testing.T) {
+		for _, tt := range []struct {
+			name        string
+			sumdbName   string
+			wantBaseURL string
+		}{
+			{"Host", "sumdb.example.com", "https://sumdb.example.com"},
+			{"Path", "sumdb.example.com/v2", "https://sumdb.example.com/v2"},
+			{"NestedPath", "sumdb.example.com/v2/nested", "https://upstream.example.com/base"},
+			{"SiblingPrefix", "sumdb.example.com/v20", "https://other.example.com/mirror"},
+			{"EqualLength", "sumdb.example.com/v3", "https://upstream.example.com/third"},
+			{"EndpointName", "other.example.com/lookup", "https://other.example.com/lookup"},
+		} {
+			for _, resource := range []struct {
+				name        string
+				path        string
+				contentType string
+				maxAge      int
+			}{
+				{"Supported", "/supported", "", 86400},
+				{"Latest", "/latest", "text/plain; charset=utf-8", 3600},
+				{"Lookup", "/lookup/example.com/!project@v1.2.3", "text/plain; charset=utf-8", 86400},
+				{"HashTile", "/tile/2/0/000", "application/octet-stream", 86400},
+				{"PartialHashTile", "/tile/3/0/000.p/4", "application/octet-stream", 86400},
+				{"DataTile", "/tile/2/data/000", "text/plain; charset=utf-8", 86400},
+				{"PartialDataTile", "/tile/2/data/000.p/1", "text/plain; charset=utf-8", 86400},
+			} {
+				for _, mode := range []struct {
+					name   string
+					method string
+					cached bool
+				}{
+					{"GET", http.MethodGet, false},
+					{"HEAD", http.MethodHead, false},
+					{"Cached", http.MethodGet, true},
+					{"CachedHEAD", http.MethodHead, true},
+				} {
+					t.Run(tt.name+"/"+resource.name+"/"+mode.name, func(t *testing.T) {
+						target := "sumdb/" + tt.sumdbName + resource.path
+						body := strings.Repeat("x", 128)
+						upstreamCalls, cacheReads, cacheWrites := 0, 0, 0
+						g := &Goproxy{
+							ProxiedSumDBs: []string{
+								"sumdb.example.com",
+								"sumdb.example.com/v2",
+								"sumdb.example.com/v2/nested https://upstream.example.com/base",
+								"sumdb.example.com/v20 https://other.example.com/mirror",
+								"sumdb.example.com/v3 https://upstream.example.com/third",
+								"other.example.com/lookup",
+							},
+							Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+								upstreamCalls++
+								if got, want := req.URL.String(), tt.wantBaseURL+resource.path; got != want {
+									t.Errorf("got upstream URL %q, want %q", got, want)
+								}
+								if got, want := req.Method, http.MethodGet; got != want {
+									t.Errorf("got upstream method %q, want %q", got, want)
+								}
+								statusCode := http.StatusOK
+								if mode.cached {
+									statusCode = http.StatusNotFound
+								}
+								return &http.Response{StatusCode: statusCode, Body: io.NopCloser(strings.NewReader(body))}, nil
+							}),
+							Cacher: &testCacher{
+								get: func(ctx context.Context, c Cacher, name string) (io.ReadCloser, error) {
+									cacheReads++
+									if got, want := name, target; got != want {
+										t.Errorf("got cache name %q, want %q", got, want)
+									}
+									return io.NopCloser(strings.NewReader(body)), nil
+								},
+								put: func(ctx context.Context, c Cacher, name string, content io.ReadSeeker) error {
+									cacheWrites++
+									if got, want := name, target; got != want {
+										t.Errorf("got cache name %q, want %q", got, want)
+									}
+									if b, err := io.ReadAll(content); err != nil {
+										t.Error(err)
+									} else if got, want := string(b), body; got != want {
+										t.Errorf("got cached content %q, want %q", got, want)
+									}
+									return nil
+								},
+							},
+							TempDir: t.TempDir(),
+							Logger:  slog.New(slog.DiscardHandler),
+						}
+						rec := httptest.NewRecorder()
+						g.ServeHTTP(rec, httptest.NewRequest(mode.method, "/"+target, nil))
+						if got, want := rec.Code, http.StatusOK; got != want {
+							t.Errorf("got status %d, want %d", got, want)
+						}
+						if got, want := rec.Header().Get("Content-Type"), resource.contentType; got != want {
+							t.Errorf("got content type %q, want %q", got, want)
+						}
+						if got, want := rec.Header().Get("Cache-Control"), "public, max-age="+strconv.Itoa(resource.maxAge); got != want {
+							t.Errorf("got cache control %q, want %q", got, want)
+						}
+						wantContent := body
+						wantCalls, wantReads, wantWrites := 1, 0, 1
+						if mode.cached {
+							wantReads, wantWrites = 1, 0
+						}
+						if resource.path == "/supported" {
+							wantContent = ""
+							wantCalls, wantReads, wantWrites = 0, 0, 0
+						}
+						if mode.method == http.MethodHead {
+							wantContent = ""
+						}
+						if got, want := rec.Body.String(), wantContent; got != want {
+							t.Errorf("got content %q, want %q", got, want)
+						}
+						if got, want := upstreamCalls, wantCalls; got != want {
+							t.Errorf("got %d upstream requests, want %d", got, want)
+						}
+						if got, want := cacheReads, wantReads; got != want {
+							t.Errorf("got %d cache reads, want %d", got, want)
+						}
+						if got, want := cacheWrites, wantWrites; got != want {
+							t.Errorf("got %d cache writes, want %d", got, want)
+						}
+					})
+				}
+			}
+		}
+	})
+
+	t.Run("NameBoundaries", func(t *testing.T) {
+		g := &Goproxy{
+			ProxiedSumDBs: []string{
+				"sumdb.example.com",
+				"sumdb.example.com/v2",
+				"sumdb.example.com/lookup",
+				"sumdb.example.com/tile",
+			},
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				t.Errorf("unexpected upstream request %s", req.URL)
+				return nil, context.Canceled
+			}),
+			TempDir: filepath.Join(t.TempDir(), "404"),
+			Logger:  slog.New(slog.DiscardHandler),
+		}
+		for _, tt := range []struct {
+			name string
+			path string
+		}{
+			{"UnknownHost", "other.example.com/v2/supported"},
+			{"HostSuffix", "sumdb.example.com.evil/supported"},
+			{"UnknownPath", "sumdb.example.com/v3/supported"},
+			{"PathSuffix", "sumdb.example.com/v20/supported"},
+			{"MissingResource", "sumdb.example.com/v2"},
+			{"UnknownResource", "sumdb.example.com/v2/unknown"},
+			{"SupportedSuffix", "sumdb.example.com/v2/supported/extra"},
+			{"LatestSuffix", "sumdb.example.com/v2/latest/extra"},
+			{"InvalidLookup", "sumdb.example.com/v2/lookup/example.com@main"},
+			{"InvalidTile", "sumdb.example.com/v2/tile/8/0/1"},
+			{"LookupNameOverlap", "sumdb.example.com/lookup/example.com@v1.0.0"},
+			{"TileNameOverlap", "sumdb.example.com/tile/2/0/000"},
+		} {
+			for _, method := range []string{http.MethodGet, http.MethodHead} {
+				t.Run(tt.name+"/"+method, func(t *testing.T) {
+					rec := httptest.NewRecorder()
+					g.ServeHTTP(rec, httptest.NewRequest(method, "/sumdb/"+tt.path, nil))
+					if got, want := rec.Code, http.StatusNotFound; got != want {
+						t.Errorf("got status %d, want %d", got, want)
+					}
+					if got, want := rec.Header().Get("Cache-Control"), "public, max-age=86400"; got != want {
+						t.Errorf("got cache control %q, want %q", got, want)
+					}
+				})
+			}
+		}
+	})
+
 	t.Run("StatError", func(t *testing.T) {
 		tempDir := t.TempDir()
 		removeErr := make(chan error, 1)

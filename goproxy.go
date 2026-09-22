@@ -44,12 +44,15 @@ type Goproxy struct {
 	// ProxiedSumDBs is a list of proxied checksum databases (see
 	// https://go.dev/design/25530-sumdb#proxying-a-checksum-database). Each
 	// entry is in the form "<sumdb-name>" or "<sumdb-name> <sumdb-URL>".
-	// The first form is a shorthand for the second, where the corresponding
-	// <sumdb-URL> will be the <sumdb-name> itself as a host with an "https"
-	// scheme. Invalid entries will be silently ignored.
+	// The <sumdb-name> is in the form "host[/path]". If <sumdb-URL> is
+	// omitted, "https://<sumdb-name>" is used. Invalid entries will be
+	// silently ignored.
 	//
 	// If ProxiedSumDBs contains duplicate checksum database names, only the
 	// last value in the slice for each duplicate name is used.
+	//
+	// If multiple checksum database names in ProxiedSumDBs match a request
+	// path at a path segment boundary, the longest name is used.
 	ProxiedSumDBs []string
 
 	// Cacher is used to cache content, such as module files and proxied
@@ -92,7 +95,7 @@ func (g *Goproxy) init() {
 		g.fetcher = &GoFetcher{TempDir: g.TempDir, Transport: g.Transport}
 	}
 
-	g.proxiedSumDBs = make(map[string]*url.URL)
+	g.proxiedSumDBs = make(map[string]*url.URL, len(g.ProxiedSumDBs))
 	for _, sumdb := range g.ProxiedSumDBs {
 		parts := strings.Fields(sumdb)
 		if len(parts) == 0 {
@@ -320,17 +323,22 @@ func (g *Goproxy) serveFetchDownload(rw http.ResponseWriter, req *http.Request, 
 
 // serveSumDB serves checksum database proxy requests.
 func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, target string) {
-	name, path, ok := strings.Cut(strings.TrimPrefix(target, "sumdb/"), "/")
-	if !ok {
-		responseNotFound(rw, req, 86400)
-		return
+	path := strings.TrimPrefix(target, "sumdb/")
+	var name string
+	for n := range g.proxiedSumDBs {
+		if len(n) <= len(name) {
+			continue
+		}
+		if p, ok := strings.CutPrefix(path, n); ok && strings.HasPrefix(p, "/") {
+			name = n
+		}
 	}
-	path = "/" + path // Add the leading slash back.
 	u, ok := g.proxiedSumDBs[name]
 	if !ok {
 		responseNotFound(rw, req, 86400)
 		return
 	}
+	path = path[len(name):]
 
 	var (
 		contentType           string
