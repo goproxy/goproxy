@@ -2,6 +2,7 @@ package goproxy
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/x509"
 	"errors"
@@ -15,12 +16,133 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
+	"testing/iotest"
 	"time"
 )
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+type testHTTPResponseBody struct {
+	io.Reader
+	bytesRead int
+	closed    bool
+}
+
+func (b *testHTTPResponseBody) Read(p []byte) (int, error) {
+	n, err := b.Reader.Read(p)
+	b.bytesRead += n
+	return n, err
+}
+
+func (b *testHTTPResponseBody) Close() error {
+	b.closed = true
+	return nil
+}
+
 func TestHTTPGet(t *testing.T) {
+	t.Run("ErrorBodyLimit", func(t *testing.T) {
+		const maxErrorBodySize = 4 << 10
+		atLimit := strings.Repeat("x", maxErrorBodySize)
+		aboveLimit := atLimit + "x"
+		for _, statusCode := range []int{
+			http.StatusBadRequest, http.StatusNotFound, http.StatusGone,
+			http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway,
+			http.StatusServiceUnavailable, http.StatusGatewayTimeout, http.StatusNotImplemented,
+		} {
+			for _, tt := range []struct {
+				name        string
+				content     io.Reader
+				wantRead    int
+				wantMessage string
+				wantErr     error
+			}{
+				{"Empty", strings.NewReader(""), 0, "", nil},
+				{"Small", strings.NewReader("not found"), 9, "not found", nil},
+				{"BelowLimit", strings.NewReader(atLimit[:maxErrorBodySize-1]), maxErrorBodySize - 1, atLimit[:maxErrorBodySize-1], nil},
+				{"AtLimit", strings.NewReader(atLimit), maxErrorBodySize, atLimit, nil},
+				{"AboveLimit", strings.NewReader(aboveLimit), maxErrorBodySize + 1, atLimit + "... (truncated)", nil},
+				{"BadUpstreamAfterLimit", strings.NewReader(aboveLimit + "bad upstream"), maxErrorBodySize + 1, atLimit + "... (truncated)", nil},
+				{"TimeoutAfterLimit", strings.NewReader(aboveLimit + "fetch timed out"), maxErrorBodySize + 1, atLimit + "... (truncated)", nil},
+				{"TwoByteRune", strings.NewReader(atLimit[:maxErrorBodySize-1] + "\u00e9"), maxErrorBodySize + 1, atLimit[:maxErrorBodySize-1] + "... (truncated)", nil},
+				{"ThreeByteRune", strings.NewReader(atLimit[:maxErrorBodySize-2] + "\u4e2d"), maxErrorBodySize + 1, atLimit[:maxErrorBodySize-2] + "... (truncated)", nil},
+				{"FourByteRune", strings.NewReader(atLimit[:maxErrorBodySize-3] + "\U0001f600"), maxErrorBodySize + 1, atLimit[:maxErrorBodySize-3] + "... (truncated)", nil},
+				{"CompleteRuneAtLimit", strings.NewReader(atLimit[:maxErrorBodySize-3] + "\u4e2d" + "x"), maxErrorBodySize + 1, atLimit[:maxErrorBodySize-3] + "\u4e2d... (truncated)", nil},
+				{"InvalidUTF8", strings.NewReader(strings.Repeat("\x80", maxErrorBodySize+1)), maxErrorBodySize + 1, "... (truncated)", nil},
+				{"ReadError", iotest.ErrReader(io.ErrUnexpectedEOF), 0, "", io.ErrUnexpectedEOF},
+				{"DataAndReadError", iotest.DataErrReader(io.MultiReader(strings.NewReader("foo"), iotest.ErrReader(io.ErrUnexpectedEOF))), 3, "", io.ErrUnexpectedEOF},
+				{"AboveLimitAndReadError", iotest.DataErrReader(io.MultiReader(strings.NewReader(aboveLimit), iotest.ErrReader(io.ErrUnexpectedEOF))), maxErrorBodySize + 1, "", io.ErrUnexpectedEOF},
+				{"ReadErrorAfterLimit", io.MultiReader(strings.NewReader(aboveLimit), iotest.ErrReader(io.ErrUnexpectedEOF)), maxErrorBodySize + 1, atLimit + "... (truncated)", nil},
+			} {
+				t.Run(strconv.Itoa(statusCode)+"/"+tt.name, func(t *testing.T) {
+					body := &testHTTPResponseBody{Reader: tt.content}
+					attempts := 0
+					client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						attempts++
+						if attempts > 1 {
+							if !body.closed {
+								t.Error("response body was not closed before retrying")
+							}
+							return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+						}
+						return &http.Response{
+							StatusCode:    statusCode,
+							Status:        strconv.Itoa(statusCode) + " " + http.StatusText(statusCode),
+							Body:          body,
+							ContentLength: -1,
+							Request:       req,
+						}, nil
+					})}
+					err := httpGet(t.Context(), client, "https://example.com", nil)
+					if got, want := body.bytesRead, tt.wantRead; got != want {
+						t.Errorf("got bytes read %d, want %d", got, want)
+					}
+					if !body.closed {
+						t.Error("response body was not closed")
+					}
+					wantAttempts := 1
+					if tt.wantErr != nil {
+						if !errors.Is(err, tt.wantErr) {
+							t.Errorf("got %v, want %v", err, tt.wantErr)
+						}
+					} else {
+						switch statusCode {
+						case http.StatusBadRequest, http.StatusNotFound, http.StatusGone:
+							if !errors.Is(err, fs.ErrNotExist) {
+								t.Fatalf("got %v, want %v", err, fs.ErrNotExist)
+							}
+							if got, want := err.Error(), tt.wantMessage; got != want {
+								t.Errorf("got %q, want %q", got, want)
+							}
+							rec := httptest.NewRecorder()
+							responseError(rec, httptest.NewRequest(http.MethodGet, "/", nil), err, false)
+							if got, want := rec.Header().Get("Cache-Control"), "public, max-age=600"; got != want {
+								t.Errorf("got %q, want %q", got, want)
+							}
+						case http.StatusNotImplemented:
+							want := "GET https://example.com: 501 Not Implemented: " + tt.wantMessage
+							if err == nil || err.Error() != want {
+								t.Errorf("got %v, want %s", err, want)
+							}
+						default:
+							wantAttempts = 2
+							if err != nil {
+								t.Errorf("unexpected error %v", err)
+							}
+						}
+					}
+					if got, want := attempts, wantAttempts; got != want {
+						t.Errorf("got attempts %d, want %d", got, want)
+					}
+				})
+			}
+		}
+	})
+
 	t.Run("CacheRestrictions", func(t *testing.T) {
 		for _, statusCode := range []int{http.StatusBadRequest, http.StatusNotFound, http.StatusGone} {
 			for _, tt := range []struct {
@@ -163,6 +285,11 @@ func TestHTTPGet(t *testing.T) {
 					return fmt.Errorf("Get %q: context deadline exceeded (Client.Timeout exceeded while awaiting headers)", serverURL)
 				},
 			},
+			{
+				n:           10,
+				handler:     func(rw http.ResponseWriter, req *http.Request) { io.WriteString(rw, strings.Repeat("x", 8<<10)) },
+				wantContent: strings.Repeat("x", 8<<10),
+			},
 		} {
 			t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
 				ctx := t.Context()
@@ -224,6 +351,86 @@ func TestHTTPGet(t *testing.T) {
 }
 
 func TestHTTPGetTemp(t *testing.T) {
+	t.Run("ErrorBodyLimit", func(t *testing.T) {
+		for _, tt := range []struct {
+			name             string
+			chunked          bool
+			gzip             bool
+			header           http.Header
+			wantCacheControl string
+		}{
+			{"ContentLength", false, false, nil, "public, max-age=600"},
+			{"Chunked", true, false, nil, "public, max-age=600"},
+			{"Gzip", false, true, nil, "public, max-age=600"},
+			{"NoStore", false, false, http.Header{"Cache-Control": {"no-store"}}, "no-store"},
+			{"NoCache", true, false, http.Header{"Cache-Control": {"no-cache"}}, "no-store"},
+			{"Private", false, true, http.Header{"Cache-Control": {"private"}}, "no-store"},
+			{"VaryAll", false, false, http.Header{"Vary": {"*"}}, "no-store"},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				body := []byte(strings.Repeat("x", 8<<10))
+				if tt.gzip {
+					var buf bytes.Buffer
+					zw := gzip.NewWriter(&buf)
+					if _, err := zw.Write(body); err != nil {
+						t.Fatal(err)
+					}
+					if err := zw.Close(); err != nil {
+						t.Fatal(err)
+					}
+					body = buf.Bytes()
+				}
+				server := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+					maps.Copy(rw.Header(), tt.header)
+					if tt.gzip {
+						rw.Header().Set("Content-Encoding", "gzip")
+					}
+					if !tt.chunked {
+						rw.Header().Set("Content-Length", strconv.Itoa(len(body)))
+					}
+					rw.WriteHeader(http.StatusNotFound)
+					if tt.chunked {
+						rw.(http.Flusher).Flush()
+					}
+					rw.Write(body)
+				}))
+				tempDir := t.TempDir()
+				file, err := httpGetTemp(t.Context(), http.DefaultClient, server.URL, tempDir)
+				if !errors.Is(err, fs.ErrNotExist) {
+					t.Fatalf("got %v, want %v", err, fs.ErrNotExist)
+				}
+				if got, want := err.Error(), strings.Repeat("x", 4<<10)+"... (truncated)"; got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
+				for _, method := range []string{http.MethodGet, http.MethodHead} {
+					rec := httptest.NewRecorder()
+					responseError(rec, httptest.NewRequest(method, "/", nil), err, false)
+					if got, want := rec.Code, http.StatusNotFound; got != want {
+						t.Errorf("method %s: got status %d, want %d", method, got, want)
+					}
+					if got, want := rec.Header().Get("Cache-Control"), tt.wantCacheControl; got != want {
+						t.Errorf("method %s: got cache control %q, want %q", method, got, want)
+					}
+					wantContent := "not found: " + err.Error()
+					if method == http.MethodHead {
+						wantContent = ""
+					}
+					if got, want := rec.Body.String(), wantContent; got != want {
+						t.Errorf("method %s: got content %q, want %q", method, got, want)
+					}
+				}
+				if file != "" {
+					t.Errorf("got temporary file %q, want none", file)
+				}
+				if entries, err := os.ReadDir(tempDir); err != nil {
+					t.Fatal(err)
+				} else if len(entries) != 0 {
+					t.Errorf("got %d temporary files, want none", len(entries))
+				}
+			})
+		}
+	})
+
 	for _, tt := range []struct {
 		n           int
 		handler     http.HandlerFunc

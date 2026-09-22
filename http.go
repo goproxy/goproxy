@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/aofei/backoff"
 )
@@ -18,9 +19,10 @@ import (
 // httpGet gets the content from the given url and writes it to the dst.
 func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer) error {
 	const (
-		maxAttempts = 10
-		backoffBase = 100 * time.Millisecond
-		backoffCap  = time.Second
+		maxAttempts      = 10
+		backoffBase      = 100 * time.Millisecond
+		backoffCap       = time.Second
+		maxErrorBodySize = 4 << 10
 	)
 
 	var lastErr error
@@ -46,10 +48,18 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 			return err
 		}
 
-		respBody, err := io.ReadAll(resp.Body)
+		respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodySize+1))
 		resp.Body.Close()
 		if err != nil {
 			return err
+		}
+		if len(respBody) > maxErrorBodySize {
+			// Avoid splitting a UTF-8 sequence at the truncation boundary.
+			end := maxErrorBodySize
+			for end > 0 && !utf8.RuneStart(respBody[end]) {
+				end--
+			}
+			respBody = append(respBody[:end], "... (truncated)"...)
 		}
 		switch resp.StatusCode {
 		case http.StatusBadRequest,
