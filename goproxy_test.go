@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -107,6 +108,74 @@ func TestGoproxyInit(t *testing.T) {
 }
 
 func TestGoproxyServeHTTP(t *testing.T) {
+	t.Run("UpstreamCacheRestrictions", func(t *testing.T) {
+		for _, tt := range []struct {
+			name         string
+			cacheControl string
+		}{
+			{"Ordinary", ""},
+			{"Restricted", "no-store"},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				upstream := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+					if tt.cacheControl != "" {
+						rw.Header().Set("Cache-Control", tt.cacheControl)
+					}
+					rw.WriteHeader(http.StatusNotFound)
+					fmt.Fprint(rw, "module unavailable")
+				}))
+				for _, resource := range []struct {
+					name         string
+					path         string
+					cacheControl string
+				}{
+					{"Latest", "/example.com/@latest", "public, max-age=60"},
+					{"Query", "/example.com/@v/master.info", "public, max-age=60"},
+					{"List", "/example.com/@v/list", "public, max-age=60"},
+					{"Info", "/example.com/@v/v1.0.0.info", "public, max-age=600"},
+					{"Mod", "/example.com/@v/v1.0.0.mod", "public, max-age=600"},
+					{"Zip", "/example.com/@v/v1.0.0.zip", "public, max-age=600"},
+					{"SumDB", "/sumdb/sumdb.example.com/latest", "public, max-age=60"},
+				} {
+					t.Run(resource.name, func(t *testing.T) {
+						g := &Goproxy{
+							Fetcher: &GoFetcher{
+								Env:     []string{"GOPROXY=" + upstream.URL, "GOSUMDB=off"},
+								TempDir: t.TempDir(),
+							},
+							ProxiedSumDBs: []string{"sumdb.example.com " + upstream.URL},
+							TempDir:       t.TempDir(),
+							Logger:        slog.New(slog.DiscardHandler),
+						}
+						for _, method := range []string{http.MethodGet, http.MethodHead} {
+							t.Run(method, func(t *testing.T) {
+								rec := httptest.NewRecorder()
+								g.ServeHTTP(rec, httptest.NewRequest(method, resource.path, nil))
+								if got, want := rec.Code, http.StatusNotFound; got != want {
+									t.Errorf("got %d, want %d", got, want)
+								}
+								wantCacheControl := resource.cacheControl
+								if tt.cacheControl != "" {
+									wantCacheControl = tt.cacheControl
+								}
+								if got, want := rec.Header().Get("Cache-Control"), wantCacheControl; got != want {
+									t.Errorf("got %q, want %q", got, want)
+								}
+								wantContent := "not found: module unavailable"
+								if method == http.MethodHead {
+									wantContent = ""
+								}
+								if got, want := rec.Body.String(), wantContent; got != want {
+									t.Errorf("got %q, want %q", got, want)
+								}
+							})
+						}
+					})
+				}
+			})
+		}
+	})
+
 	t.Run("MethodNotAllowed", func(t *testing.T) {
 		g := &Goproxy{ProxiedSumDBs: []string{"sumdb.example.com"}}
 		for _, tt := range []struct {
@@ -410,9 +479,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 								if err != nil {
 									t.Fatal(err)
 								}
-								for key, values := range mode.header {
-									req.Header[key] = values
-								}
+								maps.Copy(req.Header, mode.header)
 								if mode.noFetch {
 									req.Header.Set("Disable-Module-Fetch", "true")
 								}

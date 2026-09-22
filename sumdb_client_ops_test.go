@@ -75,14 +75,14 @@ func TestSumDBClientOpsURL(t *testing.T) {
 		},
 		{
 			n:            4,
-			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, -2) },
+			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, -1) },
 			envGOPROXY:   func(proxyServerURL string) string { return proxyServerURL },
 			envGOSUMDB:   defaultEnvGOSUMDB,
 			wantURL:      func(_ string) string { return "https://" + defaultEnvGOSUMDB },
 		},
 		{
 			n:            5,
-			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, -2) },
+			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, -1) },
 			envGOPROXY:   func(proxyServerURL string) string { return proxyServerURL + ",direct" },
 			envGOSUMDB:   defaultEnvGOSUMDB,
 			wantURL:      func(_ string) string { return "https://" + defaultEnvGOSUMDB },

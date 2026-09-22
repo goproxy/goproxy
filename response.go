@@ -1,7 +1,6 @@
 package goproxy
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -137,30 +136,24 @@ func responseSuccess(rw http.ResponseWriter, req *http.Request, content io.Reade
 
 // responseError responses error to the client with the err and cacheSensitive.
 func responseError(rw http.ResponseWriter, req *http.Request, err error, cacheSensitive bool) {
+	isBadUpstream := isBadUpstreamError(err)
+	isFetchTimedOut := isFetchTimedOutError(err)
 	if errors.Is(err, fs.ErrNotExist) {
 		cacheControlMaxAge := -1
+		if _, ok := errors.AsType[*uncacheableError](err); !ok && !isBadUpstream && !isFetchTimedOut {
+			cacheControlMaxAge = 600
+			if cacheSensitive {
+				cacheControlMaxAge = 60
+			}
+		}
 		msg := err.Error()
 		if err == fs.ErrNotExist {
 			msg = "not found"
 		}
-		if strings.Contains(msg, errBadUpstream.Error()) {
-			msg = errBadUpstream.Error()
-		} else if strings.Contains(msg, errFetchTimedOut.Error()) {
-			msg = errFetchTimedOut.Error()
-		} else if cacheSensitive {
-			cacheControlMaxAge = 60
-		} else {
-			cacheControlMaxAge = 600
-		}
 		responseNotFound(rw, req, cacheControlMaxAge, msg)
-	} else if errors.Is(err, errBadUpstream) {
+	} else if isBadUpstream {
 		responseNotFound(rw, req, -1, errBadUpstream)
-	} else if t, ok := errors.AsType[interface {
-		error
-		Timeout() bool
-	}](err); (ok && t.Timeout()) ||
-		errors.Is(err, context.DeadlineExceeded) ||
-		errors.Is(err, errFetchTimedOut) {
+	} else if isFetchTimedOut {
 		responseNotFound(rw, req, -1, errFetchTimedOut)
 	} else {
 		responseInternalServerError(rw, req)

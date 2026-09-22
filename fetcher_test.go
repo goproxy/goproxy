@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -1482,14 +1483,15 @@ func TestGoFetcherExecGo(t *testing.T) {
 	cancel()
 
 	for _, tt := range []struct {
-		n          int
-		ctx        context.Context
-		env        []string
-		goBin      string
-		tempDir    string
-		args       []string
-		wantOutput string
-		wantErr    error
+		n           int
+		ctx         context.Context
+		env         []string
+		goBin       string
+		tempDir     string
+		args        []string
+		wantOutput  string
+		wantErr     error
+		wantNoStore bool
 	}{
 		{
 			n:          1,
@@ -1498,16 +1500,18 @@ func TestGoFetcherExecGo(t *testing.T) {
 			wantOutput: "direct\n",
 		},
 		{
-			n:       2,
-			ctx:     t.Context(),
-			args:    []string{"foobar"},
-			wantErr: errors.New("go foobar: unknown command\nRun 'go help' for usage."),
+			n:           2,
+			ctx:         t.Context(),
+			args:        []string{"foobar"},
+			wantErr:     errors.New("go foobar: unknown command\nRun 'go help' for usage."),
+			wantNoStore: true,
 		},
 		{
-			n:       3,
-			ctx:     t.Context(),
-			args:    []string{"mod", "download", "-json", "foobar@latest"},
-			wantErr: errors.New(`foobar@latest: malformed module path "foobar": missing dot in first path element`),
+			n:           3,
+			ctx:         t.Context(),
+			args:        []string{"mod", "download", "-json", "foobar@latest"},
+			wantErr:     errors.New(`foobar@latest: malformed module path "foobar": missing dot in first path element`),
+			wantNoStore: true,
 		},
 		{
 			n:       4,
@@ -1542,6 +1546,19 @@ func TestGoFetcherExecGo(t *testing.T) {
 			}
 
 			output, err := gf.execGo(tt.ctx, tt.args...)
+			if tt.wantNoStore {
+				if !errors.Is(err, fs.ErrNotExist) {
+					t.Fatalf("got %v, want %v", err, fs.ErrNotExist)
+				}
+				rec := httptest.NewRecorder()
+				responseError(rec, httptest.NewRequest(http.MethodGet, "/", nil), err, false)
+				if got, want := rec.Code, http.StatusNotFound; got != want {
+					t.Errorf("got %d, want %d", got, want)
+				}
+				if got, want := rec.Header().Get("Cache-Control"), "no-store"; got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
+			}
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatal("expected error")
@@ -1650,6 +1667,40 @@ func TestCleanEnvGOPROXY(t *testing.T) {
 }
 
 func TestWalkEnvGOPROXY(t *testing.T) {
+	t.Run("CacheRestrictions", func(t *testing.T) {
+		ordinaryErr := notExistErrorf("module unavailable")
+		restrictedErr := &uncacheableError{err: ordinaryErr}
+		for _, tt := range []struct {
+			name     string
+			firstErr error
+			lastErr  error
+		}{
+			{"RestrictedThenSuccess", restrictedErr, nil},
+			{"RestrictedThenOrdinary", restrictedErr, ordinaryErr},
+			{"OrdinaryThenRestricted", ordinaryErr, restrictedErr},
+			{"BothRestricted", restrictedErr, restrictedErr},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				for _, separator := range []string{",", "|"} {
+					var calls int
+					err := walkEnvGOPROXY("https://example.com"+separator+"https://alt.example.com", func(proxy *url.URL) error {
+						calls++
+						if proxy.Host == "example.com" {
+							return tt.firstErr
+						}
+						return tt.lastErr
+					}, nil)
+					if got, want := calls, 2; got != want {
+						t.Errorf("separator %q: got calls %d, want %d", separator, got, want)
+					}
+					if got, want := err, tt.lastErr; got != want {
+						t.Errorf("separator %q: got error %v, want %v", separator, got, want)
+					}
+				}
+			})
+		}
+	})
+
 	for _, tt := range []struct {
 		n            int
 		envGOPROXY   string
