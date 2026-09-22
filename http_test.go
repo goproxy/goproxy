@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -19,48 +20,55 @@ import (
 	"time"
 )
 
-func TestNotExistError(t *testing.T) {
-	t.Run("Normal", func(t *testing.T) {
-		for _, tt := range []struct {
-			n       int
-			err     error
-			wantErr error
-		}{
-			{1, notExistErrorf(""), errors.New("")},
-			{2, notExistErrorf("foobar"), errors.New("foobar")},
-			{3, notExistErrorf("foobar"), fs.ErrNotExist},
-		} {
-			t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
-				if got, want := tt.err, tt.wantErr; !compareErrors(got, want) {
-					t.Errorf("got %v, want %v", got, want)
-				}
-			})
-		}
-	})
-
-	t.Run("ErrorIs", func(t *testing.T) {
-		e := &notExistError{err: errors.New("foobar")}
-		for _, tt := range []struct {
-			n      int
-			err    error
-			wantIs bool
-		}{
-			{1, fs.ErrNotExist, true},
-			{2, io.EOF, false},
-		} {
-			t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
-				if got, want := e.Is(tt.err), tt.wantIs; got != want {
-					t.Errorf("got %t, want %t", got, want)
-				}
-				if got, want := errors.Is(e, tt.err), tt.wantIs; got != want {
-					t.Errorf("got %t, want %t", got, want)
-				}
-			})
-		}
-	})
-}
-
 func TestHTTPGet(t *testing.T) {
+	t.Run("CacheRestrictions", func(t *testing.T) {
+		for _, statusCode := range []int{http.StatusBadRequest, http.StatusNotFound, http.StatusGone} {
+			for _, tt := range []struct {
+				name             string
+				header           http.Header
+				body             string
+				wantCacheControl string
+			}{
+				{"OrdinaryAbsence", nil, "module unavailable", "public, max-age=600"},
+				{"NoStore", http.Header{"Cache-Control": {"no-store"}}, "module unavailable", "no-store"},
+				{"NoCache", http.Header{"Cache-Control": {"no-cache"}}, "module unavailable", "no-store"},
+				{"Private", http.Header{"Cache-Control": {"private"}}, "module unavailable", "no-store"},
+				{"VaryAll", http.Header{"Vary": {"*"}}, "module unavailable", "no-store"},
+				{"BadUpstreamText", nil, "unknown revision bad upstream", "public, max-age=600"},
+				{"TimeoutText", nil, "unknown revision fetch timed out", "public, max-age=600"},
+				{"RestrictedTimeoutText", http.Header{"Cache-Control": {"no-store"}}, "request timed out", "no-store"},
+				{"RestrictionAfterSplitQuotedArgument", http.Header{"Cache-Control": {`extension="a`, `b", no-store`}}, "module unavailable", "no-store"},
+				{"SplitQuotedArgument", http.Header{"Cache-Control": {`extension="a`, "no-store", `b", public`}}, "module unavailable", "public, max-age=600"},
+			} {
+				t.Run(strconv.Itoa(statusCode)+"/"+tt.name, func(t *testing.T) {
+					server := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+						maps.Copy(rw.Header(), tt.header)
+						rw.WriteHeader(statusCode)
+						fmt.Fprint(rw, tt.body)
+					}))
+					err := httpGet(t.Context(), http.DefaultClient, server.URL, nil)
+					if !errors.Is(err, fs.ErrNotExist) {
+						t.Fatalf("got %v, want %v", err, fs.ErrNotExist)
+					}
+					if got, want := err.Error(), tt.body; got != want {
+						t.Errorf("got %q, want %q", got, want)
+					}
+					rec := httptest.NewRecorder()
+					responseError(rec, httptest.NewRequest(http.MethodGet, "/", nil), err, false)
+					if got, want := rec.Code, http.StatusNotFound; got != want {
+						t.Errorf("got %d, want %d", got, want)
+					}
+					if got, want := rec.Header().Get("Cache-Control"), tt.wantCacheControl; got != want {
+						t.Errorf("got %q, want %q", got, want)
+					}
+					if got, want := rec.Body.String(), "not found: "+tt.body; got != want {
+						t.Errorf("got %q, want %q", got, want)
+					}
+				})
+			}
+		}
+	})
+
 	t.Run("Normal", func(t *testing.T) {
 		for _, tt := range []struct {
 			n             int
@@ -291,6 +299,48 @@ func TestIsRetryableHTTPClientDoError(t *testing.T) {
 	} {
 		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
 			if got, want := isRetryableHTTPClientDoError(tt.err), tt.wantIsRetryable; got != want {
+				t.Errorf("got %t, want %t", got, want)
+			}
+		})
+	}
+}
+
+func TestIsCacheRestrictedHTTPResponse(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		header http.Header
+		want   bool
+	}{
+		{"Absent", nil, false},
+		{"Empty", http.Header{"Cache-Control": {""}}, false},
+		{"Public", http.Header{"Cache-Control": {"public, max-age=60"}}, false},
+		{"NoStore", http.Header{"Cache-Control": {"no-store"}}, true},
+		{"NoCache", http.Header{"Cache-Control": {"no-cache"}}, true},
+		{"Private", http.Header{"Cache-Control": {"private"}}, true},
+		{"MixedCase", http.Header{"Cache-Control": {"Public, No-StOrE"}}, true},
+		{"Whitespace", http.Header{"Cache-Control": {" \tno-store \t"}}, true},
+		{"MultipleFields", http.Header{"Cache-Control": {"public", "max-age=60", "no-store"}}, true},
+		{"EmptyDirectives", http.Header{"Cache-Control": {",, public, , no-store,"}}, true},
+		{"TrailingComma", http.Header{"Cache-Control": {"public,"}}, false},
+		{"QualifiedNoCache", http.Header{"Cache-Control": {`no-cache="ETag, Last-Modified"`}}, true},
+		{"QualifiedPrivate", http.Header{"Cache-Control": {`private = "X-Private"`}}, true},
+		{"DirectivePrefixes", http.Header{"Cache-Control": {"no-store-extra, x-no-cache, private-extra"}}, false},
+		{"UnquotedArgument", http.Header{"Cache-Control": {"extension=no-store"}}, false},
+		{"QuotedArgument", http.Header{"Cache-Control": {`extension="no-store"`}}, false},
+		{"QuotedCommas", http.Header{"Cache-Control": {`extension="a,no-store,no-cache,private,b", public`}}, false},
+		{"RestrictionAfterQuotedCommas", http.Header{"Cache-Control": {`extension="a,b", no-store`}}, true},
+		{"RestrictionAfterSplitQuotedArgument", http.Header{"Cache-Control": {`extension="a`, `b", no-store`}}, true},
+		{"SplitQuotedArgument", http.Header{"Cache-Control": {`extension="a`, "no-store", "no-cache", "private", `b", public`}}, false},
+		{"EscapedQuote", http.Header{"Cache-Control": {`extension="a\",no-store,b", public`}}, false},
+		{"EscapedBackslash", http.Header{"Cache-Control": {`extension="a\\", no-store`}}, true},
+		{"EscapedBackslashAndQuote", http.Header{"Cache-Control": {`extension="a\\\",no-store,b", public`}}, false},
+		{"VaryAll", http.Header{"Vary": {"*"}}, true},
+		{"VaryFields", http.Header{"Vary": {"Accept-Encoding, Accept"}}, false},
+		{"VaryMultipleFields", http.Header{"Vary": {"Accept-Encoding", "Accept, \t* "}}, true},
+		{"VaryName", http.Header{"Vary": {"X-No-Store"}}, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got, want := isCacheRestrictedHTTPResponse(tt.header), tt.want; got != want {
 				t.Errorf("got %t, want %t", got, want)
 			}
 		})

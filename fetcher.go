@@ -560,7 +560,8 @@ func (gf *GoFetcher) execGo(ctx context.Context, args ...string) ([]byte, error)
 		msg = strings.TrimPrefix(msg, "go: ")
 		msg = strings.TrimPrefix(msg, "go list -m: ")
 		msg = strings.TrimRight(msg, "\n")
-		return nil, notExistErrorf("%s", msg)
+		// Go command diagnostics do not reliably distinguish absence from transient failures.
+		return nil, &uncacheableError{err: notExistErrorf("%s", msg)}
 	}
 	return output, nil
 }

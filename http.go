@@ -6,42 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aofei/backoff"
 )
-
-var (
-	// errBadUpstream indicates an upstream is in a bad state.
-	errBadUpstream = errors.New("bad upstream")
-
-	// errFetchTimedOut indicates a fetch operation has timed out.
-	errFetchTimedOut = errors.New("fetch timed out")
-)
-
-// notExistError is like [fs.ErrNotExist] but with a custom underlying error.
-//
-// NOTE: Do not use [notExistError] directly, use [notExistErrorf] instead.
-type notExistError struct{ err error }
-
-// Error implements [error].
-func (e *notExistError) Error() string { return e.err.Error() }
-
-// Unwrap returns the underlying error.
-func (e *notExistError) Unwrap() error { return e.err }
-
-// Is reports whether the target is [fs.ErrNotExist].
-func (notExistError) Is(target error) bool { return target == fs.ErrNotExist }
-
-// notExistErrorf formats according to a format specifier and returns the string
-// as a value that satisfies error that is equivalent to [fs.ErrNotExist].
-func notExistErrorf(format string, v ...any) error {
-	return &notExistError{err: fmt.Errorf(format, v...)}
-}
 
 // httpGet gets the content from the given url and writes it to the dst.
 func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer) error {
@@ -83,7 +55,11 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 		case http.StatusBadRequest,
 			http.StatusNotFound,
 			http.StatusGone:
-			return notExistErrorf("%s", respBody)
+			err := notExistErrorf("%s", respBody)
+			if isCacheRestrictedHTTPResponse(resp.Header) {
+				return &uncacheableError{err: err}
+			}
+			return err
 		case http.StatusTooManyRequests,
 			http.StatusInternalServerError,
 			http.StatusBadGateway,
@@ -137,4 +113,45 @@ func isRetryableHTTPClientDoError(err error) bool {
 		}
 	}
 	return true
+}
+
+// isCacheRestrictedHTTPResponse reports whether the response headers contain
+// cache restrictions. It checks Cache-Control for "no-store", "no-cache", or
+// "private", and Vary for "*".
+func isCacheRestrictedHTTPResponse(header http.Header) bool {
+	for value := strings.Join(header.Values("Cache-Control"), ","); value != ""; {
+		// Find the next comma outside a quoted directive argument.
+		end, quoted := 0, false
+		for end < len(value) {
+			if value[end] == ',' && !quoted {
+				break
+			}
+			switch value[end] {
+			case '"':
+				quoted = !quoted
+			case '\\':
+				if quoted && end+1 < len(value) {
+					end++
+				}
+			}
+			end++
+		}
+		name, _, _ := strings.Cut(value[:end], "=")
+		switch strings.ToLower(strings.TrimSpace(name)) {
+		case "no-store", "no-cache", "private":
+			return true
+		}
+		if end == len(value) {
+			break
+		}
+		value = value[end+1:]
+	}
+	for _, value := range header.Values("Vary") {
+		for name := range strings.SplitSeq(value, ",") {
+			if strings.TrimSpace(name) == "*" {
+				return true
+			}
+		}
+	}
+	return false
 }

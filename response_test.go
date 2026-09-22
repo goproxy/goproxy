@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"reflect"
 	"strconv"
@@ -698,17 +700,52 @@ func TestResponseSuccess(t *testing.T) {
 	}
 }
 
-type testTimeoutError struct {
-	error
-	timeout bool
-}
-
-func (e testTimeoutError) Timeout() bool { return e.timeout }
-
 func TestResponseError(t *testing.T) {
+	t.Run("Uncacheable", func(t *testing.T) {
+		for _, tt := range []struct {
+			name           string
+			err            error
+			wantStatusCode int
+			wantContent    string
+		}{
+			{"Direct", &uncacheableError{err: notExistErrorf("module unavailable")}, http.StatusNotFound, "not found: module unavailable"},
+			{"Wrapped", fmt.Errorf("fetch failed: %w", &uncacheableError{err: notExistErrorf("module unavailable")}), http.StatusNotFound, "not found: fetch failed: module unavailable"},
+			{"Nested", notExistErrorf("fetch failed: %w", &uncacheableError{err: errors.New("module unavailable")}), http.StatusNotFound, "not found: fetch failed: module unavailable"},
+			{"Joined", errors.Join(notExistErrorf("module unavailable"), &uncacheableError{err: errors.New("fetch failed")}), http.StatusNotFound, "not found: module unavailable\nfetch failed"},
+			{"Timeout", &uncacheableError{err: &notExistError{err: testTimeoutError{errors.New("operation timed out"), true}}}, http.StatusNotFound, "not found: operation timed out"},
+			{"Internal", &uncacheableError{err: errors.New("operation failed")}, http.StatusInternalServerError, "internal server error"},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				for _, method := range []string{http.MethodGet, http.MethodHead} {
+					t.Run(method, func(t *testing.T) {
+						for _, cacheSensitive := range []bool{false, true} {
+							rec := httptest.NewRecorder()
+							responseError(rec, httptest.NewRequest(method, "/", nil), tt.err, cacheSensitive)
+							if got, want := rec.Code, tt.wantStatusCode; got != want {
+								t.Errorf("cache sensitive %t: got status %d, want %d", cacheSensitive, got, want)
+							}
+							if got, want := rec.Header().Get("Cache-Control"), "no-store"; got != want {
+								t.Errorf("cache sensitive %t: got cache control %q, want %q", cacheSensitive, got, want)
+							}
+							wantContent := tt.wantContent
+							if method == http.MethodHead {
+								wantContent = ""
+							}
+							if got, want := rec.Body.String(), wantContent; got != want {
+								t.Errorf("cache sensitive %t: got content %q, want %q", cacheSensitive, got, want)
+							}
+						}
+					})
+				}
+			})
+		}
+	})
+
 	t.Run("Timeout", func(t *testing.T) {
 		timeoutErr := testTimeoutError{errors.New("operation timed out"), true}
 		nonTimeoutErr := testTimeoutError{errors.New("operation failed"), false}
+		nonTimeoutDNSErr := &net.DNSError{Err: "no such host", Name: "example.invalid", IsNotFound: true}
+		urlTimeoutErr := &url.Error{Op: "Get", URL: "https://example.com", Err: fmt.Errorf("read failed: %w", os.ErrDeadlineExceeded)}
 		for _, tt := range []struct {
 			name           string
 			err            error
@@ -719,11 +756,22 @@ func TestResponseError(t *testing.T) {
 			{"Wrapped", fmt.Errorf("fetch failed: %w", timeoutErr), http.StatusNotFound, "not found: fetch timed out"},
 			{"Nested", fmt.Errorf("fetch failed: %w", fmt.Errorf("read failed: %w", timeoutErr)), http.StatusNotFound, "not found: fetch timed out"},
 			{"Joined", errors.Join(errors.New("operation failed"), timeoutErr), http.StatusNotFound, "not found: fetch timed out"},
+			{"JoinedNonTimeoutFirst", errors.Join(nonTimeoutDNSErr, os.ErrDeadlineExceeded), http.StatusNotFound, "not found: fetch timed out"},
+			{"JoinedTimeoutFirst", errors.Join(os.ErrDeadlineExceeded, nonTimeoutDNSErr), http.StatusNotFound, "not found: fetch timed out"},
+			{"URLWrappedTimeout", urlTimeoutErr, http.StatusNotFound, "not found: fetch timed out"},
 			{"IODeadline", os.ErrDeadlineExceeded, http.StatusNotFound, "not found: fetch timed out"},
 			{"WrappedIODeadline", fmt.Errorf("read failed: %w", os.ErrDeadlineExceeded), http.StatusNotFound, "not found: fetch timed out"},
 			{"ContextDeadline", context.DeadlineExceeded, http.StatusNotFound, "not found: fetch timed out"},
 			{"WrappedContextDeadline", fmt.Errorf("fetch failed: %w", context.DeadlineExceeded), http.StatusNotFound, "not found: fetch timed out"},
 			{"WrappedFetchTimeout", fmt.Errorf("fetch failed: %w", errFetchTimedOut), http.StatusNotFound, "not found: fetch timed out"},
+			{"NotExistTimeout", notExistErrorf("fetch failed: %w", timeoutErr), http.StatusNotFound, "not found: fetch failed: operation timed out"},
+			{"NotExistDeadline", &notExistError{err: context.DeadlineExceeded}, http.StatusNotFound, "not found: context deadline exceeded"},
+			{"NotExistFetchTimeout", &notExistError{err: errFetchTimedOut}, http.StatusNotFound, "not found: fetch timed out"},
+			{"JoinedNotExistTimeout", errors.Join(fs.ErrNotExist, timeoutErr), http.StatusNotFound, "not found: " + fs.ErrNotExist.Error() + "\noperation timed out"},
+			{"JoinedNotExistNonTimeoutFirst", errors.Join(fs.ErrNotExist, nonTimeoutDNSErr, os.ErrDeadlineExceeded), http.StatusNotFound, "not found: " + fs.ErrNotExist.Error() + "\n" + nonTimeoutDNSErr.Error() + "\n" + os.ErrDeadlineExceeded.Error()},
+			{"JoinedNotExistTimeoutFirst", errors.Join(fs.ErrNotExist, os.ErrDeadlineExceeded, nonTimeoutDNSErr), http.StatusNotFound, "not found: " + fs.ErrNotExist.Error() + "\n" + os.ErrDeadlineExceeded.Error() + "\n" + nonTimeoutDNSErr.Error()},
+			{"NotExistURLWrappedTimeout", &notExistError{err: urlTimeoutErr}, http.StatusNotFound, "not found: " + urlTimeoutErr.Error()},
+			{"NotExistBadUpstream", notExistErrorf("fetch failed: %w", errBadUpstream), http.StatusNotFound, "not found: fetch failed: bad upstream"},
 			{"BadUpstream", errors.Join(errBadUpstream, timeoutErr), http.StatusNotFound, "not found: bad upstream"},
 			{"NonTimeout", nonTimeoutErr, http.StatusInternalServerError, "internal server error"},
 			{"WrappedNonTimeout", fmt.Errorf("fetch failed: %w", nonTimeoutErr), http.StatusInternalServerError, "internal server error"},
@@ -801,14 +849,14 @@ func TestResponseError(t *testing.T) {
 			n:                5,
 			err:              notExistErrorf("not found: bad upstream"),
 			wantStatusCode:   http.StatusNotFound,
-			wantCacheControl: "no-store",
+			wantCacheControl: "public, max-age=600",
 			wantContent:      "not found: bad upstream",
 		},
 		{
 			n:                6,
 			err:              notExistErrorf("not found: fetch timed out"),
 			wantStatusCode:   http.StatusNotFound,
-			wantCacheControl: "no-store",
+			wantCacheControl: "public, max-age=600",
 			wantContent:      "not found: fetch timed out",
 		},
 		{
@@ -820,10 +868,25 @@ func TestResponseError(t *testing.T) {
 		},
 		{
 			n:                8,
-			err:              notExistErrorf("%w", testTimeoutError{errors.New("operation timed out"), true}),
+			err:              &notExistError{err: testTimeoutError{errors.New("operation timed out"), true}},
+			wantStatusCode:   http.StatusNotFound,
+			wantCacheControl: "no-store",
+			wantContent:      "not found: operation timed out",
+		},
+		{
+			n:                9,
+			err:              notExistErrorf("unknown revision %q", "fetch timed out"),
 			wantStatusCode:   http.StatusNotFound,
 			wantCacheControl: "public, max-age=600",
-			wantContent:      "not found: operation timed out",
+			wantContent:      `not found: unknown revision "fetch timed out"`,
+		},
+		{
+			n:                10,
+			err:              notExistErrorf("unknown revision %q", "bad upstream"),
+			cacheSensitive:   true,
+			wantStatusCode:   http.StatusNotFound,
+			wantCacheControl: "public, max-age=60",
+			wantContent:      `not found: unknown revision "bad upstream"`,
 		},
 	} {
 		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
