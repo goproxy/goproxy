@@ -1,8 +1,10 @@
 package goproxy
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -181,35 +184,70 @@ func TestGoFetcherQuery(t *testing.T) {
 
 	t.Run("InvalidInfoFallback", func(t *testing.T) {
 		for _, tt := range []struct {
-			name    string
-			version string
+			name string
+			info string
 		}{
-			{"NoncanonicalVersion", "v1"},
-			{"BuildMetadata", "v1.0.0+build"},
-			{"WrongMajor", "v2.0.0"},
-			{"WrongVersion", "v1.1.0"},
+			{"Empty", ""},
+			{"MalformedJSON", "{"},
+			{"NoncanonicalVersion", marshalInfo("v1", infoTime)},
+			{"BuildMetadata", marshalInfo("v1.0.0+build", infoTime)},
+			{"WrongMajor", marshalInfo("v2.0.0", infoTime)},
+			{"WrongVersion", marshalInfo("v1.1.0", infoTime)},
 		} {
 			t.Run(tt.name, func(t *testing.T) {
-				proxyServer := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-					if strings.HasPrefix(req.URL.Path, "/fallback/") {
-						proxyHandler(rw, req)
-					} else {
-						responseSuccess(rw, req, strings.NewReader(marshalInfo(tt.version, infoTime)), "application/json; charset=utf-8", -2)
-					}
-				}))
-				gf := &GoFetcher{
-					Env:     append(os.Environ(), "GOPROXY="+proxyServer.URL+","+proxyServer.URL+"/fallback", "GOSUMDB=off"),
-					TempDir: t.TempDir(),
-				}
-				version, time, err := gf.Query(t.Context(), "example.com", infoVersion)
-				if err != nil {
-					t.Fatalf("unexpected error %v", err)
-				}
-				if got, want := version, infoVersion; got != want {
-					t.Errorf("got %q, want %q", got, want)
-				}
-				if got, want := time, infoTime; !got.Equal(want) {
-					t.Errorf("got %q, want %q", got, want)
+				for _, fallback := range []struct {
+					name      string
+					separator string
+				}{
+					{"Comma", ","},
+					{"Pipe", "|"},
+				} {
+					t.Run(fallback.name, func(t *testing.T) {
+						var requests []string
+						gf := &GoFetcher{
+							Env: []string{"GOPROXY=https://proxy.example.com" + fallback.separator + "https://fallback.example.com", "GOSUMDB=off"},
+							Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+								requests = append(requests, req.URL.Host)
+								content := tt.info
+								if req.URL.Host == "fallback.example.com" {
+									content = info
+								}
+								return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(content))}, nil
+							}),
+						}
+						version, time, err := gf.Query(t.Context(), "example.com", infoVersion)
+						wantRequests := []string{"proxy.example.com"}
+						if fallback.separator == "," {
+							if err == nil {
+								t.Fatal("expected error")
+							}
+							if !errors.Is(err, errBadUpstream) {
+								t.Errorf("got error %v, want an error matching %v", err, errBadUpstream)
+							}
+							if errors.Is(err, fs.ErrNotExist) {
+								t.Errorf("unexpected error matching %v: %v", fs.ErrNotExist, err)
+							}
+							if tt.name == "MalformedJSON" {
+								if _, ok := errors.AsType[*json.SyntaxError](err); !ok {
+									t.Errorf("got error %v, want a JSON syntax error", err)
+								}
+							}
+						} else {
+							wantRequests = append(wantRequests, "fallback.example.com")
+							if err != nil {
+								t.Fatalf("unexpected error %v", err)
+							}
+							if got, want := version, infoVersion; got != want {
+								t.Errorf("got %q, want %q", got, want)
+							}
+							if got, want := time, infoTime; !got.Equal(want) {
+								t.Errorf("got %q, want %q", got, want)
+							}
+						}
+						if got, want := requests, wantRequests; !slices.Equal(got, want) {
+							t.Errorf("got requests %q, want %q", got, want)
+						}
+					})
 				}
 			})
 		}
@@ -365,10 +403,16 @@ func TestGoFetcherProxyQuery(t *testing.T) {
 				}
 				version, time, err := gf.proxyQuery(t.Context(), tt.path, tt.query, proxy)
 				if tt.wantErr {
-					if !errors.Is(err, fs.ErrNotExist) {
-						t.Fatalf("got error %v, want an error matching %v", err, fs.ErrNotExist)
+					if err == nil {
+						t.Fatal("expected error")
 					}
-					if !strings.HasPrefix(err.Error(), "invalid info response: ") {
+					if !errors.Is(err, errBadUpstream) {
+						t.Errorf("got error %v, want an error matching %v", err, errBadUpstream)
+					}
+					if errors.Is(err, fs.ErrNotExist) {
+						t.Errorf("unexpected error matching %v: %v", fs.ErrNotExist, err)
+					}
+					if !strings.HasPrefix(err.Error(), "bad upstream: invalid info response: ") {
 						t.Errorf("unexpected error %v", err)
 					}
 					return
@@ -503,7 +547,7 @@ func TestGoFetcherProxyQuery(t *testing.T) {
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {},
 			path:         "example.com",
 			query:        "latest",
-			wantErr:      notExistErrorf("invalid info response: unexpected end of JSON input"),
+			wantErr:      fmt.Errorf("%w: invalid info response: unexpected end of JSON input", errBadUpstream),
 		},
 		{
 			n:       5,
@@ -539,6 +583,12 @@ func TestGoFetcherProxyQuery(t *testing.T) {
 				}
 				if got, want := err, tt.wantErr; !compareErrors(got, want) {
 					t.Errorf("got %v, want %v", got, want)
+				}
+				if got, want := errors.Is(err, errBadUpstream), errors.Is(tt.wantErr, errBadUpstream); got != want {
+					t.Errorf("got bad upstream %t, want %t", got, want)
+				}
+				if got, want := errors.Is(err, fs.ErrNotExist), errors.Is(tt.wantErr, fs.ErrNotExist); got != want {
+					t.Errorf("got not exist %t, want %t", got, want)
 				}
 			} else {
 				if err != nil {
@@ -922,9 +972,16 @@ func TestGoFetcherDownload(t *testing.T) {
 						t.Error("unexpected module content")
 					}
 				}
-				if !errors.Is(err, fs.ErrNotExist) {
-					t.Errorf("got error %v, want an error matching %v", err, fs.ErrNotExist)
-				} else if got, want := err.Error(), fmt.Sprintf("invalid info file: version %s does not match requested version %s", tt.version, infoVersion); got != want {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				if !errors.Is(err, errBadUpstream) {
+					t.Errorf("got error %v, want an error matching %v", err, errBadUpstream)
+				}
+				if errors.Is(err, fs.ErrNotExist) {
+					t.Errorf("unexpected error matching %v: %v", fs.ErrNotExist, err)
+				}
+				if got, want := err.Error(), fmt.Sprintf("bad upstream: invalid info file: version %s does not match requested version %s", tt.version, infoVersion); got != want {
 					t.Errorf("got %q, want %q", got, want)
 				}
 				if des, err := os.ReadDir(gf.TempDir); err != nil {
@@ -1041,7 +1098,7 @@ func TestGoFetcherDownload(t *testing.T) {
 			},
 			path:    "example.com",
 			version: infoVersion,
-			wantErr: notExistErrorf("invalid info file: unexpected end of JSON input"),
+			wantErr: fmt.Errorf("%w: invalid info file: unexpected end of JSON input", errBadUpstream),
 		},
 		{
 			n: 5,
@@ -1061,7 +1118,7 @@ func TestGoFetcherDownload(t *testing.T) {
 			},
 			path:    "example.com",
 			version: infoVersion,
-			wantErr: notExistErrorf("invalid mod file: missing module directive"),
+			wantErr: fmt.Errorf("%w: invalid mod file: missing module directive", errBadUpstream),
 		},
 		{
 			n: 6,
@@ -1081,7 +1138,7 @@ func TestGoFetcherDownload(t *testing.T) {
 			},
 			path:    "example.com",
 			version: infoVersion,
-			wantErr: notExistErrorf("invalid zip file: zip: not a valid zip file"),
+			wantErr: fmt.Errorf("%w: invalid zip file: zip: not a valid zip file", errBadUpstream),
 		},
 		{
 			n: 7,
@@ -1099,7 +1156,7 @@ func TestGoFetcherDownload(t *testing.T) {
 			},
 			path:    "example.com",
 			version: infoVersion,
-			wantErr: notExistErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
+			wantErr: fmt.Errorf("%w: example.com@v1.0.0: invalid version: untrusted revision v1.0.0", errBadUpstream),
 		},
 		{
 			n: 8,
@@ -1117,7 +1174,7 @@ func TestGoFetcherDownload(t *testing.T) {
 			},
 			path:    "example.com",
 			version: infoVersion,
-			wantErr: notExistErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
+			wantErr: fmt.Errorf("%w: example.com@v1.0.0: invalid version: untrusted revision v1.0.0", errBadUpstream),
 		},
 		{
 			n:       9,
@@ -1184,6 +1241,12 @@ func TestGoFetcherDownload(t *testing.T) {
 				}
 				if got, want := err, tt.wantErr; !compareErrors(got, want) {
 					t.Errorf("got %v, want %v", got, want)
+				}
+				if got, want := errors.Is(err, errBadUpstream), errors.Is(tt.wantErr, errBadUpstream); got != want {
+					t.Errorf("got bad upstream %t, want %t", got, want)
+				}
+				if got, want := errors.Is(err, fs.ErrNotExist), errors.Is(tt.wantErr, fs.ErrNotExist); got != want {
+					t.Errorf("got not exist %t, want %t", got, want)
 				}
 			} else {
 				if err != nil {
@@ -2169,7 +2232,7 @@ func TestUnmarshalInfoFile(t *testing.T) {
 		{
 			n:        2,
 			infoFile: infoFileInvalid,
-			wantErr:  notExistErrorf("invalid info file: unexpected end of JSON input"),
+			wantErr:  fmt.Errorf("%w: invalid info file: unexpected end of JSON input", errBadUpstream),
 		},
 		{
 			n:        3,
@@ -2185,6 +2248,12 @@ func TestUnmarshalInfoFile(t *testing.T) {
 				}
 				if got, want := err, tt.wantErr; !compareErrors(got, want) {
 					t.Errorf("got %v, want %v", got, want)
+				}
+				if got, want := errors.Is(err, errBadUpstream), errors.Is(tt.wantErr, errBadUpstream); got != want {
+					t.Errorf("got bad upstream %t, want %t", got, want)
+				}
+				if got, want := errors.Is(err, fs.ErrNotExist), errors.Is(tt.wantErr, fs.ErrNotExist); got != want {
+					t.Errorf("got not exist %t, want %t", got, want)
 				}
 			} else {
 				if err != nil {
@@ -2202,6 +2271,27 @@ func TestUnmarshalInfoFile(t *testing.T) {
 }
 
 func TestCheckModFile(t *testing.T) {
+	t.Run("Directory", func(t *testing.T) {
+		err := checkModFile(t.TempDir())
+		if _, ok := errors.AsType[*fs.PathError](err); !ok {
+			t.Errorf("got error %v, want a file error", err)
+		}
+		if errors.Is(err, errBadUpstream) {
+			t.Errorf("unexpected error matching %v: %v", errBadUpstream, err)
+		}
+	})
+
+	t.Run("LongLine", func(t *testing.T) {
+		file, err := makeTempFile(t, []byte("//"+strings.Repeat("x", bufio.MaxScanTokenSize)+"\nmodule example.com\n"))
+		if err != nil {
+			t.Fatalf("unexpected error %v", err)
+		}
+		err = checkModFile(file)
+		if got, want := err, bufio.ErrTooLong; got != want {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
 	for _, tt := range []struct {
 		n       int
 		mod     string
@@ -2209,7 +2299,7 @@ func TestCheckModFile(t *testing.T) {
 	}{
 		{1, "module", nil},
 		{2, "// foobar\nmodule foobar", nil},
-		{3, "foobar", notExistErrorf("invalid mod file: missing module directive")},
+		{3, "foobar", fmt.Errorf("%w: invalid mod file: missing module directive", errBadUpstream)},
 		{4, "", fs.ErrNotExist},
 	} {
 		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
@@ -2229,6 +2319,12 @@ func TestCheckModFile(t *testing.T) {
 				}
 				if got, want := err, tt.wantErr; !compareErrors(got, want) {
 					t.Errorf("got %v, want %v", got, want)
+				}
+				if got, want := errors.Is(err, errBadUpstream), errors.Is(tt.wantErr, errBadUpstream); got != want {
+					t.Errorf("got bad upstream %t, want %t", got, want)
+				}
+				if got, want := errors.Is(err, fs.ErrNotExist), errors.Is(tt.wantErr, fs.ErrNotExist); got != want {
+					t.Errorf("got not exist %t, want %t", got, want)
 				}
 			} else if err != nil {
 				t.Fatalf("unexpected error %v", err)
@@ -2298,7 +2394,7 @@ func TestVerifyModFile(t *testing.T) {
 			modFile:       modFileInvalid,
 			modulePath:    "example.com",
 			moduleVersion: "v1.0.0",
-			wantErr:       notExistErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
+			wantErr:       fmt.Errorf("%w: example.com@v1.0.0: invalid version: untrusted revision v1.0.0", errBadUpstream),
 		},
 		{
 			n:             4,
@@ -2332,6 +2428,12 @@ func TestVerifyModFile(t *testing.T) {
 				if got, want := err, tt.wantErr; !compareErrors(got, want) {
 					t.Errorf("got %v, want %v", got, want)
 				}
+				if got, want := errors.Is(err, errBadUpstream), errors.Is(tt.wantErr, errBadUpstream); got != want {
+					t.Errorf("got bad upstream %t, want %t", got, want)
+				}
+				if got, want := errors.Is(err, fs.ErrNotExist), errors.Is(tt.wantErr, fs.ErrNotExist); got != want {
+					t.Errorf("got not exist %t, want %t", got, want)
+				}
 			} else if err != nil {
 				t.Fatalf("unexpected error %v", err)
 			}
@@ -2340,6 +2442,19 @@ func TestVerifyModFile(t *testing.T) {
 }
 
 func TestCheckZipFile(t *testing.T) {
+	t.Run("Directory", func(t *testing.T) {
+		err := checkZipFile(t.TempDir(), "example.com", "v1.0.0")
+		if _, ok := errors.AsType[*fs.PathError](err); !ok {
+			t.Errorf("got error %v, want a file error", err)
+		}
+		if errors.Is(err, errBadUpstream) {
+			t.Errorf("unexpected error matching %v: %v", errBadUpstream, err)
+		}
+		if errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("unexpected error matching %v: %v", fs.ErrNotExist, err)
+		}
+	})
+
 	zip, err := makeZip(map[string][]byte{"example.com@v1.0.0/go.mod": []byte("module example.com")})
 	if err != nil {
 		t.Fatalf("unexpected error %v", err)
@@ -2349,34 +2464,34 @@ func TestCheckZipFile(t *testing.T) {
 		t.Fatalf("unexpected error %v", err)
 	}
 	for _, tt := range []struct {
-		n             int
+		name          string
 		zipFile       string
 		modulePath    string
 		moduleVersion string
 		wantErr       error
 	}{
 		{
-			n:             1,
+			name:          "Valid",
 			zipFile:       zipFile,
 			modulePath:    "example.com",
 			moduleVersion: "v1.0.0",
 		},
 		{
-			n:             2,
+			name:          "WrongVersion",
 			zipFile:       zipFile,
 			modulePath:    "example.com",
 			moduleVersion: "v1.1.0",
-			wantErr:       notExistErrorf(`invalid zip file: example.com@v1.0.0/go.mod: path does not have prefix "example.com@v1.1.0/"`),
+			wantErr:       fmt.Errorf(`%w: invalid zip file: example.com@v1.0.0/go.mod: path does not have prefix "example.com@v1.1.0/"`, errBadUpstream),
 		},
 		{
-			n:             3,
+			name:          "MissingFile",
 			zipFile:       filepath.Join(t.TempDir(), "404"),
 			modulePath:    "example.com",
 			moduleVersion: "v1.0.0",
 			wantErr:       fs.ErrNotExist,
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			err := checkZipFile(tt.zipFile, tt.modulePath, tt.moduleVersion)
 			if tt.wantErr != nil {
 				if err == nil {
@@ -2384,6 +2499,12 @@ func TestCheckZipFile(t *testing.T) {
 				}
 				if got, want := err, tt.wantErr; !compareErrors(got, want) {
 					t.Errorf("got %v, want %v", got, want)
+				}
+				if got, want := errors.Is(err, errBadUpstream), errors.Is(tt.wantErr, errBadUpstream); got != want {
+					t.Errorf("got bad upstream %t, want %t", got, want)
+				}
+				if got, want := errors.Is(err, fs.ErrNotExist), errors.Is(tt.wantErr, fs.ErrNotExist); got != want {
+					t.Errorf("got not exist %t, want %t", got, want)
 				}
 			} else if err != nil {
 				t.Fatalf("unexpected error %v", err)
@@ -2463,7 +2584,7 @@ func TestVerifyZipFile(t *testing.T) {
 			zipFile:       zipFileInvalid,
 			modulePath:    "example.com",
 			moduleVersion: "v1.0.0",
-			wantErr:       notExistErrorf("example.com@v1.0.0: invalid version: untrusted revision v1.0.0"),
+			wantErr:       fmt.Errorf("%w: example.com@v1.0.0: invalid version: untrusted revision v1.0.0", errBadUpstream),
 		},
 		{
 			n:             4,
@@ -2496,6 +2617,12 @@ func TestVerifyZipFile(t *testing.T) {
 				}
 				if got, want := err, tt.wantErr; !compareErrors(got, want) {
 					t.Errorf("got %v, want %v", got, want)
+				}
+				if got, want := errors.Is(err, errBadUpstream), errors.Is(tt.wantErr, errBadUpstream); got != want {
+					t.Errorf("got bad upstream %t, want %t", got, want)
+				}
+				if got, want := errors.Is(err, fs.ErrNotExist), errors.Is(tt.wantErr, fs.ErrNotExist); got != want {
+					t.Errorf("got not exist %t, want %t", got, want)
 				}
 			} else if err != nil {
 				t.Fatalf("unexpected error %v", err)

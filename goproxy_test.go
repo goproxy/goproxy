@@ -2,11 +2,13 @@ package goproxy
 
 import (
 	"archive/zip"
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -26,6 +28,9 @@ import (
 	"time"
 
 	"golang.org/x/mod/module"
+	"golang.org/x/mod/sumdb"
+	"golang.org/x/mod/sumdb/dirhash"
+	"golang.org/x/mod/sumdb/note"
 	"golang.org/x/mod/sumdb/tlog"
 )
 
@@ -144,6 +149,177 @@ func TestGoproxyInit(t *testing.T) {
 }
 
 func TestGoproxyServeHTTP(t *testing.T) {
+	t.Run("ModuleResponseValidation", func(t *testing.T) {
+		info := marshalInfo("v1.0.0", time.Time{})
+		mod := "module example.com"
+		var corruptZip bytes.Buffer
+		zw := zip.NewWriter(&corruptZip)
+		w, err := zw.CreateRaw(&zip.FileHeader{
+			Name:               "example.com@v1.0.0/go.mod",
+			Method:             zip.Store,
+			CRC32:              crc32.ChecksumIEEE([]byte(mod)) ^ 1,
+			CompressedSize64:   uint64(len(mod)),
+			UncompressedSize64: uint64(len(mod)),
+		})
+		if err != nil {
+			t.Fatalf("unexpected error %v", err)
+		}
+		if _, err := io.WriteString(w, mod); err != nil {
+			t.Fatalf("unexpected error %v", err)
+		}
+		if err := zw.Close(); err != nil {
+			t.Fatalf("unexpected error %v", err)
+		}
+		zip, err := makeZip(map[string][]byte{"example.com@v1.0.0/go.mod": []byte(mod)})
+		if err != nil {
+			t.Fatalf("unexpected error %v", err)
+		}
+		wrongZip, err := makeZip(map[string][]byte{"example.com@v1.1.0/go.mod": []byte(mod)})
+		if err != nil {
+			t.Fatalf("unexpected error %v", err)
+		}
+		changedZip, err := makeZip(map[string][]byte{"example.com@v1.0.0/go.mod": []byte(mod + "\n")})
+		if err != nil {
+			t.Fatalf("unexpected error %v", err)
+		}
+		zipFile, err := makeTempFile(t, zip)
+		if err != nil {
+			t.Fatalf("unexpected error %v", err)
+		}
+		zipHash, err := dirhash.HashZip(zipFile, dirhash.DefaultHash)
+		if err != nil {
+			t.Fatalf("unexpected error %v", err)
+		}
+		modHash, err := dirhash.DefaultHash([]string{"go.mod"}, func(string) (io.ReadCloser, error) {
+			return io.NopCloser(strings.NewReader(mod)), nil
+		})
+		if err != nil {
+			t.Fatalf("unexpected error %v", err)
+		}
+		skey, vkey, err := note.GenerateKey(nil, "sumdb.example.com")
+		if err != nil {
+			t.Fatalf("unexpected error %v", err)
+		}
+		sumdbServer := newHTTPTestServer(t, sumdb.NewServer(sumdb.NewTestServer(skey, func(modulePath, moduleVersion string) ([]byte, error) {
+			return fmt.Appendf(nil, "%s %s %s\n%s %s/go.mod %s\n", modulePath, moduleVersion, zipHash, modulePath, moduleVersion, modHash), nil
+		})))
+
+		for _, tt := range []struct {
+			name           string
+			ext            string
+			content        string
+			query          bool
+			wantStatusCode int
+		}{
+			{"EmptyInfo", ".info", "", true, http.StatusNotFound},
+			{"MalformedInfo", ".info", "{", true, http.StatusNotFound},
+			{"MissingVersion", ".info", "{}", true, http.StatusNotFound},
+			{"InvalidVersion", ".info", marshalInfo("main", time.Time{}), true, http.StatusNotFound},
+			{"NoncanonicalVersion", ".info", marshalInfo("v1", time.Time{}), true, http.StatusNotFound},
+			{"WrongMajor", ".info", marshalInfo("v2.0.0", time.Time{}), true, http.StatusNotFound},
+			{"WrongVersion", ".info", marshalInfo("v1.1.0", time.Time{}), false, http.StatusNotFound},
+			{"MissingModuleDirective", ".mod", "", false, http.StatusNotFound},
+			{"LongModLine", ".mod", "//" + strings.Repeat("x", bufio.MaxScanTokenSize) + "\n" + mod + "\n", false, http.StatusInternalServerError},
+			{"InvalidZip", ".zip", "invalid zip", false, http.StatusNotFound},
+			{"WrongZipPrefix", ".zip", string(wrongZip), false, http.StatusNotFound},
+			{"CorruptZipPayload", ".zip", corruptZip.String(), false, http.StatusNotFound},
+			{"ModChecksumMismatch", ".mod", mod + "\n", false, http.StatusNotFound},
+			{"ZipChecksumMismatch", ".zip", string(changedZip), false, http.StatusNotFound},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				upstream := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+					ext := path.Ext(req.URL.Path)
+					if strings.HasSuffix(req.URL.Path, "/@latest") {
+						ext = ".info"
+					}
+					content := map[string]string{".info": info, ".mod": mod, ".zip": string(zip)}[ext]
+					if ext == tt.ext {
+						content = tt.content
+					}
+					rw.Header().Set("Cache-Control", "public, max-age=86400")
+					fmt.Fprint(rw, content)
+				}))
+				for _, resource := range []struct {
+					name   string
+					path   string
+					query  bool
+					cached bool
+				}{
+					{"Latest", "/example.com/@latest", true, false},
+					{"Query", "/example.com/@v/main.info", true, false},
+					{"CachedLatest", "/example.com/@latest", true, true},
+					{"CachedQuery", "/example.com/@v/main.info", true, true},
+					{"Info", "/example.com/@v/v1.0.0.info", false, false},
+					{"Mod", "/example.com/@v/v1.0.0.mod", false, false},
+					{"Zip", "/example.com/@v/v1.0.0.zip", false, false},
+				} {
+					if resource.query && !tt.query {
+						continue
+					}
+					t.Run(resource.name, func(t *testing.T) {
+						gf := &GoFetcher{
+							Env:     []string{"GOPROXY=" + upstream.URL, "GOSUMDB=" + vkey + " " + sumdbServer.URL},
+							TempDir: t.TempDir(),
+						}
+						g := &Goproxy{
+							Fetcher: gf,
+							Cacher: &testCacher{
+								get: func(ctx context.Context, c Cacher, name string) (io.ReadCloser, error) {
+									if got, want := name, strings.TrimPrefix(resource.path, "/"); got != want {
+										t.Errorf("got cache key %q, want %q", got, want)
+									}
+									if resource.cached {
+										return io.NopCloser(strings.NewReader(info)), nil
+									}
+									return nil, fs.ErrNotExist
+								},
+								put: func(ctx context.Context, c Cacher, name string, content io.ReadSeeker) error {
+									t.Errorf("unexpected cache write %q", name)
+									return nil
+								},
+							},
+							Logger: slog.New(slog.DiscardHandler),
+						}
+						for _, method := range []string{http.MethodGet, http.MethodHead} {
+							t.Run(method, func(t *testing.T) {
+								rec := httptest.NewRecorder()
+								g.ServeHTTP(rec, httptest.NewRequest(method, resource.path, nil))
+								wantStatusCode := tt.wantStatusCode
+								wantCacheControl := "no-store"
+								wantContent := "not found: bad upstream"
+								if wantStatusCode == http.StatusInternalServerError {
+									wantContent = "internal server error"
+								}
+								if resource.cached {
+									wantStatusCode = http.StatusOK
+									wantCacheControl = "public, max-age=60"
+									wantContent = info
+								}
+								if got, want := rec.Code, wantStatusCode; got != want {
+									t.Errorf("got %d, want %d", got, want)
+								}
+								if got, want := rec.Header().Get("Cache-Control"), wantCacheControl; got != want {
+									t.Errorf("got %q, want %q", got, want)
+								}
+								if method == http.MethodHead {
+									wantContent = ""
+								}
+								if got, want := rec.Body.String(), wantContent; got != want {
+									t.Errorf("got %q, want %q", got, want)
+								}
+								if entries, err := os.ReadDir(gf.TempDir); err != nil {
+									t.Errorf("unexpected error %v", err)
+								} else if len(entries) != 0 {
+									t.Errorf("unexpected temporary files %v", entries)
+								}
+							})
+						}
+					})
+				}
+			})
+		}
+	})
+
 	t.Run("UpstreamCacheRestrictions", func(t *testing.T) {
 		for _, tt := range []struct {
 			name         string
