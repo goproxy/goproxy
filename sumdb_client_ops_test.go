@@ -45,6 +45,72 @@ func TestNewSumDBClientOps(t *testing.T) {
 }
 
 func TestSumDBClientOpsURL(t *testing.T) {
+	t.Run("HTTPStatusFallback", func(t *testing.T) {
+		for _, statusCode := range []int{http.StatusBadRequest, http.StatusNotFound, http.StatusGone} {
+			for _, tt := range []struct {
+				name    string
+				suffix  string
+				wantURL string
+			}{
+				{"SingleProxy", "", "https://" + defaultEnvGOSUMDB},
+				{"CommaProxy", ",https://alt.example.com", "https://alt.example.com/sumdb/" + defaultEnvGOSUMDB},
+				{"PipeProxy", "|https://alt.example.com", "https://alt.example.com/sumdb/" + defaultEnvGOSUMDB},
+				{"CommaDirect", ",direct", "https://" + defaultEnvGOSUMDB},
+				{"PipeDirect", "|direct", "https://" + defaultEnvGOSUMDB},
+			} {
+				t.Run(strconv.Itoa(statusCode)+"/"+tt.name, func(t *testing.T) {
+					attempts := 0
+					client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						attempts++
+						if got, want := req.URL.Path, "/sumdb/"+defaultEnvGOSUMDB+"/supported"; got != want {
+							t.Errorf("got path %q, want %q", got, want)
+						}
+						code := statusCode
+						if req.URL.Host == "alt.example.com" {
+							code = http.StatusOK
+						}
+						return &http.Response{
+							StatusCode: code,
+							Status:     strconv.Itoa(code) + " " + http.StatusText(code),
+							Body:       http.NoBody,
+							Request:    req,
+						}, nil
+					})}
+					sco, err := newSumdbClientOps("https://example.com"+tt.suffix, defaultEnvGOSUMDB, client)
+					if err != nil {
+						t.Fatal(err)
+					}
+					u, err := sco.url()
+					wantAttempts := 1
+					if statusCode == http.StatusBadRequest && !strings.HasPrefix(tt.suffix, "|") {
+						if err == nil || errors.Is(err, fs.ErrNotExist) {
+							t.Errorf("got %v, want a non-absence error", err)
+						}
+						if u != nil {
+							t.Errorf("got URL %v, want nil", u)
+						}
+					} else {
+						if err != nil {
+							t.Fatalf("unexpected error %v", err)
+						}
+						if got, want := u.String(), tt.wantURL; got != want {
+							t.Errorf("got URL %q, want %q", got, want)
+						}
+						if strings.Contains(tt.suffix, "alt.example.com") {
+							wantAttempts = 2
+						}
+					}
+					if nextURL, nextErr := sco.url(); nextURL != u || nextErr != err {
+						t.Errorf("got (%v, %v), want (%v, %v)", nextURL, nextErr, u, err)
+					}
+					if got, want := attempts, wantAttempts; got != want {
+						t.Errorf("got attempts %d, want %d", got, want)
+					}
+				})
+			}
+		}
+	})
+
 	for _, tt := range []struct {
 		n            int
 		proxyHandler http.HandlerFunc

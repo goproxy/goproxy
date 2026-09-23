@@ -111,7 +111,7 @@ func TestHTTPGet(t *testing.T) {
 						}
 					} else {
 						switch statusCode {
-						case http.StatusBadRequest, http.StatusNotFound, http.StatusGone:
+						case http.StatusNotFound, http.StatusGone:
 							if !errors.Is(err, fs.ErrNotExist) {
 								t.Fatalf("got %v, want %v", err, fs.ErrNotExist)
 							}
@@ -123,10 +123,13 @@ func TestHTTPGet(t *testing.T) {
 							if got, want := rec.Header().Get("Cache-Control"), "public, max-age=600"; got != want {
 								t.Errorf("got %q, want %q", got, want)
 							}
-						case http.StatusNotImplemented:
-							want := "GET https://example.com: 501 Not Implemented: " + tt.wantMessage
+						case http.StatusBadRequest, http.StatusNotImplemented:
+							want := fmt.Sprintf("GET https://example.com: %d %s: %s", statusCode, http.StatusText(statusCode), tt.wantMessage)
 							if err == nil || err.Error() != want {
 								t.Errorf("got %v, want %s", err, want)
+							}
+							if errors.Is(err, fs.ErrNotExist) {
+								t.Errorf("unexpected absence error %v", err)
 							}
 						default:
 							wantAttempts = 2
@@ -169,21 +172,34 @@ func TestHTTPGet(t *testing.T) {
 						fmt.Fprint(rw, tt.body)
 					}))
 					err := httpGet(t.Context(), http.DefaultClient, server.URL, nil)
-					if !errors.Is(err, fs.ErrNotExist) {
-						t.Fatalf("got %v, want %v", err, fs.ErrNotExist)
+					if err == nil {
+						t.Fatal("expected error")
 					}
-					if got, want := err.Error(), tt.body; got != want {
+					wantMessage := tt.body
+					wantStatusCode := http.StatusNotFound
+					wantCacheControl := tt.wantCacheControl
+					wantContent := "not found: " + tt.body
+					if statusCode == http.StatusBadRequest {
+						wantMessage = "GET " + server.URL + ": 400 Bad Request: " + tt.body
+						wantStatusCode = http.StatusInternalServerError
+						wantCacheControl = "no-store"
+						wantContent = "internal server error"
+					}
+					if got, want := errors.Is(err, fs.ErrNotExist), statusCode != http.StatusBadRequest; got != want {
+						t.Errorf("got absence %t, want %t", got, want)
+					}
+					if got, want := err.Error(), wantMessage; got != want {
 						t.Errorf("got %q, want %q", got, want)
 					}
 					rec := httptest.NewRecorder()
 					responseError(rec, httptest.NewRequest(http.MethodGet, "/", nil), err, false)
-					if got, want := rec.Code, http.StatusNotFound; got != want {
+					if got, want := rec.Code, wantStatusCode; got != want {
 						t.Errorf("got %d, want %d", got, want)
 					}
-					if got, want := rec.Header().Get("Cache-Control"), tt.wantCacheControl; got != want {
+					if got, want := rec.Header().Get("Cache-Control"), wantCacheControl; got != want {
 						t.Errorf("got %q, want %q", got, want)
 					}
-					if got, want := rec.Body.String(), "not found: "+tt.body; got != want {
+					if got, want := rec.Body.String(), wantContent; got != want {
 						t.Errorf("got %q, want %q", got, want)
 					}
 				})
