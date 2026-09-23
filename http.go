@@ -90,7 +90,7 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 func httpGetTemp(ctx context.Context, client *http.Client, url, tempDir string) (tempFile string, err error) {
 	f, err := os.CreateTemp(tempDir, "")
 	if err != nil {
-		return "", err
+		return "", &internalError{err: err}
 	}
 	defer func() {
 		if err != nil {
@@ -101,7 +101,10 @@ func httpGetTemp(ctx context.Context, client *http.Client, url, tempDir string) 
 		f.Close()
 		return "", err
 	}
-	return f.Name(), f.Close()
+	if err := f.Close(); err != nil {
+		return "", &internalError{err: err}
+	}
+	return f.Name(), nil
 }
 
 // isRetryableHTTPClientDoError reports whether the err is a retryable error

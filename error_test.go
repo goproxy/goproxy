@@ -96,6 +96,40 @@ func TestIsFetchTimedOutError(t *testing.T) {
 	}
 }
 
+func TestInternalError(t *testing.T) {
+	cause := &fs.PathError{Op: "open", Path: "file", Err: fs.ErrNotExist}
+	e := &internalError{err: cause}
+	if got, want := e.Error(), cause.Error(); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	if got := errors.Unwrap(e); got != cause {
+		t.Errorf("got %v, want the original path error", got)
+	}
+	for _, tt := range []struct {
+		name string
+		err  error
+	}{
+		{"Direct", e},
+		{"Wrapped", fmt.Errorf("fetch failed: %w", e)},
+		{"Joined", errors.Join(io.EOF, e)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got, ok := errors.AsType[*internalError](tt.err); !ok || got != e {
+				t.Errorf("got %v, want the original internal error", got)
+			}
+			if got, ok := errors.AsType[*fs.PathError](tt.err); !ok || got != cause {
+				t.Errorf("got %v, want the original path error", got)
+			}
+			if !errors.Is(tt.err, fs.ErrNotExist) {
+				t.Errorf("got error %v, want an error matching %v", tt.err, fs.ErrNotExist)
+			}
+			if errors.Is(tt.err, errBadUpstream) {
+				t.Errorf("unexpected error matching %v: %v", errBadUpstream, tt.err)
+			}
+		})
+	}
+}
+
 func TestNotExistError(t *testing.T) {
 	t.Run("Normal", func(t *testing.T) {
 		for _, tt := range []struct {

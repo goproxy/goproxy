@@ -422,11 +422,13 @@ func (gf *GoFetcher) Download(ctx context.Context, path, version string) (info, 
 	infoContent := strings.NewReader(marshalInfo(infoVersion, infoTime))
 	modContent, err := os.Open(modFile)
 	if err != nil {
+		err = &internalError{err: err}
 		return
 	}
 	zipContent, err := os.Open(zipFile)
 	if err != nil {
 		modContent.Close()
+		err = &internalError{err: err}
 		return
 	}
 
@@ -480,6 +482,7 @@ func (gf *GoFetcher) proxyDownload(ctx context.Context, path, version string, pr
 
 	tempDir, err := os.MkdirTemp(gf.TempDir, tempDirPattern)
 	if err != nil {
+		err = &internalError{err: err}
 		return
 	}
 	defer func() {
@@ -524,7 +527,7 @@ func (gf *GoFetcher) execGo(ctx context.Context, args ...string) ([]byte, error)
 
 	tempDir, err := os.MkdirTemp(gf.TempDir, tempDirPattern)
 	if err != nil {
-		return nil, err
+		return nil, &internalError{err: err}
 	}
 	defer os.RemoveAll(tempDir)
 
@@ -549,7 +552,7 @@ func (gf *GoFetcher) execGo(ctx context.Context, args ...string) ([]byte, error)
 			output = ee.Stderr
 		}
 		if len(output) == 0 {
-			return nil, err
+			return nil, &internalError{err: err}
 		}
 		var msg string
 		for line := range strings.Lines(string(output)) {
@@ -638,7 +641,8 @@ func walkEnvGOPROXY(envGOPROXY string, onProxy func(proxy *url.URL) error, onDir
 			return err
 		}
 		if err := onProxy(u); err != nil {
-			if fallBackOnError || errors.Is(err, fs.ErrNotExist) {
+			_, isInternal := errors.AsType[*internalError](err)
+			if fallBackOnError || !isInternal && errors.Is(err, fs.ErrNotExist) {
 				lastErr = err
 				continue
 			}
@@ -756,7 +760,7 @@ func unmarshalInfo(s string) (string, time.Time, error) {
 func unmarshalInfoFile(name string) (string, time.Time, error) {
 	b, err := os.ReadFile(name)
 	if err != nil {
-		return "", time.Time{}, err
+		return "", time.Time{}, &internalError{err: err}
 	}
 	version, t, err := unmarshalInfo(string(b))
 	if err != nil {
@@ -769,12 +773,12 @@ func unmarshalInfoFile(name string) (string, time.Time, error) {
 func checkModFile(name string) error {
 	f, err := os.Open(name)
 	if err != nil {
-		return err
+		return &internalError{err: err}
 	}
 	defer f.Close()
 	b, err := io.ReadAll(io.LimitReader(f, zip.MaxGoMod+1))
 	if err != nil {
-		return err
+		return &internalError{err: err}
 	}
 	if len(b) > zip.MaxGoMod {
 		return fmt.Errorf("%w: invalid mod file: size exceeds %d bytes", errBadUpstream, zip.MaxGoMod)
@@ -797,7 +801,7 @@ func verifyModFile(sumdbClient *sumdb.Client, name, modulePath, moduleVersion st
 	}
 	modHash, err := dirhash.DefaultHash([]string{"go.mod"}, func(string) (io.ReadCloser, error) { return os.Open(name) })
 	if err != nil {
-		return err
+		return &internalError{err: err}
 	}
 	modSumLine := fmt.Sprintf("%s %s/go.mod %s", modulePath, moduleVersion, modHash)
 	if !slices.Contains(sumLines, modSumLine) {
@@ -811,7 +815,7 @@ func verifyModFile(sumdbClient *sumdb.Client, name, modulePath, moduleVersion st
 func checkZipFile(name, modulePath, moduleVersion string) error {
 	if _, err := zip.CheckZip(module.Version{Path: modulePath, Version: moduleVersion}, name); err != nil {
 		if _, ok := errors.AsType[*fs.PathError](err); ok {
-			return err
+			return &internalError{err: err}
 		}
 		return fmt.Errorf("%w: invalid zip file: %w", errBadUpstream, err)
 	}
@@ -831,7 +835,7 @@ func verifyZipFile(sumdbClient *sumdb.Client, name, modulePath, moduleVersion st
 	zipHash, err := dirhash.HashZip(name, dirhash.DefaultHash)
 	if err != nil {
 		if _, ok := errors.AsType[*fs.PathError](err); ok {
-			return err
+			return &internalError{err: err}
 		}
 		return fmt.Errorf("%w: invalid zip file: %w", errBadUpstream, err)
 	}

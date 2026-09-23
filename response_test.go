@@ -701,6 +701,54 @@ func TestResponseSuccess(t *testing.T) {
 }
 
 func TestResponseError(t *testing.T) {
+	t.Run("Internal", func(t *testing.T) {
+		cause := &fs.PathError{Op: "open", Path: "file", Err: fs.ErrNotExist}
+		localErr := &internalError{err: cause}
+		for _, tt := range []struct {
+			name string
+			err  error
+		}{
+			{"Direct", localErr},
+			{"Wrapped", fmt.Errorf("fetch failed: %w", localErr)},
+			{"Joined", errors.Join(fs.ErrNotExist, localErr)},
+			{"NotExist", &notExistError{err: localErr}},
+			{"FileTimeout", &internalError{err: &fs.PathError{Op: "read", Path: "file", Err: os.ErrDeadlineExceeded}}},
+			{"Unmarked", cause},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				for _, method := range []string{http.MethodGet, http.MethodHead} {
+					for _, cacheSensitive := range []bool{false, true} {
+						rec := httptest.NewRecorder()
+						responseError(rec, httptest.NewRequest(method, "/", nil), tt.err, cacheSensitive)
+						wantStatusCode := http.StatusInternalServerError
+						wantCacheControl := "no-store"
+						wantContent := "internal server error"
+						if tt.err == cause {
+							wantStatusCode = http.StatusNotFound
+							wantCacheControl = "public, max-age=600"
+							if cacheSensitive {
+								wantCacheControl = "public, max-age=60"
+							}
+							wantContent = "not found: " + cause.Error()
+						}
+						if got, want := rec.Code, wantStatusCode; got != want {
+							t.Errorf("method %s, cache sensitive %t: got %d, want %d", method, cacheSensitive, got, want)
+						}
+						if got, want := rec.Header().Get("Cache-Control"), wantCacheControl; got != want {
+							t.Errorf("method %s, cache sensitive %t: got %q, want %q", method, cacheSensitive, got, want)
+						}
+						if method == http.MethodHead {
+							wantContent = ""
+						}
+						if got, want := rec.Body.String(), wantContent; got != want {
+							t.Errorf("method %s, cache sensitive %t: got %q, want %q", method, cacheSensitive, got, want)
+						}
+					}
+				}
+			})
+		}
+	})
+
 	t.Run("Uncacheable", func(t *testing.T) {
 		for _, tt := range []struct {
 			name           string
