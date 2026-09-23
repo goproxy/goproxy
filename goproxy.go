@@ -38,7 +38,8 @@ type Goproxy struct {
 	//
 	// Note that any error returned by Fetcher that matches [fs.ErrNotExist]
 	// will result in a 404 response with the error message in the response
-	// body.
+	// body, except for local operation failures reported by [GoFetcher].
+	// Those failures result in a 500 response.
 	Fetcher Fetcher
 
 	// ProxiedSumDBs is a list of proxied checksum databases (see

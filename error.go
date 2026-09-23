@@ -54,6 +54,15 @@ func isFetchTimedOutError(err error) bool {
 	return false
 }
 
+// internalError marks an error caused by a local operation.
+type internalError struct{ err error }
+
+// Error implements [error].
+func (e *internalError) Error() string { return e.err.Error() }
+
+// Unwrap returns the underlying error.
+func (e *internalError) Unwrap() error { return e.err }
+
 // notExistError is like [fs.ErrNotExist] but with a custom underlying error.
 type notExistError struct{ err error }
 

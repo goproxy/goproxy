@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/crc32"
@@ -150,6 +151,97 @@ func TestGoproxyInit(t *testing.T) {
 }
 
 func TestGoproxyServeHTTP(t *testing.T) {
+	t.Run("LocalFileErrors", func(t *testing.T) {
+		for _, tt := range []struct {
+			name  string
+			proxy string
+			goBin bool
+		}{
+			{"ProxyTempDir", "https://proxy.example.com", false},
+			{"DirectTempDir", "direct", false},
+			{"GoBinary", "direct", true},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				for _, resource := range []struct {
+					name     string
+					path     string
+					download bool
+				}{
+					{"Latest", "/example.com/@latest", false},
+					{"Query", "/example.com/@v/main.info", false},
+					{"List", "/example.com/@v/list", false},
+					{"Info", "/example.com/@v/v1.0.0.info", true},
+					{"Mod", "/example.com/@v/v1.0.0.mod", true},
+					{"Zip", "/example.com/@v/v1.0.0.zip", true},
+				} {
+					if tt.proxy != "direct" && !resource.download {
+						continue
+					}
+					t.Run(resource.name, func(t *testing.T) {
+						for _, method := range []string{http.MethodGet, http.MethodHead} {
+							t.Run(method, func(t *testing.T) {
+								tempDir := t.TempDir()
+								missing := filepath.Join(tempDir, "missing")
+								gf := &GoFetcher{
+									Env:     []string{"GOPROXY=" + tt.proxy, "GOSUMDB=off"},
+									TempDir: missing,
+									Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+										t.Errorf("unexpected request %s", req.URL)
+										return nil, errors.New("unexpected request")
+									}),
+								}
+								if tt.goBin {
+									gf.GoBin = missing
+									gf.TempDir = tempDir
+								}
+								var log bytes.Buffer
+								g := &Goproxy{
+									Fetcher: gf,
+									Cacher: &testCacher{
+										get: func(context.Context, Cacher, string) (io.ReadCloser, error) {
+											return nil, fs.ErrNotExist
+										},
+										put: func(_ context.Context, _ Cacher, name string, _ io.ReadSeeker) error {
+											t.Errorf("unexpected cache write %q", name)
+											return nil
+										},
+									},
+									Logger: slog.New(slog.NewJSONHandler(&log, nil)),
+								}
+								rec := httptest.NewRecorder()
+								g.ServeHTTP(rec, httptest.NewRequest(method, resource.path, nil))
+								if got, want := rec.Code, http.StatusInternalServerError; got != want {
+									t.Errorf("got %d, want %d", got, want)
+								}
+								if got, want := rec.Header().Get("Cache-Control"), "no-store"; got != want {
+									t.Errorf("got %q, want %q", got, want)
+								}
+								wantContent := "internal server error"
+								if method == http.MethodHead {
+									wantContent = ""
+								}
+								if got, want := rec.Body.String(), wantContent; got != want {
+									t.Errorf("got %q, want %q", got, want)
+								}
+								var record struct{ Error string }
+								if err := json.Unmarshal(log.Bytes(), &record); err != nil {
+									t.Errorf("unexpected error %v", err)
+								} else if !strings.Contains(record.Error, missing) {
+									t.Errorf("got logged error %q, want path %q", record.Error, missing)
+								}
+								if entries, err := os.ReadDir(tempDir); err != nil {
+									t.Errorf("unexpected error %v", err)
+								} else if len(entries) != 0 {
+									t.Errorf("unexpected temporary files %v", entries)
+								}
+							})
+						}
+					})
+				}
+			})
+		}
+	})
+
 	t.Run("ModuleResponseValidation", func(t *testing.T) {
 		info := marshalInfo("v1.0.0", time.Time{})
 		mod := "module example.com"

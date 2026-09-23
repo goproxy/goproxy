@@ -136,6 +136,10 @@ func responseSuccess(rw http.ResponseWriter, req *http.Request, content io.Reade
 
 // responseError responses error to the client with the err and cacheSensitive.
 func responseError(rw http.ResponseWriter, req *http.Request, err error, cacheSensitive bool) {
+	if _, ok := errors.AsType[*internalError](err); ok {
+		responseInternalServerError(rw, req)
+		return
+	}
 	isBadUpstream := isBadUpstreamError(err)
 	isFetchTimedOut := isFetchTimedOutError(err)
 	if errors.Is(err, fs.ErrNotExist) {

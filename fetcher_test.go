@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -941,6 +942,76 @@ func TestGoFetcherDownload(t *testing.T) {
 		}
 	}
 
+	t.Run("MissingDownloadedFile", func(t *testing.T) {
+		for _, tt := range []struct {
+			name string
+			ext  string
+		}{
+			{"Info", ".info"},
+			{"Mod", ".mod"},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				var missing string
+				gf := &GoFetcher{
+					Env:     []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=off"},
+					TempDir: t.TempDir(),
+				}
+				gf.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					ext := filepath.Ext(req.URL.Path)
+					if ext == tt.ext {
+						files, err := filepath.Glob(filepath.Join(gf.TempDir, "*", "*"))
+						if err != nil {
+							return nil, err
+						}
+						for _, name := range files {
+							fi, err := os.Stat(name)
+							if err != nil {
+								return nil, err
+							}
+							if fi.Size() == 0 {
+								missing = name
+							}
+						}
+						if missing == "" {
+							t.Error("temporary file not found")
+						}
+					}
+					if ext == ".zip" {
+						if err := os.Remove(missing); err != nil {
+							return nil, err
+						}
+					}
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(strings.NewReader(map[string]string{".info": info, ".mod": mod, ".zip": string(zip)}[ext])),
+						Request:    req,
+					}, nil
+				})
+				info, mod, zip, err := gf.Download(t.Context(), "example.com", infoVersion)
+				for _, content := range []io.ReadSeekCloser{info, mod, zip} {
+					if content != nil {
+						content.Close()
+						t.Error("unexpected module content")
+					}
+				}
+				if _, ok := errors.AsType[*internalError](err); !ok {
+					t.Errorf("got error %v, want an internal error", err)
+				}
+				if pe, ok := errors.AsType[*fs.PathError](err); !ok || pe.Path != missing {
+					t.Errorf("got error %v, want a file error for %q", err, missing)
+				}
+				if !errors.Is(err, fs.ErrNotExist) {
+					t.Errorf("got error %v, want an error matching %v", err, fs.ErrNotExist)
+				}
+				if entries, err := os.ReadDir(gf.TempDir); err != nil {
+					t.Errorf("unexpected error %v", err)
+				} else if len(entries) != 0 {
+					t.Errorf("unexpected temporary files %v", entries)
+				}
+			})
+		}
+	})
+
 	t.Run("InfoVersion", func(t *testing.T) {
 		for _, tt := range []struct {
 			name    string
@@ -1015,6 +1086,83 @@ func TestGoFetcherDownload(t *testing.T) {
 		gosum += fmt.Sprintf("%s %s/go.mod %s\n", modulePath, moduleVersion, modHash)
 		return []byte(gosum), nil
 	})).ServeHTTP
+
+	t.Run("ReopenDownloadedFile", func(t *testing.T) {
+		for _, tt := range []struct {
+			name string
+			ext  string
+		}{
+			{"Mod", ".mod"},
+			{"Zip", ".zip"},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				if runtime.GOOS == "windows" && tt.ext == ".zip" {
+					t.Skip("Windows does not allow removing an open ZIP file")
+				}
+				var missing string
+				gf := &GoFetcher{
+					Env:     []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=" + vkey + " https://sumdb.example.com"},
+					TempDir: t.TempDir(),
+				}
+				gf.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					rec := httptest.NewRecorder()
+					if req.URL.Host == "sumdb.example.com" {
+						sumdbHandler(rec, req)
+					} else {
+						proxyHandler(rec, req)
+					}
+					resp := rec.Result()
+					if filepath.Ext(req.URL.Path) == tt.ext {
+						body := resp.Body
+						resp.Body = struct {
+							io.ReadCloser
+							io.WriterTo
+						}{body, writerToFunc(func(w io.Writer) (int64, error) {
+							missing = w.(*os.File).Name()
+							return io.Copy(w, body)
+						})}
+					}
+					return resp, nil
+				})
+				defaultHash := dirhash.DefaultHash
+				t.Cleanup(func() { dirhash.DefaultHash = defaultHash })
+				dirhash.DefaultHash = func(files []string, open func(string) (io.ReadCloser, error)) (string, error) {
+					hash, err := defaultHash(files, open)
+					if err != nil {
+						return "", err
+					}
+					if len(files) == 1 && files[0] == "example.com@v1.0.0/go.mod" {
+						// Remove the file after hashing so validation succeeds before reopening it.
+						if err := os.Remove(missing); err != nil {
+							t.Fatal(err)
+						}
+					}
+					return hash, nil
+				}
+				info, mod, zip, err := gf.Download(t.Context(), "example.com", infoVersion)
+				for _, content := range []io.ReadSeekCloser{info, mod, zip} {
+					if content != nil {
+						content.Close()
+						t.Error("unexpected module content")
+					}
+				}
+				if _, ok := errors.AsType[*internalError](err); !ok {
+					t.Errorf("got error %v, want an internal error", err)
+				}
+				if pe, ok := errors.AsType[*fs.PathError](err); !ok || pe.Op != "open" || pe.Path != missing {
+					t.Errorf("got error %v, want an open error for %q", err, missing)
+				}
+				if !errors.Is(err, fs.ErrNotExist) {
+					t.Errorf("got error %v, want an error matching %v", err, fs.ErrNotExist)
+				}
+				if entries, err := os.ReadDir(gf.TempDir); err != nil {
+					t.Fatal(err)
+				} else if len(entries) != 0 {
+					t.Errorf("unexpected temporary files %v", entries)
+				}
+			})
+		}
+	})
 
 	for _, tt := range []struct {
 		n            int
@@ -1401,6 +1549,11 @@ func TestGoFetcherProxyDownload(t *testing.T) {
 				if got, want := err, tt.wantErr; !compareErrors(got, want) {
 					t.Errorf("got %v, want %v", got, want)
 				}
+				if tt.wantErr == fs.ErrNotExist {
+					if _, ok := errors.AsType[*internalError](err); !ok {
+						t.Errorf("got error %v, want an internal error", err)
+					}
+				}
 			} else {
 				if err != nil {
 					t.Fatalf("unexpected error %v", err)
@@ -1630,6 +1783,11 @@ func TestGoFetcherExecGo(t *testing.T) {
 				if got, want := err, tt.wantErr; !compareErrors(got, want) {
 					t.Errorf("got %v, want %v", got, want)
 				}
+				if tt.wantErr == fs.ErrNotExist {
+					if _, ok := errors.AsType[*internalError](err); !ok {
+						t.Errorf("got error %v, want an internal error", err)
+					}
+				}
 			} else {
 				if err != nil {
 					t.Fatalf("unexpected error %v", err)
@@ -1731,6 +1889,64 @@ func TestCleanEnvGOPROXY(t *testing.T) {
 }
 
 func TestWalkEnvGOPROXY(t *testing.T) {
+	t.Run("InternalErrors", func(t *testing.T) {
+		gf := &GoFetcher{TempDir: filepath.Join(t.TempDir(), "missing")}
+		proxy := &url.URL{Scheme: "https", Host: "example.com"}
+		_, _, _, _, localErr := gf.proxyDownload(t.Context(), "example.com", "v1.0.0", proxy)
+		if _, ok := errors.AsType[*internalError](localErr); !ok {
+			t.Fatalf("got error %v, want an internal error", localErr)
+		}
+		for _, tt := range []struct {
+			name              string
+			err               error
+			wantCommaFallback bool
+		}{
+			{"Direct", localErr, false},
+			{"Wrapped", fmt.Errorf("fetch failed: %w", localErr), false},
+			{"Joined", errors.Join(fs.ErrNotExist, localErr), false},
+			{"Unmarked", errors.Unwrap(localErr), true},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				for _, fallback := range []struct {
+					name      string
+					separator string
+					next      string
+				}{
+					{"CommaProxy", ",", "https://alt.example.com"},
+					{"PipeProxy", "|", "https://alt.example.com"},
+					{"CommaDirect", ",", "direct"},
+					{"PipeDirect", "|", "direct"},
+				} {
+					t.Run(fallback.name, func(t *testing.T) {
+						var calls []string
+						err := walkEnvGOPROXY("https://example.com"+fallback.separator+fallback.next, func(proxy *url.URL) error {
+							calls = append(calls, proxy.String())
+							if proxy.Host == "example.com" {
+								return tt.err
+							}
+							return nil
+						}, func() error {
+							calls = append(calls, "direct")
+							return nil
+						})
+						wantCalls := []string{"https://example.com"}
+						wantErr := tt.err
+						if fallback.separator == "|" || tt.wantCommaFallback {
+							wantCalls = append(wantCalls, fallback.next)
+							wantErr = nil
+						}
+						if !slices.Equal(calls, wantCalls) {
+							t.Errorf("got calls %q, want %q", calls, wantCalls)
+						}
+						if err != wantErr {
+							t.Errorf("got error %v, want %v", err, wantErr)
+						}
+					})
+				}
+			})
+		}
+	})
+
 	t.Run("HTTPStatusFallback", func(t *testing.T) {
 		for _, statusCode := range []int{http.StatusBadRequest, http.StatusNotFound, http.StatusGone} {
 			for _, tt := range []struct {
@@ -2250,6 +2466,11 @@ func TestUnmarshalInfoFile(t *testing.T) {
 				if got, want := err, tt.wantErr; !compareErrors(got, want) {
 					t.Errorf("got %v, want %v", got, want)
 				}
+				if tt.wantErr == fs.ErrNotExist {
+					if _, ok := errors.AsType[*internalError](err); !ok {
+						t.Errorf("got error %v, want an internal error", err)
+					}
+				}
 				if got, want := errors.Is(err, errBadUpstream), errors.Is(tt.wantErr, errBadUpstream); got != want {
 					t.Errorf("got bad upstream %t, want %t", got, want)
 				}
@@ -2311,6 +2532,9 @@ func TestCheckModFile(t *testing.T) {
 
 	t.Run("Directory", func(t *testing.T) {
 		err := checkModFile(t.TempDir())
+		if _, ok := errors.AsType[*internalError](err); !ok {
+			t.Errorf("got error %v, want an internal error", err)
+		}
 		if _, ok := errors.AsType[*fs.PathError](err); !ok {
 			t.Errorf("got error %v, want a file error", err)
 		}
@@ -2321,6 +2545,9 @@ func TestCheckModFile(t *testing.T) {
 
 	t.Run("MissingFile", func(t *testing.T) {
 		err := checkModFile(filepath.Join(t.TempDir(), "missing.mod"))
+		if _, ok := errors.AsType[*internalError](err); !ok {
+			t.Errorf("got error %v, want an internal error", err)
+		}
 		if !errors.Is(err, fs.ErrNotExist) {
 			t.Errorf("got error %v, want an error matching %v", err, fs.ErrNotExist)
 		}
@@ -2476,6 +2703,11 @@ func TestVerifyModFile(t *testing.T) {
 				if got, want := err, tt.wantErr; !compareErrors(got, want) {
 					t.Errorf("got %v, want %v", got, want)
 				}
+				if tt.wantErr == fs.ErrNotExist {
+					if _, ok := errors.AsType[*internalError](err); !ok {
+						t.Errorf("got error %v, want an internal error", err)
+					}
+				}
 				if got, want := errors.Is(err, errBadUpstream), errors.Is(tt.wantErr, errBadUpstream); got != want {
 					t.Errorf("got bad upstream %t, want %t", got, want)
 				}
@@ -2547,6 +2779,11 @@ func TestCheckZipFile(t *testing.T) {
 				}
 				if got, want := err, tt.wantErr; !compareErrors(got, want) {
 					t.Errorf("got %v, want %v", got, want)
+				}
+				if tt.wantErr == fs.ErrNotExist {
+					if _, ok := errors.AsType[*internalError](err); !ok {
+						t.Errorf("got error %v, want an internal error", err)
+					}
 				}
 				if got, want := errors.Is(err, errBadUpstream), errors.Is(tt.wantErr, errBadUpstream); got != want {
 					t.Errorf("got bad upstream %t, want %t", got, want)
@@ -2665,6 +2902,11 @@ func TestVerifyZipFile(t *testing.T) {
 				}
 				if got, want := err, tt.wantErr; !compareErrors(got, want) {
 					t.Errorf("got %v, want %v", got, want)
+				}
+				if tt.wantErr == fs.ErrNotExist {
+					if _, ok := errors.AsType[*internalError](err); !ok {
+						t.Errorf("got error %v, want an internal error", err)
+					}
 				}
 				if got, want := errors.Is(err, errBadUpstream), errors.Is(tt.wantErr, errBadUpstream); got != want {
 					t.Errorf("got bad upstream %t, want %t", got, want)

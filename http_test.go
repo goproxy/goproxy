@@ -27,6 +27,10 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
 
+type writerToFunc func(io.Writer) (int64, error)
+
+func (f writerToFunc) WriteTo(w io.Writer) (int64, error) { return f(w) }
+
 type testHTTPResponseBody struct {
 	io.Reader
 	bytesRead int
@@ -367,6 +371,73 @@ func TestHTTPGet(t *testing.T) {
 }
 
 func TestHTTPGetTemp(t *testing.T) {
+	t.Run("MissingTempDir", func(t *testing.T) {
+		missing := filepath.Join(t.TempDir(), "missing")
+		file, err := httpGetTemp(t.Context(), http.DefaultClient, "https://example.com", missing)
+		if file != "" {
+			t.Errorf("unexpected temporary file %q", file)
+		}
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), missing) {
+			t.Errorf("got error %v, want a file error for %q", err, missing)
+		}
+		if _, ok := errors.AsType[*internalError](err); !ok {
+			t.Errorf("got error %v, want an internal error", err)
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("got error %v, want an error matching %v", err, fs.ErrNotExist)
+		}
+	})
+
+	t.Run("CloseError", func(t *testing.T) {
+		body := &testHTTPResponseBody{Reader: strings.NewReader("foobar")}
+		var tempFile *os.File
+		client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body: struct {
+					io.ReadCloser
+					io.WriterTo
+				}{body, writerToFunc(func(w io.Writer) (int64, error) {
+					tempFile = w.(*os.File)
+					n, err := io.Copy(w, body)
+					if err != nil {
+						return n, err
+					}
+					return n, tempFile.Close()
+				})},
+				Request: req,
+			}, nil
+		})}
+		tempDir := t.TempDir()
+		file, err := httpGetTemp(t.Context(), client, "https://example.com", tempDir)
+		if file != "" {
+			t.Errorf("unexpected temporary file %q", file)
+		}
+		if _, ok := errors.AsType[*internalError](err); !ok {
+			t.Errorf("got error %v, want an internal error", err)
+		}
+		if !errors.Is(err, os.ErrClosed) {
+			t.Errorf("got error %v, want an error matching %v", err, os.ErrClosed)
+		}
+		if tempFile == nil {
+			t.Fatal("temporary file not found")
+		}
+		if pe, ok := errors.AsType[*fs.PathError](err); !ok || pe.Op != "close" || pe.Path != tempFile.Name() {
+			t.Errorf("got error %v, want a close error for %q", err, tempFile.Name())
+		}
+		if !body.closed || body.bytesRead != len("foobar") {
+			t.Errorf("got response body %+v, want fully read and closed", body)
+		}
+		if entries, err := os.ReadDir(tempDir); err != nil {
+			t.Fatal(err)
+		} else if len(entries) != 0 {
+			t.Errorf("unexpected temporary files %v", entries)
+		}
+	})
+
 	t.Run("ErrorBodyLimit", func(t *testing.T) {
 		for _, tt := range []struct {
 			name             string
@@ -450,7 +521,6 @@ func TestHTTPGetTemp(t *testing.T) {
 	for _, tt := range []struct {
 		n           int
 		handler     http.HandlerFunc
-		tempDir     string
 		wantContent string
 		wantErr     error
 	}{
@@ -467,19 +537,11 @@ func TestHTTPGetTemp(t *testing.T) {
 			},
 			wantErr: fs.ErrNotExist,
 		},
-		{
-			n:       3,
-			tempDir: filepath.Join(os.TempDir(), "404"),
-			wantErr: fs.ErrNotExist,
-		},
 	} {
 		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
 			server := newHTTPTestServer(t, tt.handler)
-			if tt.tempDir == "" {
-				tt.tempDir = t.TempDir()
-			}
 
-			tempFile, err := httpGetTemp(t.Context(), http.DefaultClient, server.URL, tt.tempDir)
+			tempFile, err := httpGetTemp(t.Context(), http.DefaultClient, server.URL, t.TempDir())
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatal("expected error")
