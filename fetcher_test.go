@@ -23,6 +23,7 @@ import (
 	"golang.org/x/mod/sumdb"
 	"golang.org/x/mod/sumdb/dirhash"
 	"golang.org/x/mod/sumdb/note"
+	"golang.org/x/mod/zip"
 )
 
 func TestGoFetcherInit(t *testing.T) {
@@ -2271,6 +2272,43 @@ func TestUnmarshalInfoFile(t *testing.T) {
 }
 
 func TestCheckModFile(t *testing.T) {
+	t.Run("SizeLimit", func(t *testing.T) {
+		for _, tt := range []struct {
+			name    string
+			size    int
+			wantErr bool
+		}{
+			{"BelowLimit", zip.MaxGoMod - 1, false},
+			{"AtLimit", zip.MaxGoMod, false},
+			{"AboveLimit", zip.MaxGoMod + 1, true},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				const mod = "module example.com\n//"
+				file, err := makeTempFile(t, []byte(mod+strings.Repeat("x", tt.size-len(mod))))
+				if err != nil {
+					t.Fatalf("unexpected error %v", err)
+				}
+				err = checkModFile(file)
+				if tt.wantErr {
+					if err == nil {
+						t.Fatal("expected error")
+					}
+					if got, want := err.Error(), fmt.Sprintf("bad upstream: invalid mod file: size exceeds %d bytes", zip.MaxGoMod); got != want {
+						t.Errorf("got %q, want %q", got, want)
+					}
+					if !errors.Is(err, errBadUpstream) {
+						t.Errorf("got error %v, want an error matching %v", err, errBadUpstream)
+					}
+					if errors.Is(err, fs.ErrNotExist) {
+						t.Errorf("unexpected error matching %v: %v", fs.ErrNotExist, err)
+					}
+				} else if err != nil {
+					t.Fatalf("unexpected error %v", err)
+				}
+			})
+		}
+	})
+
 	t.Run("Directory", func(t *testing.T) {
 		err := checkModFile(t.TempDir())
 		if _, ok := errors.AsType[*fs.PathError](err); !ok {
@@ -2281,50 +2319,60 @@ func TestCheckModFile(t *testing.T) {
 		}
 	})
 
-	t.Run("LongLine", func(t *testing.T) {
-		file, err := makeTempFile(t, []byte("//"+strings.Repeat("x", bufio.MaxScanTokenSize)+"\nmodule example.com\n"))
-		if err != nil {
-			t.Fatalf("unexpected error %v", err)
+	t.Run("MissingFile", func(t *testing.T) {
+		err := checkModFile(filepath.Join(t.TempDir(), "missing.mod"))
+		if !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("got error %v, want an error matching %v", err, fs.ErrNotExist)
 		}
-		err = checkModFile(file)
-		if got, want := err, bufio.ErrTooLong; got != want {
-			t.Errorf("got %v, want %v", got, want)
+		if errors.Is(err, errBadUpstream) {
+			t.Errorf("unexpected error matching %v: %v", errBadUpstream, err)
 		}
 	})
 
 	for _, tt := range []struct {
-		n       int
+		name    string
 		mod     string
-		wantErr error
+		wantErr bool
 	}{
-		{1, "module", nil},
-		{2, "// foobar\nmodule foobar", nil},
-		{3, "foobar", fmt.Errorf("%w: invalid mod file: missing module directive", errBadUpstream)},
-		{4, "", fs.ErrNotExist},
+		{"Valid", "module example.com", false},
+		{"Comments", "// comment\nmodule example.com // comment\n", false},
+		{"Whitespace", "\r\n\tmodule\texample.com\r\n", false},
+		{"QuotedPath", `module "example.com"`, false},
+		{"RawQuotedPath", "module `example.com`", false},
+		{"LongComment", "//" + strings.Repeat("x", bufio.MaxScanTokenSize) + "\nmodule example.com\n", false},
+		{"LongModuleLine", "module " + strings.Repeat(" ", bufio.MaxScanTokenSize) + "example.com\n", false},
+		{"OtherDirective", "unknown directive\nmodule example.com\n", false},
+		{"Empty", "", true},
+		{"CommentsOnly", "// module example.com\n", true},
+		{"MissingDirective", "go 1.26\n", true},
+		{"DirectivePrefix", "modulexxx example.com", true},
+		{"MissingPath", "module", true},
+		{"WhitespaceOnlyPath", "module \t\n", true},
+		{"CommentInsteadOfPath", "module // example.com", true},
+		{"EmptyQuotedPath", `module ""`, true},
+		{"EmptyRawQuotedPath", "module ``", true},
+		{"UnterminatedQuote", `module "example.com`, true},
+		{"QuotedPathSuffix", `module "example.com"suffix`, true},
+		{"MissingWhitespace", `module"example.com"`, true},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
-			var modFile string
-			if tt.mod != "" {
-				var err error
-				modFile, err = makeTempFile(t, []byte(tt.mod))
-				if err != nil {
-					t.Fatalf("unexpected error %v", err)
-				}
+		t.Run(tt.name, func(t *testing.T) {
+			file, err := makeTempFile(t, []byte(tt.mod))
+			if err != nil {
+				t.Fatalf("unexpected error %v", err)
 			}
-
-			err := checkModFile(modFile)
-			if tt.wantErr != nil {
+			err = checkModFile(file)
+			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error")
 				}
-				if got, want := err, tt.wantErr; !compareErrors(got, want) {
-					t.Errorf("got %v, want %v", got, want)
+				if got, want := err.Error(), "bad upstream: invalid mod file: missing module directive"; got != want {
+					t.Errorf("got %q, want %q", got, want)
 				}
-				if got, want := errors.Is(err, errBadUpstream), errors.Is(tt.wantErr, errBadUpstream); got != want {
-					t.Errorf("got bad upstream %t, want %t", got, want)
+				if !errors.Is(err, errBadUpstream) {
+					t.Errorf("got error %v, want an error matching %v", err, errBadUpstream)
 				}
-				if got, want := errors.Is(err, fs.ErrNotExist), errors.Is(tt.wantErr, fs.ErrNotExist); got != want {
-					t.Errorf("got not exist %t, want %t", got, want)
+				if errors.Is(err, fs.ErrNotExist) {
+					t.Errorf("unexpected error matching %v: %v", fs.ErrNotExist, err)
 				}
 			} else if err != nil {
 				t.Fatalf("unexpected error %v", err)

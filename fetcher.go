@@ -1,7 +1,6 @@
 package goproxy
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -19,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
 	"golang.org/x/mod/sumdb"
@@ -772,16 +772,17 @@ func checkModFile(name string) error {
 		return err
 	}
 	defer f.Close()
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		if strings.HasPrefix(strings.TrimSpace(scanner.Text()), "module") {
-			return nil
-		}
-	}
-	if err := scanner.Err(); err != nil {
+	b, err := io.ReadAll(io.LimitReader(f, zip.MaxGoMod+1))
+	if err != nil {
 		return err
 	}
-	return fmt.Errorf("%w: invalid mod file: missing module directive", errBadUpstream)
+	if len(b) > zip.MaxGoMod {
+		return fmt.Errorf("%w: invalid mod file: size exceeds %d bytes", errBadUpstream, zip.MaxGoMod)
+	}
+	if modfile.ModulePath(b) == "" {
+		return fmt.Errorf("%w: invalid mod file: missing module directive", errBadUpstream)
+	}
+	return nil
 }
 
 // verifyModFile uses the sumdbClient to verify the mod file targeted by the
