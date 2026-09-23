@@ -1667,6 +1667,68 @@ func TestCleanEnvGOPROXY(t *testing.T) {
 }
 
 func TestWalkEnvGOPROXY(t *testing.T) {
+	t.Run("HTTPStatusFallback", func(t *testing.T) {
+		for _, statusCode := range []int{http.StatusBadRequest, http.StatusNotFound, http.StatusGone} {
+			for _, tt := range []struct {
+				name      string
+				separator string
+				next      string
+			}{
+				{"CommaProxy", ",", "https://alt.example.com"},
+				{"PipeProxy", "|", "https://alt.example.com"},
+				{"CommaDirect", ",", "direct"},
+				{"PipeDirect", "|", "direct"},
+			} {
+				t.Run(strconv.Itoa(statusCode)+"/"+tt.name, func(t *testing.T) {
+					attempts, proxyCalls, directCalls := 0, 0, 0
+					client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						attempts++
+						return &http.Response{
+							StatusCode: statusCode,
+							Status:     strconv.Itoa(statusCode) + " " + http.StatusText(statusCode),
+							Body:       http.NoBody,
+							Request:    req,
+						}, nil
+					})}
+					err := walkEnvGOPROXY("https://example.com"+tt.separator+tt.next, func(proxy *url.URL) error {
+						proxyCalls++
+						if proxy.Host == "example.com" {
+							return httpGet(t.Context(), client, proxy.String(), nil)
+						}
+						return nil
+					}, func() error {
+						directCalls++
+						return nil
+					})
+					wantProxyCalls, wantDirectCalls := 1, 0
+					if statusCode == http.StatusBadRequest && tt.separator == "," {
+						if err == nil || errors.Is(err, fs.ErrNotExist) {
+							t.Errorf("got %v, want a non-absence error", err)
+						}
+					} else {
+						if err != nil {
+							t.Errorf("unexpected error %v", err)
+						}
+						if tt.next == "direct" {
+							wantDirectCalls = 1
+						} else {
+							wantProxyCalls = 2
+						}
+					}
+					if got, want := attempts, 1; got != want {
+						t.Errorf("got attempts %d, want %d", got, want)
+					}
+					if got, want := proxyCalls, wantProxyCalls; got != want {
+						t.Errorf("got proxy calls %d, want %d", got, want)
+					}
+					if got, want := directCalls, wantDirectCalls; got != want {
+						t.Errorf("got direct calls %d, want %d", got, want)
+					}
+				})
+			}
+		}
+	})
+
 	t.Run("CacheRestrictions", func(t *testing.T) {
 		ordinaryErr := notExistErrorf("module unavailable")
 		restrictedErr := &uncacheableError{err: ordinaryErr}

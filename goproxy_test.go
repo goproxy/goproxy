@@ -147,17 +147,22 @@ func TestGoproxyServeHTTP(t *testing.T) {
 	t.Run("UpstreamCacheRestrictions", func(t *testing.T) {
 		for _, tt := range []struct {
 			name         string
+			statusCode   int
 			cacheControl string
 		}{
-			{"Ordinary", ""},
-			{"Restricted", "no-store"},
+			{"Ordinary", http.StatusNotFound, ""},
+			{"Restricted", http.StatusNotFound, "no-store"},
+			{"Gone", http.StatusGone, ""},
+			{"RestrictedGone", http.StatusGone, "no-store"},
+			{"BadRequest", http.StatusBadRequest, ""},
+			{"RestrictedBadRequest", http.StatusBadRequest, "no-store"},
 		} {
 			t.Run(tt.name, func(t *testing.T) {
 				upstream := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 					if tt.cacheControl != "" {
 						rw.Header().Set("Cache-Control", tt.cacheControl)
 					}
-					rw.WriteHeader(http.StatusNotFound)
+					rw.WriteHeader(tt.statusCode)
 					fmt.Fprint(rw, "module unavailable")
 				}))
 				for _, resource := range []struct {
@@ -187,17 +192,23 @@ func TestGoproxyServeHTTP(t *testing.T) {
 							t.Run(method, func(t *testing.T) {
 								rec := httptest.NewRecorder()
 								g.ServeHTTP(rec, httptest.NewRequest(method, resource.path, nil))
-								if got, want := rec.Code, http.StatusNotFound; got != want {
-									t.Errorf("got %d, want %d", got, want)
-								}
+								wantStatusCode := http.StatusNotFound
 								wantCacheControl := resource.cacheControl
+								wantContent := "not found: module unavailable"
 								if tt.cacheControl != "" {
 									wantCacheControl = tt.cacheControl
+								}
+								if tt.statusCode == http.StatusBadRequest {
+									wantStatusCode = http.StatusInternalServerError
+									wantCacheControl = "no-store"
+									wantContent = "internal server error"
+								}
+								if got, want := rec.Code, wantStatusCode; got != want {
+									t.Errorf("got %d, want %d", got, want)
 								}
 								if got, want := rec.Header().Get("Cache-Control"), wantCacheControl; got != want {
 									t.Errorf("got %q, want %q", got, want)
 								}
-								wantContent := "not found: module unavailable"
 								if method == http.MethodHead {
 									wantContent = ""
 								}
