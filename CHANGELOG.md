@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.27.0](https://github.com/goproxy/goproxy/compare/v0.26.1...v0.27.0) (2026-09-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **GoFetcher:** clarify direct fetch concurrency naming ([#179](https://github.com/goproxy/goproxy/issues/179))
+
+### Bug Fixes
+
+* abort responses when streaming fails ([#196](https://github.com/goproxy/goproxy/issues/196)) ([dc00d5d](https://github.com/goproxy/goproxy/commit/dc00d5dc81b124e8cfa647e7b2212331c144a863))
+* bound upstream error response bodies ([#199](https://github.com/goproxy/goproxy/issues/199)) ([ed2da50](https://github.com/goproxy/goproxy/commit/ed2da507307677dd553edd218d869d67276534c8))
+* close resources on error paths ([#182](https://github.com/goproxy/goproxy/issues/182)) ([ce7f51d](https://github.com/goproxy/goproxy/commit/ce7f51dac4482e656b92829753d4dc8341792578))
+* **cmd/goproxy:** synchronize server error handling ([#183](https://github.com/goproxy/goproxy/issues/183)) ([80d3248](https://github.com/goproxy/goproxy/commit/80d3248f7359b0f0fa2e0b354441ef22f769b188))
+* correct caching of cache-only module responses ([#192](https://github.com/goproxy/goproxy/issues/192)) ([39089c5](https://github.com/goproxy/goproxy/commit/39089c500c76cf1fe814cf61790f1c70f6f0fc83))
+* correct checksum database data tile content type ([#190](https://github.com/goproxy/goproxy/issues/190)) ([359f0e0](https://github.com/goproxy/goproxy/commit/359f0e0912d5e01d098e60321e9608222c00f0e4))
+* disable caching for health checks ([#197](https://github.com/goproxy/goproxy/issues/197)) ([32c6b6e](https://github.com/goproxy/goproxy/commit/32c6b6e21e7b7609ff6246777ad0d18fec49c2f6))
+* distinguish invalid module content from missing resources ([#202](https://github.com/goproxy/goproxy/issues/202)) ([2fcd0de](https://github.com/goproxy/goproxy/commit/2fcd0deb85a9636990d000887ae252d66565a367))
+* distinguish local failures from missing modules ([#204](https://github.com/goproxy/goproxy/issues/204)) ([3b2d84f](https://github.com/goproxy/goproxy/commit/3b2d84f9bf9b213f0da5cc2149fac0ee613fd5b2))
+* distinguish upstream bad requests from missing resources ([#201](https://github.com/goproxy/goproxy/issues/201)) ([0d5d2ae](https://github.com/goproxy/goproxy/commit/0d5d2ae966eacfb4592082ae50d0a17567da9066))
+* escape module queries in upstream URLs ([#187](https://github.com/goproxy/goproxy/issues/187)) ([44cc5ab](https://github.com/goproxy/goproxy/commit/44cc5abd2123a1953f398166d071d91138156cec))
+* ignore range headers on HEAD requests ([#194](https://github.com/goproxy/goproxy/issues/194)) ([d074a23](https://github.com/goproxy/goproxy/commit/d074a231693d56b9472bfd9fe5f63b368a1aa8bc))
+* include allowed methods in 405 responses ([#193](https://github.com/goproxy/goproxy/issues/193)) ([5cbc0b7](https://github.com/goproxy/goproxy/commit/5cbc0b7b90e33037b56354ee1f6b1945301117a3))
+* prevent caching of internal and content serving errors ([#191](https://github.com/goproxy/goproxy/issues/191)) ([85f7c01](https://github.com/goproxy/goproxy/commit/85f7c01a9beee0a0152e41cfad7e119128790608))
+* recognize module directives without a line length limit ([#203](https://github.com/goproxy/goproxy/issues/203)) ([b2ee5e2](https://github.com/goproxy/goproxy/commit/b2ee5e2aa2444f9df95a2f1755356fe9803387bc))
+* recognize wrapped timeout errors ([#195](https://github.com/goproxy/goproxy/issues/195)) ([c5e5fb5](https://github.com/goproxy/goproxy/commit/c5e5fb50a7d3e7d51c68929de5a08cba0086d0b2))
+* route checksum databases with path components ([#200](https://github.com/goproxy/goproxy/issues/200)) ([8bdaa6c](https://github.com/goproxy/goproxy/commit/8bdaa6c525143d7ff78f9a5add74f46c45d83c7f))
+* separate error classification from diagnostic text ([#198](https://github.com/goproxy/goproxy/issues/198)) ([2f2ccc8](https://github.com/goproxy/goproxy/commit/2f2ccc8ea626e9f4b4e8583c29d52f69ab477820))
+* validate checksum database proxy paths ([#186](https://github.com/goproxy/goproxy/issues/186)) ([808fcd3](https://github.com/goproxy/goproxy/commit/808fcd3905da6c3cc6b9c730dace936cd5cf86b6))
+* validate checksum database response bodies ([#189](https://github.com/goproxy/goproxy/issues/189)) ([8af3730](https://github.com/goproxy/goproxy/commit/8af37307f87a16a12aa889ebe67b4bf6fb4ed0e7))
+* validate module info response versions ([d0e545e](https://github.com/goproxy/goproxy/commit/d0e545ebce736c581ed0a184e8f0414890090ddd))
+* validate module info response versions ([#188](https://github.com/goproxy/goproxy/issues/188)) ([e0893ba](https://github.com/goproxy/goproxy/commit/e0893baa4eb6d317963a92ff57de3f4a8d1bc1e1))
+
+
+### Code Refactoring
+
+* bump minimum required Go version to 1.26.0 ([#185](https://github.com/goproxy/goproxy/issues/185)) ([a3184a7](https://github.com/goproxy/goproxy/commit/a3184a7053be54edeee1db74851b041f4a519850))
+* **cmd/goproxy:** migrate S3 cacher from MinIO to AWS SDK v2 ([#173](https://github.com/goproxy/goproxy/issues/173)) ([e503724](https://github.com/goproxy/goproxy/commit/e503724238386713152b7759d1a9fb804e09248e))
+* **GoFetcher:** clarify direct fetch concurrency naming ([#179](https://github.com/goproxy/goproxy/issues/179)) ([500b563](https://github.com/goproxy/goproxy/commit/500b563bfe946b692df69b4c3392f8a05c053180))
+
+
+### Documentation
+
+* clarify cache and transport comments ([#181](https://github.com/goproxy/goproxy/issues/181)) ([a4ef088](https://github.com/goproxy/goproxy/commit/a4ef0881e1c4b24449ae61a84ed8755e8fa40d1b))
+
+
+### Miscellaneous Chores
+
+* remove Go Report Card badge from README.md ([#184](https://github.com/goproxy/goproxy/issues/184)) ([4986068](https://github.com/goproxy/goproxy/commit/4986068f42b304828a93a6e4166c37184585f747))
+
 ## [0.26.1](https://github.com/goproxy/goproxy/compare/v0.26.0...v0.26.1) (2026-04-13)
 
 
