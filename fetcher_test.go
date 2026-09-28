@@ -1118,7 +1118,7 @@ func TestGoFetcherDownload(t *testing.T) {
 							io.ReadCloser
 							io.WriterTo
 						}{body, writerToFunc(func(w io.Writer) (int64, error) {
-							missing = w.(*os.File).Name()
+							missing = w.(httpGetTempWriter).Writer.(*os.File).Name()
 							return io.Copy(w, body)
 						})}
 					}

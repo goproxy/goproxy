@@ -229,3 +229,37 @@ func TestUncacheableError(t *testing.T) {
 		}
 	})
 }
+
+func TestHTTPError(t *testing.T) {
+	cause := &url.Error{Op: "Get", URL: "https://example.com", Err: fs.ErrNotExist}
+	e := &httpError{err: cause}
+	if got, want := e.Error(), cause.Error(); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	if got := errors.Unwrap(e); got != cause {
+		t.Errorf("got %v, want the original URL error", got)
+	}
+	for _, tt := range []struct {
+		name string
+		err  error
+	}{
+		{"Direct", e},
+		{"Wrapped", fmt.Errorf("fetch failed: %w", e)},
+		{"Joined", errors.Join(io.EOF, e)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got, ok := errors.AsType[*httpError](tt.err); !ok || got != e {
+				t.Errorf("got %v, want the original HTTP error", got)
+			}
+			if got, ok := errors.AsType[*url.Error](tt.err); !ok || got != cause {
+				t.Errorf("got %v, want the original URL error", got)
+			}
+			if !errors.Is(tt.err, fs.ErrNotExist) {
+				t.Errorf("got error %v, want an error matching %v", tt.err, fs.ErrNotExist)
+			}
+			if errors.Is(tt.err, errBadUpstream) {
+				t.Errorf("unexpected error matching %v: %v", errBadUpstream, tt.err)
+			}
+		})
+	}
+}

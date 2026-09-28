@@ -418,7 +418,7 @@ func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, target s
 	if err != nil {
 		g.serveCache(rw, req, target, contentType, cacheControlMaxAge, func() {
 			g.logger.Error("failed to proxy checksum database", "error", err, "target", target)
-			responseError(rw, req, err, true)
+			responseUpstreamError(rw, req, err, true)
 		})
 		return
 	}

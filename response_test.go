@@ -958,3 +958,62 @@ func TestResponseError(t *testing.T) {
 		})
 	}
 }
+
+func TestResponseUpstreamError(t *testing.T) {
+	upstreamErr := &url.Error{Op: "Get", URL: "https://example.com", Err: fs.ErrNotExist}
+	localErr := &internalError{err: &fs.PathError{Op: "write", Path: "file", Err: fs.ErrNotExist}}
+	for _, tt := range []struct {
+		name             string
+		err              error
+		wantStatusCode   int
+		wantCacheControl string
+		wantContent      string
+	}{
+		{"Upstream", upstreamErr, http.StatusBadGateway, "no-store", "bad gateway"},
+		{"WrappedUpstream", fmt.Errorf("fetch failed: %w", upstreamErr), http.StatusBadGateway, "no-store", "bad gateway"},
+		{"JoinedUpstream", errors.Join(fs.ErrNotExist, upstreamErr), http.StatusBadGateway, "no-store", "bad gateway"},
+		{"InvalidBody", errBadUpstream, http.StatusBadGateway, "no-store", "bad gateway"},
+		{"Timeout", os.ErrDeadlineExceeded, http.StatusGatewayTimeout, "no-store", "gateway timeout"},
+		{"Unavailable", &httpError{err: errBadUpstream, statusCode: http.StatusServiceUnavailable}, http.StatusServiceUnavailable, "no-store", "service unavailable"},
+		{"Local", localErr, http.StatusInternalServerError, "no-store", "internal server error"},
+		{"LocalTimeout", &internalError{err: os.ErrDeadlineExceeded}, http.StatusInternalServerError, "no-store", "internal server error"},
+		{"JoinedLocal", errors.Join(upstreamErr, localErr), http.StatusInternalServerError, "no-store", "internal server error"},
+		{"NestedLocal", &httpError{err: localErr}, http.StatusInternalServerError, "no-store", "internal server error"},
+		{"Canceled", context.Canceled, http.StatusInternalServerError, "no-store", "internal server error"},
+		{"CanceledNotExist", errors.Join(context.Canceled, upstreamErr), http.StatusInternalServerError, "no-store", "internal server error"},
+		{"NotExist", notExistErrorf("module unavailable"), http.StatusNotFound, "public, max-age=600", "not found: module unavailable"},
+		{"UncacheableNotExist", &uncacheableError{err: notExistErrorf("module unavailable")}, http.StatusNotFound, "no-store", "not found: module unavailable"},
+		{"OtherUpstream", errors.New("operation failed"), http.StatusBadGateway, "no-store", "bad gateway"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, method := range []string{http.MethodGet, http.MethodHead} {
+				t.Run(method, func(t *testing.T) {
+					for _, cacheSensitive := range []bool{false, true} {
+						rec := httptest.NewRecorder()
+						responseUpstreamError(rec, httptest.NewRequest(method, "/", nil), tt.err, cacheSensitive)
+						if got, want := rec.Code, tt.wantStatusCode; got != want {
+							t.Errorf("cache sensitive %t: got status %d, want %d", cacheSensitive, got, want)
+						}
+						wantCacheControl := tt.wantCacheControl
+						if cacheSensitive && wantCacheControl == "public, max-age=600" {
+							wantCacheControl = "public, max-age=60"
+						}
+						if got, want := rec.Header().Get("Cache-Control"), wantCacheControl; got != want {
+							t.Errorf("cache sensitive %t: got cache control %q, want %q", cacheSensitive, got, want)
+						}
+						if got, want := rec.Header().Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+							t.Errorf("cache sensitive %t: got content type %q, want %q", cacheSensitive, got, want)
+						}
+						wantContent := tt.wantContent
+						if method == http.MethodHead {
+							wantContent = ""
+						}
+						if got, want := rec.Body.String(), wantContent; got != want {
+							t.Errorf("cache sensitive %t: got content %q, want %q", cacheSensitive, got, want)
+						}
+					}
+				})
+			}
+		})
+	}
+}

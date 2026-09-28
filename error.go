@@ -89,3 +89,15 @@ func (e *uncacheableError) Error() string { return e.err.Error() }
 
 // Unwrap returns the underlying error.
 func (e *uncacheableError) Unwrap() error { return e.err }
+
+// httpError records an HTTP response status and its underlying error.
+type httpError struct {
+	err        error
+	statusCode int
+}
+
+// Error implements [error].
+func (e *httpError) Error() string { return e.err.Error() }
+
+// Unwrap returns the underlying error.
+func (e *httpError) Unwrap() error { return e.err }
