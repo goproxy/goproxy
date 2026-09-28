@@ -506,13 +506,25 @@ func TestGoproxyServeHTTP(t *testing.T) {
 			name         string
 			statusCode   int
 			cacheControl string
+			restricted   bool
 		}{
-			{"Ordinary", http.StatusNotFound, ""},
-			{"Restricted", http.StatusNotFound, "no-store"},
-			{"Gone", http.StatusGone, ""},
-			{"RestrictedGone", http.StatusGone, "no-store"},
-			{"BadRequest", http.StatusBadRequest, ""},
-			{"RestrictedBadRequest", http.StatusBadRequest, "no-store"},
+			{"Ordinary", http.StatusNotFound, "", false},
+			{"Restricted", http.StatusNotFound, "no-store", true},
+			{"Gone", http.StatusGone, "", false},
+			{"RestrictedGone", http.StatusGone, "no-store", true},
+			{"BadRequest", http.StatusBadRequest, "", false},
+			{"RestrictedBadRequest", http.StatusBadRequest, "no-store", true},
+			{"MustRevalidate", http.StatusNotFound, "must-revalidate", true},
+			{"ProxyRevalidate", http.StatusNotFound, "max-age=60, proxy-revalidate", true},
+			{"ZeroMaxAge", http.StatusNotFound, "max-age=0", true},
+			{"ZeroMaxAgeGone", http.StatusGone, "max-age=0", true},
+			{"ZeroSharedMaxAge", http.StatusNotFound, "s-maxage=0", true},
+			{"PositiveSharedMaxAge", http.StatusNotFound, "s-maxage=60", true},
+			{"PositiveSharedMaxAgeGone", http.StatusGone, "s-maxage=60", true},
+			{"PositiveMaxAge", http.StatusNotFound, "max-age=60", false},
+			{"PositiveMaxAgeGone", http.StatusGone, "max-age=60", false},
+			{"InvalidMaxAge", http.StatusNotFound, "max-age=invalid", true},
+			{"DuplicateMaxAge", http.StatusNotFound, "max-age=60, max-age=120", true},
 		} {
 			t.Run(tt.name, func(t *testing.T) {
 				upstream := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
@@ -552,8 +564,8 @@ func TestGoproxyServeHTTP(t *testing.T) {
 								wantStatusCode := http.StatusNotFound
 								wantCacheControl := resource.cacheControl
 								wantContent := "not found: module unavailable"
-								if tt.cacheControl != "" {
-									wantCacheControl = tt.cacheControl
+								if tt.restricted {
+									wantCacheControl = "no-store"
 								}
 								if tt.statusCode == http.StatusBadRequest {
 									wantStatusCode = http.StatusInternalServerError
@@ -1714,6 +1726,20 @@ func TestGoproxyServeSumDB(t *testing.T) {
 			{"NoStore", http.Header{"Cache-Control": {"no-store"}}, true},
 			{"NoCache", http.Header{"Cache-Control": {"no-cache"}}, true},
 			{"Private", http.Header{"Cache-Control": {"private"}}, true},
+			{"MustRevalidate", http.Header{"Cache-Control": {"must-revalidate"}}, true},
+			{"ProxyRevalidate", http.Header{"Cache-Control": {"proxy-revalidate"}}, true},
+			{"FreshMustRevalidate", http.Header{"Cache-Control": {"max-age=86400, must-revalidate"}}, true},
+			{"ZeroMaxAge", http.Header{"Cache-Control": {"max-age=0"}}, true},
+			{"QuotedZeroMaxAge", http.Header{"Cache-Control": {`max-age="000"`}}, true},
+			{"EscapedZeroMaxAge", http.Header{"Cache-Control": {`max-age="\0"`}}, true},
+			{"QuotedPositiveMaxAge", http.Header{"Cache-Control": {`max-age="60"`}}, false},
+			{"EscapedPositiveMaxAge", http.Header{"Cache-Control": {`max-age="\60"`}}, false},
+			{"ZeroSharedMaxAge", http.Header{"Cache-Control": {"s-maxage=0"}}, true},
+			{"PositiveSharedMaxAge", http.Header{"Cache-Control": {"s-maxage=86400"}}, true},
+			{"SharedMaxAgeOverridesZeroMaxAge", http.Header{"Cache-Control": {"max-age=0, s-maxage=86400"}}, true},
+			{"InvalidMaxAge", http.Header{"Cache-Control": {"max-age=invalid"}}, true},
+			{"DuplicateMaxAge", http.Header{"Cache-Control": {"max-age=60", "max-age=120"}}, true},
+			{"QuotedRevalidation", http.Header{"Cache-Control": {`extension="must-revalidate, proxy-revalidate, s-maxage=0, max-age=0"`}}, false},
 			{"QualifiedNoCache", http.Header{"Cache-Control": {`no-cache="ETag"`}}, true},
 			{"QualifiedPrivate", http.Header{"Cache-Control": {`private="Set-Cookie"`}}, true},
 			{"VaryAll", http.Header{"Vary": {"Accept-Encoding", "*"}}, true},

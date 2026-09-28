@@ -146,10 +146,12 @@ func isRetryableHTTPClientDoError(err error) bool {
 	return true
 }
 
-// isCacheRestrictedHTTPResponse reports whether the response headers contain
-// cache restrictions. It checks Cache-Control for "no-store", "no-cache", or
-// "private", and Vary for "*".
+// isCacheRestrictedHTTPResponse reports whether Cache-Control or Vary prevents
+// reuse with the proxy's fixed cache lifetimes. Revalidation requirements are
+// treated as restrictions because cached content does not retain upstream
+// freshness or validation metadata.
 func isCacheRestrictedHTTPResponse(header http.Header) bool {
+	var hasMaxAge bool
 	for value := strings.Join(header.Values("Cache-Control"), ","); value != ""; {
 		// Find the next comma outside a quoted directive argument.
 		end, quoted := 0, false
@@ -167,10 +169,38 @@ func isCacheRestrictedHTTPResponse(header http.Header) bool {
 			}
 			end++
 		}
-		name, _, _ := strings.Cut(value[:end], "=")
+		name, arg, _ := strings.Cut(value[:end], "=")
 		switch strings.ToLower(strings.TrimSpace(name)) {
-		case "no-store", "no-cache", "private":
+		case "no-store", "no-cache", "private", "must-revalidate", "proxy-revalidate", "s-maxage":
+			// s-maxage also requires shared caches to revalidate stale responses.
 			return true
+		case "max-age":
+			if hasMaxAge {
+				return true
+			}
+			hasMaxAge = true
+			arg = strings.TrimSpace(arg)
+			quoted := len(arg) >= 2 && arg[0] == '"' && arg[len(arg)-1] == '"'
+			if quoted {
+				arg = arg[1 : len(arg)-1]
+			}
+			// Check decimal digits directly to avoid integer overflow.
+			positive := false
+			for i := 0; i < len(arg); i++ {
+				if quoted && arg[i] == '\\' {
+					i++
+					if i == len(arg) {
+						return true
+					}
+				}
+				if arg[i] < '0' || arg[i] > '9' {
+					return true
+				}
+				positive = positive || arg[i] != '0'
+			}
+			if !positive {
+				return true
+			}
 		}
 		if end == len(value) {
 			break
