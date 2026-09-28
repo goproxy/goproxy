@@ -26,6 +26,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/iotest"
+	"testing/synctest"
 	"time"
 
 	"golang.org/x/mod/module"
@@ -557,6 +559,10 @@ func TestGoproxyServeHTTP(t *testing.T) {
 									wantStatusCode = http.StatusInternalServerError
 									wantCacheControl = "no-store"
 									wantContent = "internal server error"
+									if resource.name == "SumDB" {
+										wantStatusCode = http.StatusBadGateway
+										wantContent = "bad gateway"
+									}
 								}
 								if got, want := rec.Code, wantStatusCode; got != want {
 									t.Errorf("got %d, want %d", got, want)
@@ -1619,6 +1625,124 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 }
 
 func TestGoproxyServeSumDB(t *testing.T) {
+	t.Run("UpstreamFailures", func(t *testing.T) {
+		for _, tt := range []struct {
+			name             string
+			statusCode       int
+			transportErr     error
+			readErr          error
+			header           http.Header
+			wantStatusCode   int
+			wantCacheControl string
+			wantContent      string
+		}{
+			{"BadRequest", http.StatusBadRequest, nil, nil, nil, http.StatusBadGateway, "no-store", "bad gateway"},
+			{"Unauthorized", http.StatusUnauthorized, nil, nil, nil, http.StatusBadGateway, "no-store", "bad gateway"},
+			{"Forbidden", http.StatusForbidden, nil, nil, nil, http.StatusBadGateway, "no-store", "bad gateway"},
+			{"RequestTimeout", http.StatusRequestTimeout, nil, nil, nil, http.StatusGatewayTimeout, "no-store", "gateway timeout"},
+			{"NotFound", http.StatusNotFound, nil, nil, nil, http.StatusNotFound, "public, max-age=60", "not found: upstream details"},
+			{"Gone", http.StatusGone, nil, nil, nil, http.StatusNotFound, "public, max-age=60", "not found: upstream details"},
+			{"UncacheableAbsence", http.StatusNotFound, nil, nil, http.Header{"Cache-Control": {"no-store"}}, http.StatusNotFound, "no-store", "not found: upstream details"},
+			{"TooManyRequests", http.StatusTooManyRequests, nil, nil, nil, http.StatusServiceUnavailable, "no-store", "service unavailable"},
+			{"InternalServerError", http.StatusInternalServerError, nil, nil, nil, http.StatusBadGateway, "no-store", "bad gateway"},
+			{"BadGateway", http.StatusBadGateway, nil, nil, nil, http.StatusBadGateway, "no-store", "bad gateway"},
+			{"ServiceUnavailable", http.StatusServiceUnavailable, nil, nil, nil, http.StatusServiceUnavailable, "no-store", "service unavailable"},
+			{"GatewayTimeout", http.StatusGatewayTimeout, nil, nil, nil, http.StatusGatewayTimeout, "no-store", "gateway timeout"},
+			{"NoContent", http.StatusNoContent, nil, nil, nil, http.StatusBadGateway, "no-store", "bad gateway"},
+			{"PartialContent", http.StatusPartialContent, nil, nil, nil, http.StatusBadGateway, "no-store", "bad gateway"},
+			{"NotModified", http.StatusNotModified, nil, nil, nil, http.StatusBadGateway, "no-store", "bad gateway"},
+			{"Transport", 0, io.ErrUnexpectedEOF, nil, nil, http.StatusBadGateway, "no-store", "bad gateway"},
+			{"TransportNotExist", 0, &net.OpError{Op: "dial", Net: "unix", Err: &os.SyscallError{Syscall: "connect", Err: fs.ErrNotExist}}, nil, nil, http.StatusBadGateway, "no-store", "bad gateway"},
+			{"TransportTimeout", 0, &net.DNSError{Err: "timeout", IsTimeout: true}, nil, nil, http.StatusGatewayTimeout, "no-store", "gateway timeout"},
+			{"TransportDeadline", 0, context.DeadlineExceeded, nil, nil, http.StatusGatewayTimeout, "no-store", "gateway timeout"},
+			{"TransportCanceled", 0, context.Canceled, nil, nil, http.StatusInternalServerError, "no-store", "internal server error"},
+			{"Read", http.StatusOK, nil, io.ErrUnexpectedEOF, nil, http.StatusBadGateway, "no-store", "bad gateway"},
+			{"ReadNotExist", http.StatusOK, nil, fs.ErrNotExist, nil, http.StatusBadGateway, "no-store", "bad gateway"},
+			{"ReadTimeout", http.StatusOK, nil, os.ErrDeadlineExceeded, nil, http.StatusGatewayTimeout, "no-store", "gateway timeout"},
+			{"ReadCanceled", http.StatusOK, nil, context.Canceled, nil, http.StatusInternalServerError, "no-store", "internal server error"},
+			{"AbsenceReadError", http.StatusNotFound, nil, fs.ErrNotExist, nil, http.StatusBadGateway, "no-store", "bad gateway"},
+			{"AbsenceReadTimeout", http.StatusGone, nil, os.ErrDeadlineExceeded, nil, http.StatusGatewayTimeout, "no-store", "gateway timeout"},
+			{"UnavailableReadError", http.StatusServiceUnavailable, nil, io.ErrUnexpectedEOF, nil, http.StatusServiceUnavailable, "no-store", "service unavailable"},
+			{"UnavailableReadTimeout", http.StatusServiceUnavailable, nil, os.ErrDeadlineExceeded, nil, http.StatusGatewayTimeout, "no-store", "gateway timeout"},
+			{"GatewayTimeoutReadError", http.StatusGatewayTimeout, nil, io.ErrUnexpectedEOF, nil, http.StatusGatewayTimeout, "no-store", "gateway timeout"},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				for _, method := range []string{http.MethodGet, http.MethodHead} {
+					t.Run(method, func(t *testing.T) {
+						synctest.Test(t, func(t *testing.T) {
+							g := &Goproxy{
+								ProxiedSumDBs: []string{"sumdb.example.com"},
+								TempDir:       t.TempDir(),
+								Logger:        slog.New(slog.DiscardHandler),
+								Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+									if tt.transportErr != nil {
+										return nil, tt.transportErr
+									}
+									var body io.Reader = strings.NewReader("upstream details")
+									if tt.readErr != nil {
+										body = iotest.ErrReader(tt.readErr)
+									}
+									header := http.Header{
+										"Cache-Control":    {"public, max-age=86400"},
+										"Content-Type":     {"text/html"},
+										"Set-Cookie":       {"session=secret"},
+										"Etag":             {`"upstream"`},
+										"Www-Authenticate": {`Basic realm="upstream"`},
+									}
+									maps.Copy(header, tt.header)
+									return &http.Response{
+										StatusCode: tt.statusCode,
+										Status:     strconv.Itoa(tt.statusCode) + " " + http.StatusText(tt.statusCode),
+										Header:     header,
+										Body:       io.NopCloser(body),
+										Request:    req,
+									}, nil
+								}),
+								Cacher: &testCacher{
+									get: func(ctx context.Context, c Cacher, name string) (io.ReadCloser, error) {
+										return nil, fs.ErrNotExist
+									},
+									put: func(ctx context.Context, c Cacher, name string, content io.ReadSeeker) error {
+										t.Error("unexpected cache write")
+										return nil
+									},
+								},
+							}
+							rec := httptest.NewRecorder()
+							g.ServeHTTP(rec, httptest.NewRequest(method, "/sumdb/sumdb.example.com/latest", nil))
+							if got, want := rec.Code, tt.wantStatusCode; got != want {
+								t.Errorf("got status %d, want %d", got, want)
+							}
+							if got, want := rec.Header().Get("Cache-Control"), tt.wantCacheControl; got != want {
+								t.Errorf("got cache control %q, want %q", got, want)
+							}
+							if got, want := rec.Header().Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+								t.Errorf("got content type %q, want %q", got, want)
+							}
+							for _, name := range []string{"Set-Cookie", "ETag", "WWW-Authenticate"} {
+								if got := rec.Header().Get(name); got != "" {
+									t.Errorf("unexpected %s header %q", name, got)
+								}
+							}
+							wantContent := tt.wantContent
+							if method == http.MethodHead {
+								wantContent = ""
+							}
+							if got, want := rec.Body.String(), wantContent; got != want {
+								t.Errorf("got content %q, want %q", got, want)
+							}
+							if entries, err := os.ReadDir(g.TempDir); err != nil {
+								t.Fatal(err)
+							} else if len(entries) != 0 {
+								t.Errorf("unexpected temporary files %v", entries)
+							}
+						})
+					})
+				}
+			})
+		}
+	})
+
 	t.Run("NamePaths", func(t *testing.T) {
 		for _, tt := range []struct {
 			name        string
@@ -1872,7 +1996,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 				}
 				rec := httptest.NewRecorder()
 				g.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/sumdb/sumdb.example.com/tile/2/0/000", nil))
-				wantStatusCode, wantContent, wantCacheControl := http.StatusInternalServerError, "internal server error", "no-store"
+				wantStatusCode, wantContent, wantCacheControl := http.StatusBadGateway, "bad gateway", "no-store"
 				if tt.cached {
 					wantStatusCode, wantContent, wantCacheControl = http.StatusOK, body, "public, max-age=86400"
 				}
@@ -1992,7 +2116,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 						if mode.cached {
 							wantContent = "cached"
 						} else {
-							wantStatusCode, wantContent = http.StatusNotFound, "not found: bad upstream"
+							wantStatusCode, wantContent = http.StatusBadGateway, "bad gateway"
 							wantContentType = "text/plain; charset=utf-8"
 							wantCacheControl = "no-store"
 						}

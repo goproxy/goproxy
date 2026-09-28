@@ -1,6 +1,7 @@
 package goproxy
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -140,6 +141,7 @@ func responseError(rw http.ResponseWriter, req *http.Request, err error, cacheSe
 		responseInternalServerError(rw, req)
 		return
 	}
+
 	isBadUpstream := isBadUpstreamError(err)
 	isFetchTimedOut := isFetchTimedOutError(err)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -162,4 +164,32 @@ func responseError(rw http.ResponseWriter, req *http.Request, err error, cacheSe
 	} else {
 		responseInternalServerError(rw, req)
 	}
+}
+
+// responseUpstreamError is like [responseError] but reports upstream failures
+// with 502, 503, or 504. Local failures must be marked with [internalError],
+// and missing resources with [notExistError].
+func responseUpstreamError(rw http.ResponseWriter, req *http.Request, err error, cacheSensitive bool) {
+	if _, ok := errors.AsType[*internalError](err); ok || errors.Is(err, context.Canceled) {
+		responseInternalServerError(rw, req)
+		return
+	}
+	if _, ok := errors.AsType[*notExistError](err); ok {
+		responseError(rw, req, err, cacheSensitive)
+		return
+	}
+
+	statusCode := http.StatusBadGateway
+	if httpErr, ok := errors.AsType[*httpError](err); ok {
+		switch httpErr.statusCode {
+		case http.StatusTooManyRequests, http.StatusServiceUnavailable:
+			statusCode = http.StatusServiceUnavailable
+		case http.StatusRequestTimeout, http.StatusGatewayTimeout:
+			statusCode = http.StatusGatewayTimeout
+		}
+	}
+	if isFetchTimedOutError(err) {
+		statusCode = http.StatusGatewayTimeout
+	}
+	responseString(rw, req, statusCode, -1, strings.ToLower(http.StatusText(statusCode)))
 }

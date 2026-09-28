@@ -29,7 +29,7 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 	for range backoff.Attempts(ctx, maxAttempts, backoffBase, backoffCap) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
-			return err
+			return &internalError{err: err}
 		}
 
 		resp, err := client.Do(req)
@@ -51,7 +51,7 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 		respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodySize+1))
 		resp.Body.Close()
 		if err != nil {
-			return err
+			return &httpError{err: err, statusCode: resp.StatusCode}
 		}
 		if len(respBody) > maxErrorBodySize {
 			// Avoid splitting a UTF-8 sequence at the truncation boundary.
@@ -72,17 +72,32 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 			http.StatusInternalServerError,
 			http.StatusBadGateway,
 			http.StatusServiceUnavailable:
-			lastErr = errBadUpstream
+			lastErr = &httpError{err: errBadUpstream, statusCode: resp.StatusCode}
 		case http.StatusGatewayTimeout:
-			lastErr = errFetchTimedOut
+			lastErr = &httpError{err: errFetchTimedOut, statusCode: resp.StatusCode}
 		default:
-			return fmt.Errorf("GET %s: %s: %s", resp.Request.URL.Redacted(), resp.Status, respBody)
+			return &httpError{
+				err:        fmt.Errorf("GET %s: %s: %s", resp.Request.URL.Redacted(), resp.Status, respBody),
+				statusCode: resp.StatusCode,
+			}
 		}
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	return lastErr
+}
+
+// httpGetTempWriter marks temporary file write errors as [internalError].
+type httpGetTempWriter struct{ io.Writer }
+
+// Write implements [io.Writer].
+func (w httpGetTempWriter) Write(p []byte) (int, error) {
+	n, err := w.Writer.Write(p)
+	if err != nil {
+		return n, &internalError{err: err}
+	}
+	return n, nil
 }
 
 // httpGetTemp is like [httpGet] but writes the content to a new temporary file
@@ -97,7 +112,7 @@ func httpGetTemp(ctx context.Context, client *http.Client, url, tempDir string) 
 			os.Remove(f.Name())
 		}
 	}()
-	if err := httpGet(ctx, client, url, f); err != nil {
+	if err := httpGet(ctx, client, url, httpGetTempWriter{f}); err != nil {
 		f.Close()
 		return "", err
 	}
