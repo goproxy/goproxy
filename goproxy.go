@@ -59,6 +59,9 @@ type Goproxy struct {
 	// Cacher is used to cache content, such as module files and proxied
 	// checksum database responses.
 	//
+	// Checksum database /latest responses bypass Cacher because their
+	// freshness cannot be determined from cached content.
+	//
 	// If Cacher is nil, caching is disabled.
 	Cacher Cacher
 
@@ -416,16 +419,33 @@ func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, target s
 		}
 	}
 	if err != nil {
-		g.serveCache(rw, req, target, contentType, cacheControlMaxAge, func() {
+		serveError := func() {
 			g.logger.Error("failed to proxy checksum database", "error", err, "target", target)
 			responseUpstreamError(rw, req, err, true)
-		})
+		}
+		if path == "/latest" {
+			serveError()
+		} else {
+			g.serveCache(rw, req, target, contentType, cacheControlMaxAge, serveError)
+		}
 		return
 	}
 	if isCacheRestrictedHTTPResponse(header) {
 		cacheControlMaxAge = -1
 	}
-	g.servePutCacheFile(rw, req, target, contentType, cacheControlMaxAge, file)
+
+	f, err := os.Open(file)
+	if err != nil {
+		g.logger.Error("failed to open file", "error", err)
+		responseInternalServerError(rw, req)
+		return
+	}
+	defer f.Close()
+	if path == "/latest" {
+		responseSuccess(rw, req, f, contentType, cacheControlMaxAge)
+		return
+	}
+	g.servePutCache(rw, req, target, contentType, cacheControlMaxAge, f)
 }
 
 // serveCache serves requests with cached content.
@@ -468,19 +488,6 @@ func (g *Goproxy) servePutCache(rw http.ResponseWriter, req *http.Request, name,
 	responseSuccess(rw, req, content, contentType, cacheControlMaxAge)
 }
 
-// servePutCacheFile is like [servePutCache] but reads the content from the
-// local file.
-func (g *Goproxy) servePutCacheFile(rw http.ResponseWriter, req *http.Request, name, contentType string, cacheControlMaxAge int, file string) {
-	f, err := os.Open(file)
-	if err != nil {
-		g.logger.Error("failed to open file", "error", err)
-		responseInternalServerError(rw, req)
-		return
-	}
-	defer f.Close()
-	g.servePutCache(rw, req, name, contentType, cacheControlMaxAge, f)
-}
-
 // cache returns the matched cache for the name from the g.Cacher.
 func (g *Goproxy) cache(ctx context.Context, name string) (io.ReadCloser, error) {
 	if g.Cacher == nil {
@@ -495,16 +502,6 @@ func (g *Goproxy) putCache(ctx context.Context, name string, content io.ReadSeek
 		return nil
 	}
 	return g.Cacher.Put(ctx, name, content)
-}
-
-// putCacheFile is like [putCache] but reads the content from the local file.
-func (g *Goproxy) putCacheFile(ctx context.Context, name, file string) error {
-	f, err := os.Open(file)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	return g.putCache(ctx, name, f)
 }
 
 // cleanPath returns the canonical path for the p.
