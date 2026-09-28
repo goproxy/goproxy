@@ -1625,6 +1625,84 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 }
 
 func TestGoproxyServeSumDB(t *testing.T) {
+	t.Run("LatestCacheFallback", func(t *testing.T) {
+		for _, cache := range []struct {
+			name string
+			err  error
+		}{
+			{"Hit", nil},
+			{"Miss", fs.ErrNotExist},
+			{"Error", errors.New("cannot get")},
+		} {
+			for _, condition := range []struct {
+				name   string
+				header http.Header
+			}{
+				{"Unconditional", nil},
+				{"IfNoneMatch", http.Header{"If-None-Match": {`"old"`}}},
+				{"IfModifiedSince", http.Header{"If-Modified-Since": {"Sat, 01 Jan 2000 00:00:00 GMT"}}},
+			} {
+				for _, method := range []string{http.MethodGet, http.MethodHead} {
+					t.Run(cache.name+"/"+condition.name+"/"+method, func(t *testing.T) {
+						g := &Goproxy{
+							ProxiedSumDBs: []string{"sumdb.example.com"},
+							TempDir:       t.TempDir(),
+							Logger:        slog.New(slog.DiscardHandler),
+							Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+								return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+							}),
+							Cacher: &testCacher{
+								get: func(context.Context, Cacher, string) (io.ReadCloser, error) {
+									t.Error("unexpected cache read")
+									if cache.err != nil {
+										return nil, cache.err
+									}
+									return struct {
+										io.ReadSeeker
+										io.Closer
+										successResponseBody_ModTime
+										successResponseBody_ETag
+									}{
+										strings.NewReader("old checkpoint"),
+										closerFunc(func() error { return nil }),
+										successResponseBody_ModTime{modTime: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)},
+										successResponseBody_ETag{etag: `"old"`},
+									}, nil
+								},
+								put: func(context.Context, Cacher, string, io.ReadSeeker) error {
+									t.Error("unexpected cache write")
+									return nil
+								},
+							},
+						}
+						req := httptest.NewRequest(method, "/sumdb/sumdb.example.com/latest", nil)
+						maps.Copy(req.Header, condition.header)
+						rec := httptest.NewRecorder()
+						g.ServeHTTP(rec, req)
+						if got, want := rec.Code, http.StatusBadGateway; got != want {
+							t.Errorf("got status %d, want %d", got, want)
+						}
+						if got, want := rec.Header().Get("Cache-Control"), "no-store"; got != want {
+							t.Errorf("got cache control %q, want %q", got, want)
+						}
+						for _, name := range []string{"ETag", "Last-Modified"} {
+							if got := rec.Header().Get(name); got != "" {
+								t.Errorf("unexpected %s header %q", name, got)
+							}
+						}
+						wantContent := "bad gateway"
+						if method == http.MethodHead {
+							wantContent = ""
+						}
+						if got, want := rec.Body.String(), wantContent; got != want {
+							t.Errorf("got content %q, want %q", got, want)
+						}
+					})
+				}
+			}
+		}
+	})
+
 	t.Run("SuccessfulCacheRestrictions", func(t *testing.T) {
 		for _, tt := range []struct {
 			name       string
@@ -1687,7 +1765,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 									},
 									put: func(ctx context.Context, c Cacher, name string, content io.ReadSeeker) error {
 										cacheWrites++
-										if tt.restricted {
+										if tt.restricted || endpoint.path == "/latest" {
 											t.Error("unexpected cache write")
 										}
 										if got, want := name, target; got != want {
@@ -1727,7 +1805,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 								t.Errorf("got content %q, want %q", got, want)
 							}
 							wantCacheWrites := 0
-							if cache.enabled && !tt.restricted {
+							if cache.enabled && !tt.restricted && endpoint.path != "/latest" {
 								wantCacheWrites = 1
 							}
 							if got, want := cacheWrites, wantCacheWrites; got != want {
@@ -1820,6 +1898,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 								}),
 								Cacher: &testCacher{
 									get: func(ctx context.Context, c Cacher, name string) (io.ReadCloser, error) {
+										t.Error("unexpected cache read")
 										return nil, fs.ErrNotExist
 									},
 									put: func(ctx context.Context, c Cacher, name string, content io.ReadSeeker) error {
@@ -1953,15 +2032,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 						}
 						rec := httptest.NewRecorder()
 						g.ServeHTTP(rec, httptest.NewRequest(mode.method, "/"+target, nil))
-						if got, want := rec.Code, http.StatusOK; got != want {
-							t.Errorf("got status %d, want %d", got, want)
-						}
-						if got, want := rec.Header().Get("Content-Type"), resource.contentType; got != want {
-							t.Errorf("got content type %q, want %q", got, want)
-						}
-						if got, want := rec.Header().Get("Cache-Control"), "public, max-age="+strconv.Itoa(resource.maxAge); got != want {
-							t.Errorf("got cache control %q, want %q", got, want)
-						}
+						wantStatusCode, wantMaxAge := http.StatusOK, resource.maxAge
 						wantContent := body
 						wantCalls, wantReads, wantWrites := 1, 0, 1
 						if mode.cached {
@@ -1971,8 +2042,24 @@ func TestGoproxyServeSumDB(t *testing.T) {
 							wantContent = ""
 							wantCalls, wantReads, wantWrites = 0, 0, 0
 						}
+						if resource.path == "/latest" {
+							wantReads, wantWrites = 0, 0
+							if mode.cached {
+								wantStatusCode, wantMaxAge = http.StatusNotFound, 60
+								wantContent = "not found: " + body
+							}
+						}
 						if mode.method == http.MethodHead {
 							wantContent = ""
+						}
+						if got, want := rec.Code, wantStatusCode; got != want {
+							t.Errorf("got status %d, want %d", got, want)
+						}
+						if got, want := rec.Header().Get("Content-Type"), resource.contentType; got != want {
+							t.Errorf("got content type %q, want %q", got, want)
+						}
+						if got, want := rec.Header().Get("Cache-Control"), "public, max-age="+strconv.Itoa(wantMaxAge); got != want {
+							t.Errorf("got cache control %q, want %q", got, want)
 						}
 						if got, want := rec.Body.String(), wantContent; got != want {
 							t.Errorf("got content %q, want %q", got, want)
@@ -2036,6 +2123,64 @@ func TestGoproxyServeSumDB(t *testing.T) {
 					}
 				})
 			}
+		}
+	})
+
+	t.Run("OpenError", func(t *testing.T) {
+		probe := filepath.Join(t.TempDir(), "unreadable")
+		if err := os.WriteFile(probe, []byte("content"), 0); err != nil {
+			t.Fatal(err)
+		}
+		if f, err := os.Open(probe); err == nil {
+			f.Close()
+			t.Skip("file permissions do not prevent reads")
+		} else if !errors.Is(err, fs.ErrPermission) {
+			t.Fatal(err)
+		}
+		for _, tt := range []struct {
+			name string
+			path string
+		}{
+			{"Latest", "/latest"},
+			{"Lookup", "/lookup/example.com@v1.0.0"},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				tempDir := t.TempDir()
+				g := &Goproxy{
+					ProxiedSumDBs: []string{"sumdb.example.com"},
+					TempDir:       tempDir,
+					Logger:        slog.New(slog.DiscardHandler),
+					Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						files, err := filepath.Glob(filepath.Join(tempDir, "*", "*"))
+						if err != nil {
+							t.Fatal(err)
+						}
+						if len(files) != 1 {
+							t.Fatalf("got temporary files %v, want one file", files)
+						}
+						if err := os.Chmod(files[0], 0); err != nil {
+							t.Fatal(err)
+						}
+						return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("content"))}, nil
+					}),
+				}
+				rec := httptest.NewRecorder()
+				g.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/sumdb/sumdb.example.com"+tt.path, nil))
+				if got, want := rec.Code, http.StatusInternalServerError; got != want {
+					t.Errorf("got status %d, want %d", got, want)
+				}
+				if got, want := rec.Header().Get("Cache-Control"), "no-store"; got != want {
+					t.Errorf("got cache control %q, want %q", got, want)
+				}
+				if got, want := rec.Body.String(), "internal server error"; got != want {
+					t.Errorf("got content %q, want %q", got, want)
+				}
+				if entries, err := os.ReadDir(tempDir); err != nil {
+					t.Fatal(err)
+				} else if len(entries) != 0 {
+					t.Error("temporary files were not removed")
+				}
+			})
 		}
 	})
 
@@ -2233,13 +2378,16 @@ func TestGoproxyServeSumDB(t *testing.T) {
 					wantReads, wantWrites := 0, 1
 					if !tt.valid {
 						wantReads, wantWrites = 1, 0
-						if mode.cached {
+						if mode.cached && tt.path != "/latest" {
 							wantContent = "cached"
 						} else {
 							wantStatusCode, wantContent = http.StatusBadGateway, "bad gateway"
 							wantContentType = "text/plain; charset=utf-8"
 							wantCacheControl = "no-store"
 						}
+					}
+					if tt.path == "/latest" {
+						wantReads, wantWrites = 0, 0
 					}
 					if mode.method == http.MethodHead {
 						wantContent = ""
@@ -2486,7 +2634,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 					return errors.New("cannot put")
 				},
 			},
-			target:           "sumdb/sumdb.example.com/latest",
+			target:           "sumdb/sumdb.example.com/lookup/example.com@v1.0.0",
 			wantStatusCode:   http.StatusInternalServerError,
 			wantContentType:  "text/plain; charset=utf-8",
 			wantCacheControl: "no-store",
@@ -2752,53 +2900,6 @@ func TestGoproxyServePutCache(t *testing.T) {
 	}
 }
 
-func TestGoproxyServePutCacheFile(t *testing.T) {
-	for _, tt := range []struct {
-		n              int
-		createFile     func() (string, error)
-		wantStatusCode int
-		wantContent    string
-	}{
-		{
-			n:              1,
-			createFile:     func() (string, error) { return makeTempFile(t, []byte("foobar")) },
-			wantStatusCode: http.StatusOK,
-			wantContent:    "foobar",
-		},
-		{
-			n:              2,
-			createFile:     func() (string, error) { return filepath.Join(t.TempDir(), "404"), nil },
-			wantStatusCode: http.StatusInternalServerError,
-			wantContent:    "internal server error",
-		},
-	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
-			g := &Goproxy{
-				Cacher:  DirCacher(t.TempDir()),
-				TempDir: t.TempDir(),
-				Logger:  slog.New(slog.DiscardHandler),
-			}
-			g.initOnce.Do(g.init)
-
-			rec := httptest.NewRecorder()
-			file, err := tt.createFile()
-			if err != nil {
-				t.Fatalf("unexpected error %v", err)
-			}
-			g.servePutCacheFile(rec, httptest.NewRequest("", "/", nil), "target", "", -2, file)
-			recr := rec.Result()
-			if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
-				t.Errorf("got %d, want %d", got, want)
-			}
-			if b, err := io.ReadAll(recr.Body); err != nil {
-				t.Errorf("unexpected error %v", err)
-			} else if got, want := string(b), tt.wantContent; got != want {
-				t.Errorf("got %q, want %q", got, want)
-			}
-		})
-	}
-}
-
 func TestGoproxyCache(t *testing.T) {
 	t.Run("Normal", func(t *testing.T) {
 		cacheDir := t.TempDir()
@@ -2876,43 +2977,6 @@ func TestGoproxyPutCache(t *testing.T) {
 
 		if err := g.putCache(t.Context(), "foo", strings.NewReader("bar")); err != nil {
 			t.Errorf("unexpected error %v", err)
-		}
-	})
-}
-
-func TestGoproxyPutCacheFile(t *testing.T) {
-	t.Run("Normal", func(t *testing.T) {
-		cacheDir := t.TempDir()
-		g := &Goproxy{Cacher: DirCacher(cacheDir), TempDir: t.TempDir()}
-		g.initOnce.Do(g.init)
-
-		srcFile := filepath.Join(t.TempDir(), "foo-source")
-		if err := os.WriteFile(srcFile, []byte("bar"), 0o644); err != nil {
-			t.Fatalf("unexpected error %v", err)
-		}
-		if err := g.putCacheFile(t.Context(), "foo", srcFile); err != nil {
-			t.Fatalf("unexpected error %v", err)
-		}
-
-		b, err := os.ReadFile(filepath.Join(cacheDir, "foo"))
-		if err != nil {
-			t.Fatalf("unexpected error %v", err)
-		}
-		if got, want := string(b), "bar"; got != want {
-			t.Errorf("got %q, want %q", got, want)
-		}
-	})
-
-	t.Run("NonExistentSource", func(t *testing.T) {
-		g := &Goproxy{Cacher: DirCacher(t.TempDir()), TempDir: t.TempDir()}
-		g.initOnce.Do(g.init)
-
-		err := g.putCacheFile(t.Context(), "foo", filepath.Join(t.TempDir(), "foo-source"))
-		if err == nil {
-			t.Fatal("expected error")
-		}
-		if got, want := err, fs.ErrNotExist; !compareErrors(got, want) {
-			t.Errorf("got %v, want %v", got, want)
 		}
 	})
 }
