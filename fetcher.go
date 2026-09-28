@@ -243,7 +243,7 @@ func (gf *GoFetcher) proxyQuery(ctx context.Context, path, query string, proxy *
 		u = proxy.JoinPath(escapedPath + "/@v/" + url.PathEscape(escapedQuery) + ".info")
 	}
 	var info bytes.Buffer
-	err = httpGet(ctx, gf.httpClient, u.String(), &info)
+	_, err = httpGet(ctx, gf.httpClient, u.String(), &info)
 	if err != nil {
 		return
 	}
@@ -321,7 +321,7 @@ func (gf *GoFetcher) proxyList(ctx context.Context, path string, proxy *url.URL)
 		return
 	}
 	var list bytes.Buffer
-	err = httpGet(ctx, gf.httpClient, proxy.JoinPath(escapedPath+"/@v/list").String(), &list)
+	_, err = httpGet(ctx, gf.httpClient, proxy.JoinPath(escapedPath+"/@v/list").String(), &list)
 	if err != nil {
 		return
 	}
@@ -491,15 +491,15 @@ func (gf *GoFetcher) proxyDownload(ctx context.Context, path, version string, pr
 		}
 	}()
 
-	infoFile, err = httpGetTemp(ctx, gf.httpClient, urlWithoutExt+".info", tempDir)
+	infoFile, _, err = httpGetTemp(ctx, gf.httpClient, urlWithoutExt+".info", tempDir)
 	if err != nil {
 		return
 	}
-	modFile, err = httpGetTemp(ctx, gf.httpClient, urlWithoutExt+".mod", tempDir)
+	modFile, _, err = httpGetTemp(ctx, gf.httpClient, urlWithoutExt+".mod", tempDir)
 	if err != nil {
 		return
 	}
-	zipFile, err = httpGetTemp(ctx, gf.httpClient, urlWithoutExt+".zip", tempDir)
+	zipFile, _, err = httpGetTemp(ctx, gf.httpClient, urlWithoutExt+".zip", tempDir)
 	if err != nil {
 		return
 	}

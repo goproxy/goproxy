@@ -16,8 +16,9 @@ import (
 	"github.com/aofei/backoff"
 )
 
-// httpGet gets the content from the given url and writes it to the dst.
-func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer) error {
+// httpGet gets the content from the given url, writes it to the dst, and
+// returns the response header on success.
+func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer) (http.Header, error) {
 	const (
 		maxAttempts      = 10
 		backoffBase      = 100 * time.Millisecond
@@ -29,7 +30,7 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 	for range backoff.Attempts(ctx, maxAttempts, backoffBase, backoffCap) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
-			return &internalError{err: err}
+			return nil, &internalError{err: err}
 		}
 
 		resp, err := client.Do(req)
@@ -38,20 +39,23 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 				lastErr = err
 				continue
 			}
-			return err
+			return nil, err
 		}
 		if resp.StatusCode == http.StatusOK {
 			if dst != nil {
 				_, err = io.Copy(dst, resp.Body)
 			}
 			resp.Body.Close()
-			return err
+			if err != nil {
+				return nil, err
+			}
+			return resp.Header, nil
 		}
 
 		respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodySize+1))
 		resp.Body.Close()
 		if err != nil {
-			return &httpError{err: err, statusCode: resp.StatusCode}
+			return nil, &httpError{err: err, statusCode: resp.StatusCode}
 		}
 		if len(respBody) > maxErrorBodySize {
 			// Avoid splitting a UTF-8 sequence at the truncation boundary.
@@ -65,9 +69,9 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 		case http.StatusNotFound, http.StatusGone:
 			err := notExistErrorf("%s", respBody)
 			if isCacheRestrictedHTTPResponse(resp.Header) {
-				return &uncacheableError{err: err}
+				return nil, &uncacheableError{err: err}
 			}
-			return err
+			return nil, err
 		case http.StatusTooManyRequests,
 			http.StatusInternalServerError,
 			http.StatusBadGateway,
@@ -76,16 +80,16 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 		case http.StatusGatewayTimeout:
 			lastErr = &httpError{err: errFetchTimedOut, statusCode: resp.StatusCode}
 		default:
-			return &httpError{
+			return nil, &httpError{
 				err:        fmt.Errorf("GET %s: %s: %s", resp.Request.URL.Redacted(), resp.Status, respBody),
 				statusCode: resp.StatusCode,
 			}
 		}
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return nil, err
 	}
-	return lastErr
+	return nil, lastErr
 }
 
 // httpGetTempWriter marks temporary file write errors as [internalError].
@@ -102,24 +106,25 @@ func (w httpGetTempWriter) Write(p []byte) (int, error) {
 
 // httpGetTemp is like [httpGet] but writes the content to a new temporary file
 // in tempDir.
-func httpGetTemp(ctx context.Context, client *http.Client, url, tempDir string) (tempFile string, err error) {
+func httpGetTemp(ctx context.Context, client *http.Client, url, tempDir string) (tempFile string, header http.Header, err error) {
 	f, err := os.CreateTemp(tempDir, "")
 	if err != nil {
-		return "", &internalError{err: err}
+		return "", nil, &internalError{err: err}
 	}
 	defer func() {
 		if err != nil {
 			os.Remove(f.Name())
 		}
 	}()
-	if err := httpGet(ctx, client, url, httpGetTempWriter{f}); err != nil {
+	header, err = httpGet(ctx, client, url, httpGetTempWriter{f})
+	if err != nil {
 		f.Close()
-		return "", err
+		return "", nil, err
 	}
 	if err := f.Close(); err != nil {
-		return "", &internalError{err: err}
+		return "", nil, &internalError{err: err}
 	}
-	return f.Name(), nil
+	return f.Name(), header, nil
 }
 
 // isRetryableHTTPClientDoError reports whether the err is a retryable error

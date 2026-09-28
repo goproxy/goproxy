@@ -403,7 +403,7 @@ func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, target s
 	}
 	defer os.RemoveAll(tempDir)
 
-	file, err := httpGetTemp(req.Context(), g.httpClient, u.JoinPath(path).String(), tempDir)
+	file, header, err := httpGetTemp(req.Context(), g.httpClient, u.JoinPath(path).String(), tempDir)
 	if err == nil {
 		fi, statErr := os.Stat(file)
 		if statErr != nil {
@@ -421,6 +421,9 @@ func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, target s
 			responseUpstreamError(rw, req, err, true)
 		})
 		return
+	}
+	if isCacheRestrictedHTTPResponse(header) {
+		cacheControlMaxAge = -1
 	}
 	g.servePutCacheFile(rw, req, target, contentType, cacheControlMaxAge, file)
 }
@@ -445,8 +448,13 @@ func (g *Goproxy) serveCache(rw http.ResponseWriter, req *http.Request, name, co
 	responseSuccess(rw, req, content, contentType, cacheControlMaxAge)
 }
 
-// servePutCache serves requests after putting the content to the g.Cacher.
+// servePutCache serves requests after putting the content to the g.Cacher. If
+// cacheControlMaxAge is -1, the content is served without caching.
 func (g *Goproxy) servePutCache(rw http.ResponseWriter, req *http.Request, name, contentType string, cacheControlMaxAge int, content io.ReadSeeker) {
+	if cacheControlMaxAge == -1 {
+		responseSuccess(rw, req, content, contentType, cacheControlMaxAge)
+		return
+	}
 	if err := g.putCache(req.Context(), name, content); err != nil {
 		g.logger.Error("failed to cache content", "error", err, "name", name)
 		responseInternalServerError(rw, req)

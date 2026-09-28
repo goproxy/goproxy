@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -50,6 +51,110 @@ func (b *testHTTPResponseBody) Close() error {
 }
 
 func TestHTTPGet(t *testing.T) {
+	t.Run("ResponseHeader", func(t *testing.T) {
+		for _, tt := range []struct {
+			name       string
+			statusCode int
+		}{
+			{"Direct", http.StatusOK},
+			{"Redirect", http.StatusFound},
+			{"Retry", http.StatusServiceUnavailable},
+		} {
+			for _, policy := range []struct {
+				name         string
+				cacheControl string
+			}{
+				{"Public", "public"},
+				{"NoStore", "no-store"},
+			} {
+				t.Run(tt.name+"/"+policy.name, func(t *testing.T) {
+					synctest.Test(t, func(t *testing.T) {
+						wantHeader := http.Header{"Cache-Control": {"max-age=60", policy.cacheControl}}
+						attempts := 0
+						client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+							attempts++
+							if attempts == 1 && tt.statusCode != http.StatusOK {
+								return &http.Response{
+									StatusCode: tt.statusCode,
+									Header: http.Header{
+										"Cache-Control": {"private"},
+										"Vary":          {"*"},
+										"Location":      {"/redirected"},
+									},
+									Body: io.NopCloser(strings.NewReader("intermediate response")),
+								}, nil
+							}
+							return &http.Response{
+								StatusCode: http.StatusOK,
+								Header:     wantHeader.Clone(),
+								Body:       io.NopCloser(strings.NewReader("foobar")),
+							}, nil
+						})}
+						var content bytes.Buffer
+						header, err := httpGet(t.Context(), client, "https://example.com", &content)
+						if err != nil {
+							t.Fatal(err)
+						}
+						if !maps.EqualFunc(header, wantHeader, slices.Equal) {
+							t.Errorf("got header %v, want %v", header, wantHeader)
+						}
+						if got, want := content.String(), "foobar"; got != want {
+							t.Errorf("got content %q, want %q", got, want)
+						}
+						wantAttempts := 2
+						if tt.statusCode == http.StatusOK {
+							wantAttempts = 1
+						}
+						if got, want := attempts, wantAttempts; got != want {
+							t.Errorf("got attempts %d, want %d", got, want)
+						}
+					})
+				})
+			}
+		}
+	})
+
+	t.Run("CopyErrors", func(t *testing.T) {
+		f, err := os.CreateTemp(t.TempDir(), "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+		for _, tt := range []struct {
+			name    string
+			content io.Reader
+			dst     io.Writer
+			wantErr error
+		}{
+			{"Read", iotest.ErrReader(io.ErrUnexpectedEOF), io.Discard, io.ErrUnexpectedEOF},
+			{"PartialRead", io.MultiReader(strings.NewReader("foo"), iotest.ErrReader(io.ErrUnexpectedEOF)), io.Discard, io.ErrUnexpectedEOF},
+			{"Write", strings.NewReader("foobar"), f, os.ErrClosed},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				body := &testHTTPResponseBody{Reader: tt.content}
+				client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Header:     http.Header{"Cache-Control": {"no-store"}},
+						Body:       body,
+					}, nil
+				})}
+				header, err := httpGet(t.Context(), client, "https://example.com", tt.dst)
+				if !errors.Is(err, tt.wantErr) {
+					t.Errorf("got error %v, want %v", err, tt.wantErr)
+				}
+				if header != nil {
+					t.Errorf("got header %v, want nil", header)
+				}
+				if !body.closed {
+					t.Error("response body was not closed")
+				}
+			})
+		}
+	})
+
 	t.Run("ResponseErrors", func(t *testing.T) {
 		for _, tt := range []struct {
 			name             string
@@ -77,13 +182,17 @@ func TestHTTPGet(t *testing.T) {
 						return &http.Response{
 							StatusCode: tt.statusCode,
 							Status:     strconv.Itoa(tt.statusCode) + " " + http.StatusText(tt.statusCode),
+							Header:     http.Header{"Cache-Control": {"public"}},
 							Body:       io.NopCloser(strings.NewReader("upstream details")),
 							Request:    req,
 						}, nil
 					})}
-					err := httpGet(t.Context(), client, "https://example.com", nil)
+					header, err := httpGet(t.Context(), client, "https://example.com", nil)
 					if err == nil {
 						t.Fatal("expected error")
+					}
+					if header != nil {
+						t.Errorf("got header %v, want nil", header)
 					}
 					if tt.wantErr != nil && !errors.Is(err, tt.wantErr) {
 						t.Errorf("got error %v, want an error matching %v", err, tt.wantErr)
@@ -164,7 +273,7 @@ func TestHTTPGet(t *testing.T) {
 							Request:       req,
 						}, nil
 					})}
-					err := httpGet(t.Context(), client, "https://example.com", nil)
+					_, err := httpGet(t.Context(), client, "https://example.com", nil)
 					if got, want := body.bytesRead, tt.wantRead; got != want {
 						t.Errorf("got bytes read %d, want %d", got, want)
 					}
@@ -238,7 +347,7 @@ func TestHTTPGet(t *testing.T) {
 						rw.WriteHeader(statusCode)
 						fmt.Fprint(rw, tt.body)
 					}))
-					err := httpGet(t.Context(), http.DefaultClient, server.URL, nil)
+					_, err := httpGet(t.Context(), http.DefaultClient, server.URL, nil)
 					if err == nil {
 						t.Fatal("expected error")
 					}
@@ -406,10 +515,13 @@ func TestHTTPGet(t *testing.T) {
 				}
 
 				var content bytes.Buffer
-				err := httpGet(ctx, client, server.URL, &content)
+				header, err := httpGet(ctx, client, server.URL, &content)
 				if wantErr != nil {
 					if err == nil {
 						t.Fatal("expected error")
+					}
+					if header != nil {
+						t.Errorf("got header %v, want nil", header)
 					}
 					if got, want := err, wantErr; !compareErrors(got, want) {
 						t.Errorf("got %v, want %v", got, want)
@@ -427,7 +539,7 @@ func TestHTTPGet(t *testing.T) {
 	})
 
 	t.Run("InvalidURL", func(t *testing.T) {
-		if err := httpGet(t.Context(), http.DefaultClient, "::", nil); err == nil {
+		if _, err := httpGet(t.Context(), http.DefaultClient, "::", nil); err == nil {
 			t.Fatal("expected error")
 		} else if _, ok := errors.AsType[*internalError](err); !ok {
 			t.Errorf("got error %v, want an internal error", err)
@@ -438,7 +550,7 @@ func TestHTTPGet(t *testing.T) {
 func TestHTTPGetTemp(t *testing.T) {
 	t.Run("MissingTempDir", func(t *testing.T) {
 		missing := filepath.Join(t.TempDir(), "missing")
-		file, err := httpGetTemp(t.Context(), http.DefaultClient, "https://example.com", missing)
+		file, _, err := httpGetTemp(t.Context(), http.DefaultClient, "https://example.com", missing)
 		if file != "" {
 			t.Errorf("unexpected temporary file %q", file)
 		}
@@ -470,6 +582,7 @@ func TestHTTPGetTemp(t *testing.T) {
 			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 				return &http.Response{
 					StatusCode: http.StatusOK,
+					Header:     http.Header{"Cache-Control": {"no-store"}},
 					Body: struct {
 						io.ReadCloser
 						io.WriterTo
@@ -490,9 +603,12 @@ func TestHTTPGetTemp(t *testing.T) {
 				}, nil
 			})}
 			tempDir := t.TempDir()
-			file, err := httpGetTemp(t.Context(), client, "https://example.com", tempDir)
+			file, header, err := httpGetTemp(t.Context(), client, "https://example.com", tempDir)
 			if file != "" {
 				t.Errorf("unexpected temporary file %q", file)
+			}
+			if header != nil {
+				t.Errorf("got header %v, want nil", header)
 			}
 			if _, ok := errors.AsType[*internalError](err); !ok {
 				t.Errorf("got error %v, want an internal error", err)
@@ -561,7 +677,7 @@ func TestHTTPGetTemp(t *testing.T) {
 					rw.Write(body)
 				}))
 				tempDir := t.TempDir()
-				file, err := httpGetTemp(t.Context(), http.DefaultClient, server.URL, tempDir)
+				file, _, err := httpGetTemp(t.Context(), http.DefaultClient, server.URL, tempDir)
 				if !errors.Is(err, fs.ErrNotExist) {
 					t.Fatalf("got %v, want %v", err, fs.ErrNotExist)
 				}
@@ -620,7 +736,7 @@ func TestHTTPGetTemp(t *testing.T) {
 		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
 			server := newHTTPTestServer(t, tt.handler)
 
-			tempFile, err := httpGetTemp(t.Context(), http.DefaultClient, server.URL, t.TempDir())
+			tempFile, _, err := httpGetTemp(t.Context(), http.DefaultClient, server.URL, t.TempDir())
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatal("expected error")
