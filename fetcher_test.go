@@ -1973,7 +1973,8 @@ func TestWalkEnvGOPROXY(t *testing.T) {
 					err := walkEnvGOPROXY("https://example.com"+tt.separator+tt.next, func(proxy *url.URL) error {
 						proxyCalls++
 						if proxy.Host == "example.com" {
-							return httpGet(t.Context(), client, proxy.String(), nil)
+							_, err := httpGet(t.Context(), client, proxy.String(), nil)
+							return err
 						}
 						return nil
 					}, func() error {
