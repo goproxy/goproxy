@@ -2,13 +2,14 @@ package goproxy
 
 import (
 	"context"
+	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -157,18 +158,26 @@ func httpGetTemp(ctx context.Context, client *http.Client, url, tempDir string) 
 // isRetryableHTTPClientDoError reports whether the err is a retryable error
 // returned by [http.Client.Do].
 func isRetryableHTTPClientDoError(err error) bool {
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, http.ErrSchemeMismatch) {
 		return false
 	}
-	if ue, ok := err.(*url.Error); ok {
-		e := ue.Unwrap()
-		switch e.(type) {
-		case x509.UnknownAuthorityError:
-			return false
-		}
-		if errors.Is(e, http.ErrSchemeMismatch) {
-			return false
-		}
+	if e, ok := errors.AsType[*net.DNSError](err); ok && e.IsNotFound {
+		return false
+	}
+	if _, ok := errors.AsType[*tls.CertificateVerificationError](err); ok {
+		return false
+	}
+	if _, ok := errors.AsType[x509.SystemRootsError](err); ok {
+		return false
+	}
+	if _, ok := errors.AsType[x509.CertificateInvalidError](err); ok {
+		return false
+	}
+	if _, ok := errors.AsType[x509.HostnameError](err); ok {
+		return false
+	}
+	if _, ok := errors.AsType[x509.UnknownAuthorityError](err); ok {
+		return false
 	}
 	return true
 }
