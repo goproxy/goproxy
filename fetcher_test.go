@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"golang.org/x/mod/sumdb"
@@ -183,6 +184,54 @@ func TestGoFetcherQuery(t *testing.T) {
 	proxyHandler := func(rw http.ResponseWriter, req *http.Request) {
 		responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
 	}
+
+	t.Run("RetryAfterFallback", func(t *testing.T) {
+		for _, statusCode := range []int{http.StatusTooManyRequests, http.StatusServiceUnavailable} {
+			for _, tt := range []struct {
+				name      string
+				separator string
+				wantHosts []string
+				wantErr   error
+			}{
+				{"Comma", ",", []string{"proxy.example.com"}, errBadUpstream},
+				{"Pipe", "|", []string{"proxy.example.com", "fallback.example.com"}, nil},
+			} {
+				t.Run(strconv.Itoa(statusCode)+"/"+tt.name, func(t *testing.T) {
+					synctest.Test(t, func(t *testing.T) {
+						var hosts []string
+						gf := &GoFetcher{
+							Env: []string{"GOPROXY=https://proxy.example.com" + tt.separator + "https://fallback.example.com", "GOSUMDB=off"},
+							Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+								hosts = append(hosts, req.URL.Host)
+								if req.URL.Host == "proxy.example.com" {
+									return &http.Response{
+										StatusCode: statusCode,
+										Header:     http.Header{"Retry-After": {"60"}},
+										Body:       http.NoBody,
+									}, nil
+								}
+								return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(info))}, nil
+							}),
+						}
+						started := time.Now()
+						version, timestamp, err := gf.Query(t.Context(), "example.com", "latest")
+						if !errors.Is(err, tt.wantErr) {
+							t.Errorf("got error %v, want %v", err, tt.wantErr)
+						}
+						if tt.wantErr == nil && (version != infoVersion || !timestamp.Equal(infoTime)) {
+							t.Errorf("got version %q at %v, want %q at %v", version, timestamp, infoVersion, infoTime)
+						}
+						if !slices.Equal(hosts, tt.wantHosts) {
+							t.Errorf("got hosts %q, want %q", hosts, tt.wantHosts)
+						}
+						if got := time.Since(started); got != 0 {
+							t.Errorf("got delay %v, want 0", got)
+						}
+					})
+				})
+			}
+		}
+	})
 
 	t.Run("InvalidInfoFallback", func(t *testing.T) {
 		for _, tt := range []struct {
