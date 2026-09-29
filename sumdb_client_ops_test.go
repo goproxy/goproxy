@@ -1,13 +1,18 @@
 package goproxy
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
+	"time"
 )
 
 func TestNewSumDBClientOps(t *testing.T) {
@@ -45,6 +50,63 @@ func TestNewSumDBClientOps(t *testing.T) {
 }
 
 func TestSumDBClientOpsURL(t *testing.T) {
+	t.Run("TimeoutFallback", func(t *testing.T) {
+		for _, tt := range []struct {
+			name      string
+			suffix    string
+			wantHosts []string
+			wantURL   string
+		}{
+			{"SingleProxy", "", []string{"example.com"}, ""},
+			{"CommaProxy", ",https://alt.example.com", []string{"example.com"}, ""},
+			{"PipeProxy", "|https://alt.example.com", []string{"example.com", "alt.example.com"}, "https://alt.example.com/sumdb/" + defaultEnvGOSUMDB},
+			{"CommaDirect", ",direct", []string{"example.com"}, ""},
+			{"PipeDirect", "|direct", []string{"example.com"}, "https://" + defaultEnvGOSUMDB},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					var hosts []string
+					client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						hosts = append(hosts, req.URL.Host)
+						if _, ok := req.Context().Deadline(); !ok {
+							t.Error("request has no deadline")
+							return nil, context.DeadlineExceeded
+						}
+						if req.URL.Host == "example.com" {
+							<-req.Context().Done()
+							return nil, req.Context().Err()
+						}
+						return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+					})}
+					sco, err := newSumdbClientOps("https://example.com"+tt.suffix, defaultEnvGOSUMDB, client)
+					if err != nil {
+						t.Fatal(err)
+					}
+					started := time.Now()
+					u, err := sco.url()
+					if tt.wantURL == "" {
+						if !errors.Is(err, context.DeadlineExceeded) || u != nil {
+							t.Errorf("got (%v, %v), want a timeout and no URL", u, err)
+						}
+					} else if err != nil {
+						t.Fatalf("unexpected error %v", err)
+					} else if got := u.String(); got != tt.wantURL {
+						t.Errorf("got URL %q, want %q", got, tt.wantURL)
+					}
+					if nextURL, nextErr := sco.url(); nextURL != u || nextErr != err {
+						t.Errorf("got (%v, %v), want (%v, %v)", nextURL, nextErr, u, err)
+					}
+					if !slices.Equal(hosts, tt.wantHosts) {
+						t.Errorf("got hosts %q, want %q", hosts, tt.wantHosts)
+					}
+					if got, want := time.Since(started), time.Minute; got != want {
+						t.Errorf("got duration %v, want %v", got, want)
+					}
+				})
+			})
+		}
+	})
+
 	t.Run("HTTPStatusFallback", func(t *testing.T) {
 		for _, statusCode := range []int{http.StatusBadRequest, http.StatusNotFound, http.StatusGone} {
 			for _, tt := range []struct {
@@ -209,6 +271,125 @@ func TestSumDBClientOpsURL(t *testing.T) {
 }
 
 func TestSumDBClientOpsReadRemote(t *testing.T) {
+	t.Run("Timeout", func(t *testing.T) {
+		for _, tt := range []struct {
+			name           string
+			firstStatus    int
+			bodyStatus     int
+			discoveryDelay time.Duration
+			clientTimeout  time.Duration
+			wantAttempts   int
+			wantDuration   time.Duration
+		}{
+			{"Headers", 0, 0, 0, 0, 1, time.Minute},
+			{"Body", 0, http.StatusOK, 0, 0, 1, time.Minute},
+			{"ErrorBody", 0, http.StatusServiceUnavailable, 0, 0, 1, time.Minute},
+			{"Retry", http.StatusServiceUnavailable, 0, 0, 0, 2, time.Minute},
+			{"Redirect", http.StatusFound, 0, 0, 0, 2, time.Minute},
+			{"AfterDiscovery", 0, 0, 40 * time.Second, 0, 1, 100 * time.Second},
+			{"ShorterClientTimeout", 0, 0, 0, 5 * time.Second, 1, 5 * time.Second},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					attempts := 0
+					var body *testHTTPResponseBody
+					client := &http.Client{Timeout: tt.clientTimeout, Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						if _, ok := req.Context().Deadline(); !ok {
+							t.Error("request has no deadline")
+							return nil, context.DeadlineExceeded
+						}
+						if strings.HasSuffix(req.URL.Path, "/supported") {
+							time.Sleep(tt.discoveryDelay)
+							return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+						}
+						attempts++
+						if attempts == 1 && tt.firstStatus != 0 {
+							time.Sleep(40 * time.Second)
+							return &http.Response{
+								StatusCode: tt.firstStatus,
+								Header:     http.Header{"Location": {"/redirected"}, "Retry-After": {"1"}},
+								Body:       http.NoBody,
+							}, nil
+						}
+						if tt.bodyStatus != 0 {
+							r, w := io.Pipe()
+							t.Cleanup(func() { r.Close() })
+							body = &testHTTPResponseBody{Reader: r}
+							go func() {
+								io.WriteString(w, "partial")
+								<-req.Context().Done()
+								w.CloseWithError(req.Context().Err())
+							}()
+							return &http.Response{StatusCode: tt.bodyStatus, Body: body}, nil
+						}
+						<-req.Context().Done()
+						return nil, req.Context().Err()
+					})}
+					envGOSUMDB := defaultEnvGOSUMDB + " https://example.com"
+					if tt.discoveryDelay > 0 {
+						envGOSUMDB = defaultEnvGOSUMDB
+					}
+					sco, err := newSumdbClientOps("https://example.com", envGOSUMDB, client)
+					if err != nil {
+						t.Fatal(err)
+					}
+					started := time.Now()
+					b, err := sco.ReadRemote("/lookup/example.com@v1.0.0")
+					if !errors.Is(err, context.DeadlineExceeded) || !isFetchTimedOutError(err) {
+						t.Errorf("got error %v, want a timeout", err)
+					}
+					if b != nil {
+						t.Errorf("got content %q, want nil", b)
+					}
+					if got := attempts; got != tt.wantAttempts {
+						t.Errorf("got attempts %d, want %d", got, tt.wantAttempts)
+					}
+					if got := time.Since(started); got != tt.wantDuration {
+						t.Errorf("got duration %v, want %v", got, tt.wantDuration)
+					}
+					if body != nil && !body.closed {
+						t.Error("response body was not closed")
+					}
+				})
+			})
+		}
+	})
+
+	t.Run("ConcurrentTimeouts", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if _, ok := req.Context().Deadline(); !ok {
+					t.Error("request has no deadline")
+					return nil, context.DeadlineExceeded
+				}
+				<-req.Context().Done()
+				return nil, req.Context().Err()
+			})}
+			sco, err := newSumdbClientOps("direct", defaultEnvGOSUMDB+" https://example.com", client)
+			if err != nil {
+				t.Fatal(err)
+			}
+			done := make(chan error, 1)
+			go func() {
+				_, err := sco.ReadRemote("/lookup/first.example.com@v1.0.0")
+				done <- err
+			}()
+			synctest.Wait()
+			time.Sleep(30 * time.Second)
+			started := time.Now()
+			_, err = sco.ReadRemote("/lookup/second.example.com@v1.0.0")
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Errorf("got error %v, want a timeout", err)
+			}
+			if got, want := time.Since(started), time.Minute; got != want {
+				t.Errorf("got duration %v, want %v", got, want)
+			}
+			if err := <-done; !errors.Is(err, context.DeadlineExceeded) {
+				t.Errorf("got error %v, want a timeout", err)
+			}
+		})
+	})
+
 	for _, tt := range []struct {
 		n            int
 		proxyHandler http.HandlerFunc

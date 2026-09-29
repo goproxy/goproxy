@@ -61,8 +61,10 @@ func (sco *sumdbClientOps) url() (*url.URL, error) {
 
 	u := sco.directURL
 	err := walkEnvGOPROXY(sco.envGOPROXY, func(proxy *url.URL) error {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
 		pu := proxy.JoinPath("sumdb", sco.name)
-		if _, err := httpGet(context.Background(), sco.httpClient, pu.JoinPath("/supported").String(), nil); err != nil {
+		if _, err := httpGet(ctx, sco.httpClient, pu.JoinPath("/supported").String(), nil); err != nil {
 			return err
 		}
 		u = pu
@@ -85,8 +87,10 @@ func (sco *sumdbClientOps) ReadRemote(path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
 	var buf bytes.Buffer
-	if _, err := httpGet(context.Background(), sco.httpClient, u.JoinPath(path).String(), &buf); err != nil {
+	if _, err := httpGet(ctx, sco.httpClient, u.JoinPath(path).String(), &buf); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil

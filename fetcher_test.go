@@ -19,6 +19,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -1183,6 +1184,69 @@ func TestGoFetcherDownload(t *testing.T) {
 		gosum += fmt.Sprintf("%s %s/go.mod %s\n", modulePath, moduleVersion, modHash)
 		return []byte(gosum), nil
 	})).ServeHTTP
+
+	t.Run("SumDBTimeout", func(t *testing.T) {
+		for _, tt := range []struct {
+			name         string
+			envGOSUMDB   string
+			pathPrefix   string
+			wantAttempts int32
+		}{
+			{"Supported", vkey, "/sumdb/sumdb.example.com/supported", 1},
+			{"Lookup", vkey + " https://sumdb.example.com", "/lookup/", 1},
+			{"Tile", vkey + " https://sumdb.example.com", "/tile/", 2},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					var attempts atomic.Int32
+					gf := &GoFetcher{
+						Env:     []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=" + tt.envGOSUMDB},
+						TempDir: t.TempDir(),
+						Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+							if strings.HasPrefix(req.URL.Path, tt.pathPrefix) {
+								attempts.Add(1)
+								if _, ok := req.Context().Deadline(); !ok {
+									t.Error("request has no deadline")
+									return nil, context.DeadlineExceeded
+								}
+								<-req.Context().Done()
+								return nil, req.Context().Err()
+							}
+							rec := httptest.NewRecorder()
+							if req.URL.Host == "sumdb.example.com" {
+								sumdbHandler(rec, req)
+							} else {
+								proxyHandler(rec, req)
+							}
+							return rec.Result(), nil
+						}),
+					}
+					started := time.Now()
+					info, mod, zip, err := gf.Download(t.Context(), "example.com", infoVersion)
+					if err == nil {
+						t.Error("expected error")
+					}
+					for _, content := range []io.ReadSeekCloser{info, mod, zip} {
+						if content != nil {
+							content.Close()
+							t.Error("unexpected module content")
+						}
+					}
+					if got := attempts.Load(); got != tt.wantAttempts {
+						t.Errorf("got attempts %d, want %d", got, tt.wantAttempts)
+					}
+					if got, want := time.Since(started), time.Duration(tt.wantAttempts)*time.Minute; got != want {
+						t.Errorf("got duration %v, want %v", got, want)
+					}
+					if entries, err := os.ReadDir(gf.TempDir); err != nil {
+						t.Fatal(err)
+					} else if len(entries) != 0 {
+						t.Errorf("unexpected temporary files %v", entries)
+					}
+				})
+			})
+		}
+	})
 
 	t.Run("ReopenDownloadedFile", func(t *testing.T) {
 		for _, tt := range []struct {
