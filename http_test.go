@@ -221,6 +221,279 @@ func TestHTTPGet(t *testing.T) {
 		}
 	})
 
+	t.Run("RetryAfter", func(t *testing.T) {
+		for _, statusCode := range []int{
+			http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway,
+			http.StatusServiceUnavailable, http.StatusGatewayTimeout,
+		} {
+			for _, tt := range []struct {
+				name         string
+				values       []string
+				date         bool
+				wantAttempts int
+				wantDelay    time.Duration
+			}{
+				{"Seconds", []string{"1"}, false, 2, time.Second},
+				{"LeadingZeros", []string{"0001"}, false, 2, time.Second},
+				{"Whitespace", []string{" \t1\t "}, false, 2, time.Second},
+				{"Date", []string{http.TimeFormat}, true, 2, time.Second},
+				{"RFC850Date", []string{time.RFC850}, true, 2, time.Second},
+				{"ANSICDate", []string{time.ANSIC}, true, 2, time.Second},
+				{"OverLimit", []string{"2"}, false, 1, 0},
+				{"LongDelay", []string{"60"}, false, 1, 0},
+				{"DurationOverflow", []string{"9223372037"}, false, 1, 0},
+				{"IntegerOverflow", []string{strings.Repeat("9", 128)}, false, 1, 0},
+				{"DistantDate", []string{"Fri, 31 Dec 9999 23:59:59 GMT"}, false, 1, 0},
+				{"Absent", nil, false, 2, -1},
+				{"Zero", []string{"0"}, false, 2, -1},
+				{"PastDate", []string{"Sun, 06 Nov 1994 08:49:37 GMT"}, false, 2, -1},
+				{"Invalid", []string{"invalid"}, false, 2, -1},
+				{"Negative", []string{"-1"}, false, 2, -1},
+				{"Signed", []string{"+1"}, false, 2, -1},
+				{"Fractional", []string{"0.5"}, false, 2, -1},
+				{"Quoted", []string{"\"1\""}, false, 2, -1},
+				{"InvalidOverflowSuffix", []string{strings.Repeat("9", 128) + "x"}, false, 2, -1},
+				{"RepeatedFields", []string{"1", "60"}, false, 2, -1},
+				{"CombinedFields", []string{"1, 60"}, false, 2, -1},
+			} {
+				t.Run(strconv.Itoa(statusCode)+"/"+tt.name, func(t *testing.T) {
+					synctest.Test(t, func(t *testing.T) {
+						started := time.Now()
+						values := tt.values
+						if tt.date {
+							values = []string{started.Add(time.Second).UTC().Format(tt.values[0])}
+						}
+						body := &testHTTPResponseBody{Reader: strings.NewReader("upstream details")}
+						attempts := 0
+						client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+							attempts++
+							if attempts > 1 {
+								if !body.closed {
+									t.Error("response body was not closed before retrying")
+								}
+								return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+							}
+							return &http.Response{
+								StatusCode: statusCode,
+								Header:     http.Header{"Retry-After": values},
+								Body:       body,
+							}, nil
+						})}
+						_, err := httpGet(t.Context(), client, "https://example.com", nil)
+						if tt.wantAttempts == 1 {
+							httpErr, ok := errors.AsType[*httpError](err)
+							if !ok || httpErr.statusCode != statusCode {
+								t.Errorf("got error %#v, want HTTP status %d", err, statusCode)
+							}
+							wantErr := errBadUpstream
+							if statusCode == http.StatusGatewayTimeout {
+								wantErr = errFetchTimedOut
+							}
+							if !errors.Is(err, wantErr) {
+								t.Errorf("got error %v, want %v", err, wantErr)
+							}
+							if t.Context().Err() != nil {
+								t.Error("request context was canceled")
+							}
+						} else if err != nil {
+							t.Errorf("unexpected error %v", err)
+						}
+						if got, want := attempts, tt.wantAttempts; got != want {
+							t.Errorf("got attempts %d, want %d", got, want)
+						}
+						if got := time.Since(started); tt.wantDelay >= 0 {
+							if got != tt.wantDelay {
+								t.Errorf("got delay %v, want %v", got, tt.wantDelay)
+							}
+						} else if got >= 100*time.Millisecond {
+							t.Errorf("got delay %v, want less than 100ms", got)
+						}
+						if !body.closed {
+							t.Error("response body was not closed")
+						}
+					})
+				})
+			}
+		}
+	})
+
+	t.Run("RetryAfterContext", func(t *testing.T) {
+		for _, tt := range []struct {
+			name      string
+			timeout   time.Duration
+			cancel    bool
+			wantErr   error
+			wantDelay time.Duration
+		}{
+			{"InsufficientTime", 500 * time.Millisecond, false, errBadUpstream, 0},
+			{"DeadlineBoundary", time.Second, false, errBadUpstream, 0},
+			{"CanceledWhileWaiting", 0, true, context.Canceled, 200 * time.Millisecond},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					ctx, cancel := context.WithCancel(t.Context())
+					defer cancel()
+					if tt.timeout > 0 {
+						var stop context.CancelFunc
+						ctx, stop = context.WithTimeout(ctx, tt.timeout)
+						defer stop()
+					}
+					if tt.cancel {
+						go func() {
+							time.Sleep(tt.wantDelay)
+							cancel()
+						}()
+					}
+					attempts := 0
+					client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						attempts++
+						return &http.Response{
+							StatusCode: http.StatusServiceUnavailable,
+							Header:     http.Header{"Retry-After": {"1"}},
+							Body:       http.NoBody,
+						}, nil
+					})}
+					started := time.Now()
+					_, err := httpGet(ctx, client, "https://example.com", nil)
+					if !errors.Is(err, tt.wantErr) {
+						t.Errorf("got error %v, want %v", err, tt.wantErr)
+					}
+					if got, want := attempts, 1; got != want {
+						t.Errorf("got attempts %d, want %d", got, want)
+					}
+					if got, want := time.Since(started), tt.wantDelay; got != want {
+						t.Errorf("got delay %v, want %v", got, want)
+					}
+					if !tt.cancel && ctx.Err() != nil {
+						t.Errorf("unexpected context error %v", ctx.Err())
+					}
+				})
+			})
+		}
+	})
+
+	t.Run("RetryAfterAttempts", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			attempts := 0
+			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				attempts++
+				return &http.Response{
+					StatusCode: http.StatusServiceUnavailable,
+					Header:     http.Header{"Retry-After": {"1"}},
+					Body:       http.NoBody,
+				}, nil
+			})}
+			started := time.Now()
+			if _, err := httpGet(t.Context(), client, "https://example.com", nil); !errors.Is(err, errBadUpstream) {
+				t.Errorf("got error %v, want %v", err, errBadUpstream)
+			}
+			if got, want := attempts, 10; got != want {
+				t.Errorf("got attempts %d, want %d", got, want)
+			}
+			if got, want := time.Since(started), 9*time.Second; got != want {
+				t.Errorf("got delay %v, want %v", got, want)
+			}
+		})
+	})
+
+	t.Run("RetryAfterBody", func(t *testing.T) {
+		for _, tt := range []struct {
+			name      string
+			bodyDelay time.Duration
+			timeout   time.Duration
+			wantErr   error
+			minDelay  time.Duration
+			maxDelay  time.Duration
+		}{
+			{"ShortRead", 200 * time.Millisecond, 0, nil, time.Second, time.Second},
+			{"ExpiredAfterRead", 2 * time.Second, 0, nil, 2 * time.Second, 2100 * time.Millisecond},
+			{"DeadlineDuringRead", 600 * time.Millisecond, 500 * time.Millisecond, context.DeadlineExceeded, 600 * time.Millisecond, 600 * time.Millisecond},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					ctx := t.Context()
+					if tt.timeout > 0 {
+						var cancel context.CancelFunc
+						ctx, cancel = context.WithTimeout(ctx, tt.timeout)
+						defer cancel()
+					}
+					r, w := io.Pipe()
+					defer r.Close()
+					go func() {
+						time.Sleep(tt.bodyDelay)
+						w.Close()
+					}()
+					body := &testHTTPResponseBody{Reader: r}
+					attempts := 0
+					client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						attempts++
+						if attempts > 1 {
+							if !body.closed {
+								t.Error("response body was not closed before retrying")
+							}
+							return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+						}
+						return &http.Response{
+							StatusCode: http.StatusServiceUnavailable,
+							Header:     http.Header{"Retry-After": {"1"}},
+							Body:       body,
+						}, nil
+					})}
+					started := time.Now()
+					_, err := httpGet(ctx, client, "https://example.com", nil)
+					if !errors.Is(err, tt.wantErr) {
+						t.Errorf("got error %v, want %v", err, tt.wantErr)
+					}
+					wantAttempts := 2
+					if tt.wantErr != nil {
+						wantAttempts = 1
+					}
+					if got, want := attempts, wantAttempts; got != want {
+						t.Errorf("got attempts %d, want %d", got, want)
+					}
+					if got := time.Since(started); got < tt.minDelay || got > tt.maxDelay {
+						t.Errorf("got delay %v, want between %v and %v", got, tt.minDelay, tt.maxDelay)
+					}
+					if !body.closed {
+						t.Error("response body was not closed")
+					}
+				})
+			})
+		}
+	})
+
+	t.Run("RetryAfterNonRetryable", func(t *testing.T) {
+		for _, statusCode := range []int{
+			http.StatusOK, http.StatusBadRequest, http.StatusNotFound, http.StatusGone, http.StatusNotImplemented,
+		} {
+			t.Run(strconv.Itoa(statusCode), func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					attempts := 0
+					client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						attempts++
+						return &http.Response{
+							StatusCode: statusCode,
+							Header:     http.Header{"Retry-After": {"60"}},
+							Body:       http.NoBody,
+							Request:    req,
+						}, nil
+					})}
+					started := time.Now()
+					_, err := httpGet(t.Context(), client, "https://example.com", nil)
+					if got, want := err == nil, statusCode == http.StatusOK; got != want {
+						t.Errorf("got error %v for status %d", err, statusCode)
+					}
+					if got, want := attempts, 1; got != want {
+						t.Errorf("got attempts %d, want %d", got, want)
+					}
+					if got := time.Since(started); got != 0 {
+						t.Errorf("got delay %v, want 0", got)
+					}
+				})
+			})
+		}
+	})
+
 	t.Run("ErrorBodyLimit", func(t *testing.T) {
 		const maxErrorBodySize = 4 << 10
 		atLimit := strings.Repeat("x", maxErrorBodySize)
@@ -881,6 +1154,48 @@ func TestIsCacheRestrictedHTTPResponse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got, want := isCacheRestrictedHTTPResponse(tt.header), tt.want; got != want {
 				t.Errorf("got %t, want %t", got, want)
+			}
+		})
+	}
+}
+
+func TestParseHTTPRetryAfter(t *testing.T) {
+	now := time.Date(2026, time.September, 29, 12, 0, 0, 0, time.UTC)
+	for _, tt := range []struct {
+		name  string
+		value string
+		want  time.Time
+	}{
+		{"Empty", "", time.Time{}},
+		{"Whitespace", " \t", time.Time{}},
+		{"Zero", "0", now},
+		{"Seconds", "60", now.Add(time.Minute)},
+		{"LeadingZeros", "00060", now.Add(time.Minute)},
+		{"LongLeadingZeros", strings.Repeat("0", 128) + "1", now.Add(time.Second)},
+		{"SurroundingWhitespace", " \t60\t ", now.Add(time.Minute)},
+		{"Date", "Tue, 29 Sep 2026 12:01:00 GMT", now.Add(time.Minute)},
+		{"RFC850Date", "Tuesday, 29-Sep-26 12:01:00 GMT", now.Add(time.Minute)},
+		{"ANSICDate", "Tue Sep 29 12:01:00 2026", now.Add(time.Minute)},
+		{"PastDate", "Tue, 29 Sep 2026 11:59:00 GMT", now.Add(-time.Minute)},
+		{"MaximumDurationSeconds", "9223372036", now.Add(9223372036 * time.Second)},
+		{"DurationOverflow", "9223372037", now.Add(9223372036 * time.Second)},
+		{"MaximumInteger", "18446744073709551615", now.Add(9223372036 * time.Second)},
+		{"IntegerOverflow", "18446744073709551616", now.Add(9223372036 * time.Second)},
+		{"LongInteger", strings.Repeat("9", 128), now.Add(9223372036 * time.Second)},
+		{"Negative", "-1", time.Time{}},
+		{"Signed", "+1", time.Time{}},
+		{"Fractional", "0.5", time.Time{}},
+		{"Hexadecimal", "0x10", time.Time{}},
+		{"Quoted", "\"1\"", time.Time{}},
+		{"InternalWhitespace", "1 0", time.Time{}},
+		{"Invalid", "invalid", time.Time{}},
+		{"InvalidOverflowSuffix", strings.Repeat("9", 128) + "x", time.Time{}},
+		{"MultipleSeconds", "1, 60", time.Time{}},
+		{"MultipleDates", "Tue, 29 Sep 2026 12:01:00 GMT,Tue, 29 Sep 2026 12:02:00 GMT", time.Time{}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := parseHTTPRetryAfter(tt.value, now); !got.Equal(tt.want) {
+				t.Errorf("got %v, want %v", got, tt.want)
 			}
 		})
 	}

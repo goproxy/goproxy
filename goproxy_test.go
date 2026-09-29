@@ -1872,6 +1872,10 @@ func TestGoproxyServeSumDB(t *testing.T) {
 			{"BadGateway", http.StatusBadGateway, nil, nil, nil, http.StatusBadGateway, "no-store", "bad gateway"},
 			{"ServiceUnavailable", http.StatusServiceUnavailable, nil, nil, nil, http.StatusServiceUnavailable, "no-store", "service unavailable"},
 			{"GatewayTimeout", http.StatusGatewayTimeout, nil, nil, nil, http.StatusGatewayTimeout, "no-store", "gateway timeout"},
+			{"RateLimitRetryAfter", http.StatusTooManyRequests, nil, nil, http.Header{"Retry-After": {"60"}}, http.StatusServiceUnavailable, "no-store", "service unavailable"},
+			{"UnavailableRetryAfter", http.StatusServiceUnavailable, nil, nil, http.Header{"Retry-After": {"60"}}, http.StatusServiceUnavailable, "no-store", "service unavailable"},
+			{"BadGatewayRetryAfter", http.StatusBadGateway, nil, nil, http.Header{"Retry-After": {"60"}}, http.StatusBadGateway, "no-store", "bad gateway"},
+			{"GatewayTimeoutRetryAfter", http.StatusGatewayTimeout, nil, nil, http.Header{"Retry-After": {"60"}}, http.StatusGatewayTimeout, "no-store", "gateway timeout"},
 			{"NoContent", http.StatusNoContent, nil, nil, nil, http.StatusBadGateway, "no-store", "bad gateway"},
 			{"PartialContent", http.StatusPartialContent, nil, nil, nil, http.StatusBadGateway, "no-store", "bad gateway"},
 			{"NotModified", http.StatusNotModified, nil, nil, nil, http.StatusBadGateway, "no-store", "bad gateway"},
@@ -1944,7 +1948,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 							if got, want := rec.Header().Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 								t.Errorf("got content type %q, want %q", got, want)
 							}
-							for _, name := range []string{"Set-Cookie", "ETag", "WWW-Authenticate"} {
+							for _, name := range []string{"Set-Cookie", "ETag", "WWW-Authenticate", "Retry-After"} {
 								if got := rec.Header().Get(name); got != "" {
 									t.Errorf("unexpected %s header %q", name, got)
 								}

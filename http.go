@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -26,8 +28,21 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 		maxErrorBodySize = 4 << 10
 	)
 
-	var lastErr error
+	var (
+		lastErr    error
+		retryAfter time.Time
+	)
 	for range backoff.Attempts(ctx, maxAttempts, backoffBase, backoffCap) {
+		if delay := time.Until(retryAfter); delay > 0 {
+			select {
+			case <-ctx.Done():
+			case <-time.After(delay):
+			}
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
+
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
 			return nil, &internalError{err: err}
@@ -52,6 +67,9 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 			return resp.Header, nil
 		}
 
+		// Include response body reading time in the retry delay.
+		retryAfter = parseHTTPRetryAfter(strings.Join(resp.Header.Values("Retry-After"), ","), time.Now())
+
 		respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodySize+1))
 		resp.Body.Close()
 		if err != nil {
@@ -65,6 +83,7 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 			}
 			respBody = append(respBody[:end], "... (truncated)"...)
 		}
+
 		switch resp.StatusCode {
 		case http.StatusNotFound, http.StatusGone:
 			err := notExistErrorf("%s", respBody)
@@ -84,6 +103,14 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 				err:        fmt.Errorf("GET %s: %s: %s", resp.Request.URL.Redacted(), resp.Status, respBody),
 				statusCode: resp.StatusCode,
 			}
+		}
+
+		// Stop rather than retry early or extend the maximum retry delay.
+		if time.Until(retryAfter) > backoffCap {
+			break
+		}
+		if deadline, ok := ctx.Deadline(); ok && !retryAfter.Before(deadline) {
+			break
 		}
 	}
 	if err := ctx.Err(); err != nil {
@@ -215,4 +242,22 @@ func isCacheRestrictedHTTPResponse(header http.Header) bool {
 		}
 	}
 	return false
+}
+
+// parseHTTPRetryAfter parses an HTTP Retry-After value relative to now,
+// returning the zero time for invalid values.
+func parseHTTPRetryAfter(value string, now time.Time) time.Time {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}
+	}
+	for i := range len(value) {
+		if value[i] < '0' || value[i] > '9' {
+			t, _ := http.ParseTime(value)
+			return t
+		}
+	}
+	// Saturate large delays to avoid overflowing and retrying early.
+	seconds, _ := strconv.ParseUint(value, 10, 64)
+	return now.Add(time.Duration(min(seconds, math.MaxInt64/uint64(time.Second))) * time.Second)
 }
