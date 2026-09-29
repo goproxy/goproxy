@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -234,6 +235,49 @@ func TestGoFetcherQuery(t *testing.T) {
 					})
 				})
 			}
+		}
+	})
+
+	t.Run("TransportErrorFallback", func(t *testing.T) {
+		dnsErr := &net.DNSError{Err: "no such host", Name: "proxy.example.com", IsNotFound: true}
+		for _, tt := range []struct {
+			name      string
+			separator string
+			wantHosts []string
+			wantErr   error
+		}{
+			{"Comma", ",", []string{"proxy.example.com"}, dnsErr},
+			{"Pipe", "|", []string{"proxy.example.com", "fallback.example.com"}, nil},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					var hosts []string
+					gf := &GoFetcher{
+						Env: []string{"GOPROXY=https://proxy.example.com" + tt.separator + "https://fallback.example.com", "GOSUMDB=off"},
+						Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+							hosts = append(hosts, req.URL.Host)
+							if req.URL.Host == "proxy.example.com" {
+								return nil, &net.OpError{Op: "dial", Net: "tcp", Err: dnsErr}
+							}
+							return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(info))}, nil
+						}),
+					}
+					started := time.Now()
+					version, timestamp, err := gf.Query(t.Context(), "example.com", "latest")
+					if !errors.Is(err, tt.wantErr) {
+						t.Errorf("got error %v, want %v", err, tt.wantErr)
+					}
+					if tt.wantErr == nil && (version != infoVersion || !timestamp.Equal(infoTime)) {
+						t.Errorf("got version %q at %v, want %q at %v", version, timestamp, infoVersion, infoTime)
+					}
+					if !slices.Equal(hosts, tt.wantHosts) {
+						t.Errorf("got hosts %q, want %q", hosts, tt.wantHosts)
+					}
+					if got := time.Since(started); got != 0 {
+						t.Errorf("got delay %v, want 0", got)
+					}
+				})
+			})
 		}
 	})
 

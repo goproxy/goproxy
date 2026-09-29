@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"maps"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -220,13 +222,19 @@ func TestHTTPGet(t *testing.T) {
 	})
 
 	t.Run("TransportRetries", func(t *testing.T) {
+		notFound := &net.DNSError{Err: "no such host", Name: "example.com", IsNotFound: true}
+		temporary := &net.DNSError{Err: "server misbehaving", Name: "example.com", IsTemporary: true}
 		for _, tt := range []struct {
-			name     string
-			failures int
-			wantErr  error
+			name         string
+			err          error
+			failures     int
+			wantAttempts int
+			wantErr      error
 		}{
-			{"LastAttemptSuccess", 2, nil},
-			{"Exhausted", 3, syscall.ECONNRESET},
+			{"LastAttemptSuccess", syscall.ECONNRESET, 2, 3, nil},
+			{"Exhausted", syscall.ECONNRESET, 3, 3, syscall.ECONNRESET},
+			{"DNSNotFound", &net.OpError{Op: "dial", Net: "tcp", Err: notFound}, 3, 1, notFound},
+			{"DNSTemporary", &net.OpError{Op: "dial", Net: "tcp", Err: temporary}, 3, 3, temporary},
 		} {
 			t.Run(tt.name, func(t *testing.T) {
 				synctest.Test(t, func(t *testing.T) {
@@ -236,7 +244,7 @@ func TestHTTPGet(t *testing.T) {
 						attempts++
 						lastAttempt = time.Now()
 						if attempts <= tt.failures {
-							return nil, syscall.ECONNRESET
+							return nil, tt.err
 						}
 						return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
 					})}
@@ -244,13 +252,47 @@ func TestHTTPGet(t *testing.T) {
 					if !errors.Is(err, tt.wantErr) {
 						t.Errorf("got error %v, want %v", err, tt.wantErr)
 					}
-					if got, want := attempts, 3; got != want {
+					if got, want := attempts, tt.wantAttempts; got != want {
 						t.Errorf("got attempts %d, want %d", got, want)
 					}
 					if got := time.Since(lastAttempt); got != 0 {
 						t.Errorf("got delay after final attempt %v, want 0", got)
 					}
 				})
+			})
+		}
+	})
+
+	t.Run("CertificateErrors", func(t *testing.T) {
+		server := httptest.NewTLSServer(http.NotFoundHandler())
+		defer server.Close()
+		for _, tt := range []struct {
+			name      string
+			configure func(*tls.Config)
+		}{
+			{"UnknownAuthority", func(c *tls.Config) { c.RootCAs = x509.NewCertPool() }},
+			{"Hostname", func(c *tls.Config) { c.ServerName = "mismatch.invalid" }},
+			{"Expired", func(c *tls.Config) {
+				c.Time = func() time.Time { return server.Certificate().NotAfter.Add(time.Second) }
+			}},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				transport := server.Client().Transport.(*http.Transport).Clone()
+				defer transport.CloseIdleConnections()
+				transport.TLSClientConfig.Time = func() time.Time { return server.Certificate().NotBefore.Add(time.Hour) }
+				tt.configure(transport.TLSClientConfig)
+				attempts := 0
+				client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					attempts++
+					return transport.RoundTrip(req)
+				})}
+				_, err := httpGet(t.Context(), client, server.URL, nil)
+				if _, ok := errors.AsType[*tls.CertificateVerificationError](err); !ok {
+					t.Errorf("got error %v, want a certificate verification error", err)
+				}
+				if got, want := attempts, 1; got != want {
+					t.Errorf("got attempts %d, want %d", got, want)
+				}
 			})
 		}
 	})
@@ -1080,23 +1122,44 @@ func TestHTTPGetTemp(t *testing.T) {
 
 func TestIsRetryableHTTPClientDoError(t *testing.T) {
 	for _, tt := range []struct {
-		n               int
+		name            string
 		err             error
 		wantIsRetryable bool
 	}{
-		{1, syscall.ECONNRESET, true},
-		{2, errors.New("oops"), true},
-		{3, context.Canceled, false},
-		{4, context.DeadlineExceeded, false},
-		{5, &url.Error{Err: errors.New("oops")}, true},
-		{6, &url.Error{Err: x509.UnknownAuthorityError{}}, false},
-		{7, &url.Error{Err: http.ErrSchemeMismatch}, false},
+		{"ConnectionReset", syscall.ECONNRESET, true},
+		{"ConnectionRefused", &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}, true},
+		{"UnexpectedEOF", io.ErrUnexpectedEOF, true},
+		{"Unknown", errors.New("oops"), true},
+		{"MisleadingMessage", errors.New("x509: certificate signed by unknown authority"), true},
+		{"Canceled", context.Canceled, false},
+		{"DeadlineExceeded", context.DeadlineExceeded, false},
+		{"SchemeMismatch", http.ErrSchemeMismatch, false},
+		{"DNSNotFound", &net.DNSError{IsNotFound: true}, false},
+		{"DNSTemporary", &net.DNSError{IsTemporary: true}, true},
+		{"DNSTimeout", &net.DNSError{IsTimeout: true}, true},
+		{"DNSUnclassified", &net.DNSError{Err: "server misbehaving"}, true},
+		{"TLSVerification", &tls.CertificateVerificationError{Err: errors.New("verification failed")}, false},
+		{"TLSUnknownAuthority", &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}}, false},
+		{"SystemRoots", x509.SystemRootsError{Err: errors.New("roots unavailable")}, false},
+		{"InvalidCertificate", x509.CertificateInvalidError{Reason: x509.Expired}, false},
+		{"Hostname", x509.HostnameError{Certificate: &x509.Certificate{}, Host: "example.com"}, false},
+		{"UnknownAuthority", x509.UnknownAuthorityError{}, false},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
-			if got, want := isRetryableHTTPClientDoError(tt.err), tt.wantIsRetryable; got != want {
-				t.Errorf("got %t, want %t", got, want)
-			}
-		})
+		for _, wrapped := range []struct {
+			name string
+			err  error
+		}{
+			{"Direct", tt.err},
+			{"URL", &url.Error{Op: "Get", URL: "https://example.com", Err: tt.err}},
+			{"Wrapped", fmt.Errorf("request failed: %w", &url.Error{Err: tt.err})},
+			{"Joined", errors.Join(errors.New("other failure"), tt.err)},
+		} {
+			t.Run(tt.name+"/"+wrapped.name, func(t *testing.T) {
+				if got, want := isRetryableHTTPClientDoError(wrapped.err), tt.wantIsRetryable; got != want {
+					t.Errorf("got %t, want %t", got, want)
+				}
+			})
+		}
 	}
 }
 
