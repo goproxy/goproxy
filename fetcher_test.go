@@ -188,13 +188,17 @@ func TestGoFetcherQuery(t *testing.T) {
 	t.Run("RetryAfterFallback", func(t *testing.T) {
 		for _, statusCode := range []int{http.StatusTooManyRequests, http.StatusServiceUnavailable} {
 			for _, tt := range []struct {
-				name      string
-				separator string
-				wantHosts []string
-				wantErr   error
+				name       string
+				separator  string
+				retryAfter string
+				wantHosts  []string
+				wantDelay  time.Duration
+				wantErr    error
 			}{
-				{"Comma", ",", []string{"proxy.example.com"}, errBadUpstream},
-				{"Pipe", "|", []string{"proxy.example.com", "fallback.example.com"}, nil},
+				{"Comma", ",", "60", []string{"proxy.example.com"}, 0, errBadUpstream},
+				{"Pipe", "|", "60", []string{"proxy.example.com", "fallback.example.com"}, 0, nil},
+				{"CommaExhausted", ",", "1", []string{"proxy.example.com", "proxy.example.com", "proxy.example.com"}, 2 * time.Second, errBadUpstream},
+				{"PipeExhausted", "|", "1", []string{"proxy.example.com", "proxy.example.com", "proxy.example.com", "fallback.example.com"}, 2 * time.Second, nil},
 			} {
 				t.Run(strconv.Itoa(statusCode)+"/"+tt.name, func(t *testing.T) {
 					synctest.Test(t, func(t *testing.T) {
@@ -206,7 +210,7 @@ func TestGoFetcherQuery(t *testing.T) {
 								if req.URL.Host == "proxy.example.com" {
 									return &http.Response{
 										StatusCode: statusCode,
-										Header:     http.Header{"Retry-After": {"60"}},
+										Header:     http.Header{"Retry-After": {tt.retryAfter}},
 										Body:       http.NoBody,
 									}, nil
 								}
@@ -224,8 +228,8 @@ func TestGoFetcherQuery(t *testing.T) {
 						if !slices.Equal(hosts, tt.wantHosts) {
 							t.Errorf("got hosts %q, want %q", hosts, tt.wantHosts)
 						}
-						if got := time.Since(started); got != 0 {
-							t.Errorf("got delay %v, want 0", got)
+						if got, want := time.Since(started), tt.wantDelay; got != want {
+							t.Errorf("got delay %v, want %v", got, want)
 						}
 					})
 				})

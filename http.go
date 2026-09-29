@@ -22,7 +22,7 @@ import (
 // returns the response header on success.
 func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer) (http.Header, error) {
 	const (
-		maxAttempts      = 10
+		maxAttempts      = 3
 		backoffBase      = 100 * time.Millisecond
 		backoffCap       = time.Second
 		maxErrorBodySize = 4 << 10

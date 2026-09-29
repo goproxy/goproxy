@@ -53,12 +53,14 @@ func (b *testHTTPResponseBody) Close() error {
 func TestHTTPGet(t *testing.T) {
 	t.Run("ResponseHeader", func(t *testing.T) {
 		for _, tt := range []struct {
-			name       string
-			statusCode int
+			name         string
+			statusCode   int
+			wantAttempts int
 		}{
-			{"Direct", http.StatusOK},
-			{"Redirect", http.StatusFound},
-			{"Retry", http.StatusServiceUnavailable},
+			{"Direct", http.StatusOK, 1},
+			{"Redirect", http.StatusFound, 2},
+			{"Retry", http.StatusServiceUnavailable, 2},
+			{"LastRetry", http.StatusServiceUnavailable, 3},
 		} {
 			for _, policy := range []struct {
 				name         string
@@ -73,7 +75,7 @@ func TestHTTPGet(t *testing.T) {
 						attempts := 0
 						client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 							attempts++
-							if attempts == 1 && tt.statusCode != http.StatusOK {
+							if attempts < tt.wantAttempts {
 								return &http.Response{
 									StatusCode: tt.statusCode,
 									Header: http.Header{
@@ -101,11 +103,7 @@ func TestHTTPGet(t *testing.T) {
 						if got, want := content.String(), "foobar"; got != want {
 							t.Errorf("got content %q, want %q", got, want)
 						}
-						wantAttempts := 2
-						if tt.statusCode == http.StatusOK {
-							wantAttempts = 1
-						}
-						if got, want := attempts, wantAttempts; got != want {
+						if got, want := attempts, tt.wantAttempts; got != want {
 							t.Errorf("got attempts %d, want %d", got, want)
 						}
 					})
@@ -168,11 +166,11 @@ func TestHTTPGet(t *testing.T) {
 			{"RequestTimeout", http.StatusRequestTimeout, 1, nil, http.StatusInternalServerError, "no-store"},
 			{"NotFound", http.StatusNotFound, 1, fs.ErrNotExist, http.StatusNotFound, "public, max-age=600"},
 			{"Gone", http.StatusGone, 1, fs.ErrNotExist, http.StatusNotFound, "public, max-age=600"},
-			{"TooManyRequests", http.StatusTooManyRequests, 10, errBadUpstream, http.StatusNotFound, "no-store"},
-			{"InternalServerError", http.StatusInternalServerError, 10, errBadUpstream, http.StatusNotFound, "no-store"},
-			{"BadGateway", http.StatusBadGateway, 10, errBadUpstream, http.StatusNotFound, "no-store"},
-			{"ServiceUnavailable", http.StatusServiceUnavailable, 10, errBadUpstream, http.StatusNotFound, "no-store"},
-			{"GatewayTimeout", http.StatusGatewayTimeout, 10, errFetchTimedOut, http.StatusNotFound, "no-store"},
+			{"TooManyRequests", http.StatusTooManyRequests, 3, errBadUpstream, http.StatusNotFound, "no-store"},
+			{"InternalServerError", http.StatusInternalServerError, 3, errBadUpstream, http.StatusNotFound, "no-store"},
+			{"BadGateway", http.StatusBadGateway, 3, errBadUpstream, http.StatusNotFound, "no-store"},
+			{"ServiceUnavailable", http.StatusServiceUnavailable, 3, errBadUpstream, http.StatusNotFound, "no-store"},
+			{"GatewayTimeout", http.StatusGatewayTimeout, 3, errFetchTimedOut, http.StatusNotFound, "no-store"},
 		} {
 			t.Run(tt.name, func(t *testing.T) {
 				synctest.Test(t, func(t *testing.T) {
@@ -215,6 +213,42 @@ func TestHTTPGet(t *testing.T) {
 					}
 					if got, want := rec.Header().Get("Cache-Control"), tt.wantCacheControl; got != want {
 						t.Errorf("got module cache control %q, want %q", got, want)
+					}
+				})
+			})
+		}
+	})
+
+	t.Run("TransportRetries", func(t *testing.T) {
+		for _, tt := range []struct {
+			name     string
+			failures int
+			wantErr  error
+		}{
+			{"LastAttemptSuccess", 2, nil},
+			{"Exhausted", 3, syscall.ECONNRESET},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					attempts := 0
+					var lastAttempt time.Time
+					client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						attempts++
+						lastAttempt = time.Now()
+						if attempts <= tt.failures {
+							return nil, syscall.ECONNRESET
+						}
+						return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+					})}
+					_, err := httpGet(t.Context(), client, "https://example.com", nil)
+					if !errors.Is(err, tt.wantErr) {
+						t.Errorf("got error %v, want %v", err, tt.wantErr)
+					}
+					if got, want := attempts, 3; got != want {
+						t.Errorf("got attempts %d, want %d", got, want)
+					}
+					if got := time.Since(lastAttempt); got != 0 {
+						t.Errorf("got delay after final attempt %v, want 0", got)
 					}
 				})
 			})
@@ -387,10 +421,10 @@ func TestHTTPGet(t *testing.T) {
 			if _, err := httpGet(t.Context(), client, "https://example.com", nil); !errors.Is(err, errBadUpstream) {
 				t.Errorf("got error %v, want %v", err, errBadUpstream)
 			}
-			if got, want := attempts, 10; got != want {
+			if got, want := attempts, 3; got != want {
 				t.Errorf("got attempts %d, want %d", got, want)
 			}
-			if got, want := time.Since(started), 9*time.Second; got != want {
+			if got, want := time.Since(started), 2*time.Second; got != want {
 				t.Errorf("got delay %v, want %v", got, want)
 			}
 		})
@@ -718,8 +752,7 @@ func TestHTTPGet(t *testing.T) {
 				n:          6,
 				ctxTimeout: 450 * time.Millisecond,
 				handler: func(rw http.ResponseWriter, req *http.Request) {
-					rw.WriteHeader(http.StatusInternalServerError)
-					fmt.Fprint(rw, "internal server error")
+					<-req.Context().Done()
 				},
 				wantErr: func(_ string) error { return context.DeadlineExceeded },
 			},
