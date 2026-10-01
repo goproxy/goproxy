@@ -10,21 +10,20 @@ import (
 	"net/url"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
 // sumdbClientOps implements [golang.org/x/mod/sumdb.ClientOps].
 type sumdbClientOps struct {
-	name              string
-	key               string
-	directURL         *url.URL
-	urlValue          atomic.Pointer[url.URL]
-	urlDetermineMutex sync.Mutex
-	urlDeterminedAt   time.Time
-	urlDetermineErr   error
-	envGOPROXY        string
-	httpClient        *http.Client
+	name            string
+	key             string
+	directURL       *url.URL
+	urlMu           sync.Mutex
+	urlValue        *url.URL
+	urlDeterminedAt time.Time
+	urlDetermineErr error
+	envGOPROXY      string
+	httpClient      *http.Client
 }
 
 // newSumdbClientOps creates a new [sumdbClientOps].
@@ -42,19 +41,19 @@ func newSumdbClientOps(envGOPROXY, envGOSUMDB string, httpClient *http.Client) (
 	if isDirectURL {
 		sco.directURL = u
 	} else {
-		sco.urlValue.Store(u)
+		sco.urlValue = u
 	}
 	return sco, nil
 }
 
 // url returns the URL for connecting to the checksum database.
 func (sco *sumdbClientOps) url() (*url.URL, error) {
-	if u := sco.urlValue.Load(); u != nil {
-		return u, nil
-	}
+	sco.urlMu.Lock()
+	defer sco.urlMu.Unlock()
 
-	sco.urlDetermineMutex.Lock()
-	defer sco.urlDetermineMutex.Unlock()
+	if sco.urlValue != nil {
+		return sco.urlValue, nil
+	}
 	if time.Since(sco.urlDeterminedAt) < 10*time.Second && sco.urlDetermineErr != nil {
 		return nil, sco.urlDetermineErr
 	}
@@ -77,7 +76,7 @@ func (sco *sumdbClientOps) url() (*url.URL, error) {
 	}
 	sco.urlDetermineErr = nil
 
-	sco.urlValue.Store(u)
+	sco.urlValue = u
 	return u, nil
 }
 
