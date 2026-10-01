@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -50,6 +52,114 @@ func TestNewSumDBClientOps(t *testing.T) {
 }
 
 func TestSumDBClientOpsURL(t *testing.T) {
+	t.Run("ConcurrentDiscovery", func(t *testing.T) {
+		for _, tt := range []struct {
+			name        string
+			firstStatus int
+			nextStatus  int
+			wantURL     string
+		}{
+			{"Proxy", http.StatusOK, http.StatusOK, "https://example.com/sumdb/" + defaultEnvGOSUMDB},
+			{"ProxyThenError", http.StatusOK, http.StatusBadRequest, "https://example.com/sumdb/" + defaultEnvGOSUMDB},
+			{"ProxyThenNotFound", http.StatusOK, http.StatusNotFound, "https://example.com/sumdb/" + defaultEnvGOSUMDB},
+			{"DirectThenProxy", http.StatusNotFound, http.StatusOK, "https://" + defaultEnvGOSUMDB},
+			{"DirectThenError", http.StatusNotFound, http.StatusBadRequest, "https://" + defaultEnvGOSUMDB},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				const callers = 16
+				var started, finished sync.WaitGroup
+				started.Add(callers)
+				var attempts atomic.Int32
+				client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					code := tt.nextStatus
+					if attempts.Add(1) == 1 {
+						started.Wait()
+						code = tt.firstStatus
+					}
+					return &http.Response{
+						StatusCode: code,
+						Status:     strconv.Itoa(code) + " " + http.StatusText(code),
+						Body:       http.NoBody,
+						Request:    req,
+					}, nil
+				})}
+				sco, err := newSumdbClientOps("https://example.com", defaultEnvGOSUMDB, client)
+				if err != nil {
+					t.Fatal(err)
+				}
+				lookup := func() {
+					u, err := sco.url()
+					if err != nil {
+						t.Errorf("unexpected error %v", err)
+						return
+					}
+					if got := u.String(); got != tt.wantURL {
+						t.Errorf("got URL %q, want %q", got, tt.wantURL)
+					}
+				}
+				for range callers {
+					finished.Go(func() {
+						started.Done()
+						lookup()
+					})
+				}
+				finished.Wait()
+				lookup()
+				if got, want := attempts.Load(), int32(1); got != want {
+					t.Errorf("got attempts %d, want %d", got, want)
+				}
+			})
+		}
+	})
+
+	t.Run("FailureCacheExpiry", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			attempts := 0
+			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				attempts++
+				code := http.StatusOK
+				if attempts == 1 {
+					code = http.StatusBadRequest
+				}
+				return &http.Response{
+					StatusCode: code,
+					Status:     strconv.Itoa(code) + " " + http.StatusText(code),
+					Body:       http.NoBody,
+					Request:    req,
+				}, nil
+			})}
+			sco, err := newSumdbClientOps("https://example.com", defaultEnvGOSUMDB, client)
+			if err != nil {
+				t.Fatal(err)
+			}
+			u, err := sco.url()
+			if err == nil || u != nil {
+				t.Fatalf("got (%v, %v), want an error and no URL", u, err)
+			}
+			time.Sleep(10*time.Second - time.Nanosecond)
+			if nextURL, nextErr := sco.url(); nextURL != u || nextErr != err {
+				t.Errorf("got (%v, %v), want (%v, %v)", nextURL, nextErr, u, err)
+			}
+			if got, want := attempts, 1; got != want {
+				t.Errorf("got attempts %d, want %d", got, want)
+			}
+			time.Sleep(time.Nanosecond)
+			u, err = sco.url()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, want := u.String(), "https://example.com/sumdb/"+defaultEnvGOSUMDB; got != want {
+				t.Errorf("got URL %q, want %q", got, want)
+			}
+			if nextURL, nextErr := sco.url(); nextURL != u || nextErr != nil {
+				t.Errorf("got (%v, %v), want (%v, nil)", nextURL, nextErr, u)
+			}
+			if got, want := attempts, 2; got != want {
+				t.Errorf("got attempts %d, want %d", got, want)
+			}
+		})
+	})
+
 	t.Run("TimeoutFallback", func(t *testing.T) {
 		for _, tt := range []struct {
 			name      string
