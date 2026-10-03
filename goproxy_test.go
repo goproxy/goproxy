@@ -1409,6 +1409,135 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			responseNotFound(rw, req, -2)
 		}
 	}
+
+	t.Run("SumDBVerificationFailure", func(t *testing.T) {
+		for _, tt := range []struct {
+			name         string
+			statusCode   int
+			body         string
+			transportErr error
+			readError    bool
+		}{
+			{name: "NotFound", statusCode: http.StatusNotFound, body: "module not found"},
+			{name: "Gone", statusCode: http.StatusGone, body: "module removed"},
+			{name: "BadRequest", statusCode: http.StatusBadRequest, body: "fetch timed out"},
+			{name: "BadGateway", statusCode: http.StatusBadGateway},
+			{name: "GatewayTimeout", statusCode: http.StatusGatewayTimeout},
+			{name: "TransportFailure", transportErr: &net.DNSError{Err: "no such host", Name: "sumdb.example.com", IsNotFound: true}},
+			{name: "TransportTimeout", transportErr: context.DeadlineExceeded},
+			{name: "ReadFailure", statusCode: http.StatusOK, readError: true},
+			{name: "MalformedLookup", statusCode: http.StatusOK, body: "bad upstream"},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				gf := &GoFetcher{
+					Env:     []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=sum.golang.org https://sumdb.example.com"},
+					TempDir: t.TempDir(),
+					Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						rec := httptest.NewRecorder()
+						if req.URL.Host == "sumdb.example.com" {
+							if tt.transportErr != nil {
+								return nil, tt.transportErr
+							}
+							rec.Header().Set("Retry-After", "2")
+							rec.WriteHeader(tt.statusCode)
+							fmt.Fprint(rec, tt.body)
+						} else {
+							proxyHandler(rec, req)
+						}
+						resp := rec.Result()
+						resp.Request = req
+						if req.URL.Host == "sumdb.example.com" && tt.readError {
+							resp.Body = io.NopCloser(iotest.ErrReader(io.ErrUnexpectedEOF))
+						}
+						return resp, nil
+					}),
+				}
+				g := &Goproxy{
+					Fetcher: gf,
+					Cacher: &testCacher{
+						Cacher: DirCacher(t.TempDir()),
+						put: func(context.Context, Cacher, string, io.ReadSeeker) error {
+							t.Error("unexpected cache write")
+							return nil
+						},
+					},
+					Logger: slog.New(slog.DiscardHandler),
+				}
+				for _, resource := range []struct {
+					name string
+					ext  string
+				}{
+					{"Info", ".info"},
+					{"Mod", ".mod"},
+					{"Zip", ".zip"},
+				} {
+					t.Run(resource.name, func(t *testing.T) {
+						for _, method := range []string{http.MethodGet, http.MethodHead} {
+							t.Run(method, func(t *testing.T) {
+								rec := httptest.NewRecorder()
+								g.ServeHTTP(rec, httptest.NewRequest(method, "/example.com/@v/v1.0.0"+resource.ext, nil))
+								if got, want := rec.Code, http.StatusNotFound; got != want {
+									t.Errorf("got status %d, want %d", got, want)
+								}
+								if got, want := rec.Header().Get("Cache-Control"), "no-store"; got != want {
+									t.Errorf("got cache control %q, want %q", got, want)
+								}
+								if got, want := rec.Header().Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+									t.Errorf("got content type %q, want %q", got, want)
+								}
+								wantContent := "not found: bad upstream"
+								if method == http.MethodHead {
+									wantContent = ""
+								}
+								if got, want := rec.Body.String(), wantContent; got != want {
+									t.Errorf("got content %q, want %q", got, want)
+								}
+							})
+						}
+					})
+				}
+				t.Run("ProxyFallback", func(t *testing.T) {
+					var fallbackCalled bool
+					fetcher := &GoFetcher{
+						Env:     []string{"GOPROXY=https://first.example.com,https://second.example.com", "GOSUMDB=off"},
+						TempDir: t.TempDir(),
+						Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+							rec := httptest.NewRecorder()
+							if req.URL.Host == "first.example.com" {
+								g.ServeHTTP(rec, req)
+							} else {
+								fallbackCalled = true
+								proxyHandler(rec, req)
+							}
+							resp := rec.Result()
+							resp.Request = req
+							return resp, nil
+						}),
+					}
+					info, mod, zip, err := fetcher.Download(t.Context(), "example.com", "v1.0.0")
+					for _, content := range []io.ReadSeekCloser{info, mod, zip} {
+						if content != nil {
+							content.Close()
+						} else {
+							t.Error("missing module content")
+						}
+					}
+					if err != nil {
+						t.Errorf("unexpected error %v", err)
+					}
+					if !fallbackCalled {
+						t.Error("next proxy was not contacted")
+					}
+				})
+				if entries, err := os.ReadDir(gf.TempDir); err != nil {
+					t.Fatal(err)
+				} else if len(entries) != 0 {
+					t.Errorf("unexpected temporary files %v", entries)
+				}
+			})
+		}
+	})
+
 	for _, tt := range []struct {
 		n                int
 		proxyHandler     http.HandlerFunc

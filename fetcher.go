@@ -796,7 +796,7 @@ func verifyModFile(sumdbClient *sumdb.Client, name, modulePath, moduleVersion st
 		if errors.Is(err, sumdb.ErrGONOSUMDB) {
 			return nil
 		}
-		return err
+		return fmt.Errorf("%w: %w", errBadUpstream, err)
 	}
 	modHash, err := dirhash.DefaultHash([]string{"go.mod"}, func(string) (io.ReadCloser, error) { return os.Open(name) })
 	if err != nil {
@@ -829,7 +829,7 @@ func verifyZipFile(sumdbClient *sumdb.Client, name, modulePath, moduleVersion st
 		if errors.Is(err, sumdb.ErrGONOSUMDB) {
 			return nil
 		}
-		return err
+		return fmt.Errorf("%w: %w", errBadUpstream, err)
 	}
 	zipHash, err := dirhash.HashZip(name, dirhash.DefaultHash)
 	if err != nil {
