@@ -1247,6 +1247,12 @@ func TestGoFetcherDownload(t *testing.T) {
 						if err == nil {
 							t.Fatal("expected error")
 						}
+						if !errors.Is(err, errBadUpstream) {
+							t.Errorf("got error %v, want a bad upstream error", err)
+						}
+						if errors.Is(err, fs.ErrNotExist) {
+							t.Errorf("unexpected error matching %v: %v", fs.ErrNotExist, err)
+						}
 					} else if err != nil {
 						t.Fatalf("unexpected error %v", err)
 					}
@@ -1353,6 +1359,9 @@ func TestGoFetcherDownload(t *testing.T) {
 					info, mod, zip, err := gf.Download(t.Context(), "example.com", infoVersion)
 					if err == nil {
 						t.Error("expected error")
+					}
+					if !errors.Is(err, errBadUpstream) {
+						t.Errorf("got error %v, want a bad upstream error", err)
 					}
 					for _, content := range []io.ReadSeekCloser{info, mod, zip} {
 						if content != nil {
@@ -2982,7 +2991,7 @@ func TestVerifyModFile(t *testing.T) {
 			modFile:       modFile,
 			modulePath:    "example.com",
 			moduleVersion: "v1.1.0",
-			wantErr:       errors.New("example.com@v1.1.0/go.mod: bad upstream"),
+			wantErr:       fmt.Errorf("%w: example.com@v1.1.0/go.mod: bad upstream", errBadUpstream),
 		},
 		{
 			n:             5,
@@ -3184,7 +3193,7 @@ func TestVerifyZipFile(t *testing.T) {
 			zipFile:       zipFile,
 			modulePath:    "example.com",
 			moduleVersion: "v1.1.0",
-			wantErr:       errors.New("example.com@v1.1.0: bad upstream"),
+			wantErr:       fmt.Errorf("%w: example.com@v1.1.0: bad upstream", errBadUpstream),
 		},
 		{
 			n:             5,
