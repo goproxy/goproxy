@@ -19,6 +19,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -130,7 +131,7 @@ func TestGoFetcherInit(t *testing.T) {
 				} else if got, want := gf.httpClient.Transport, http.DefaultTransport; got != want {
 					t.Errorf("got %#v, want %#v", got, want)
 				}
-				if gf.sumdbClient == nil {
+				if gf.sumdbClientOps == nil {
 					t.Error("unexpected nil")
 				}
 			}
@@ -1185,6 +1186,131 @@ func TestGoFetcherDownload(t *testing.T) {
 		return []byte(gosum), nil
 	})).ServeHTTP
 
+	t.Run("SumDBRecovery", func(t *testing.T) {
+		for _, tt := range []struct {
+			name       string
+			pathPrefix string
+			malformed  bool
+		}{
+			{"Lookup", "/lookup/", false},
+			{"Tile", "/tile/", false},
+			{"MalformedLookup", "/lookup/", true},
+			{"MalformedTile", "/tile/", true},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				var failing atomic.Bool
+				failing.Store(true)
+				var requests atomic.Int32
+				gf := &GoFetcher{
+					Env:     []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=" + vkey + " https://sumdb.example.com"},
+					TempDir: t.TempDir(),
+					Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						rec := httptest.NewRecorder()
+						if req.URL.Host == "sumdb.example.com" {
+							requests.Add(1)
+							if failing.Load() && strings.HasPrefix(req.URL.Path, tt.pathPrefix) {
+								if tt.malformed {
+									if strings.HasPrefix(req.URL.Path, "/tile/") {
+										sumdbHandler(rec, req)
+										rec.Body.Bytes()[0] ^= 0x80
+									} else {
+										fmt.Fprint(rec, "invalid lookup response")
+									}
+								} else {
+									rec.WriteHeader(http.StatusBadRequest)
+								}
+							} else {
+								sumdbHandler(rec, req)
+							}
+						} else {
+							proxyHandler(rec, req)
+						}
+						resp := rec.Result()
+						resp.Request = req
+						return resp, nil
+					}),
+				}
+				download := func(wantErr bool) {
+					t.Helper()
+					info, mod, zip, err := gf.Download(t.Context(), "example.com", infoVersion)
+					for _, content := range []io.ReadSeekCloser{info, mod, zip} {
+						if content != nil {
+							content.Close()
+							if wantErr {
+								t.Error("unexpected module content")
+							}
+						} else if !wantErr {
+							t.Error("missing module content")
+						}
+					}
+					if wantErr {
+						if err == nil {
+							t.Fatal("expected error")
+						}
+					} else if err != nil {
+						t.Fatalf("unexpected error %v", err)
+					}
+					if entries, err := os.ReadDir(gf.TempDir); err != nil {
+						t.Fatal(err)
+					} else if len(entries) != 0 {
+						t.Errorf("unexpected temporary files %v", entries)
+					}
+				}
+				download(true)
+				before := requests.Load()
+				failing.Store(false)
+				download(false)
+				if got := requests.Load(); got <= before {
+					t.Errorf("got requests %d, want more than %d", got, before)
+				}
+				before = requests.Load()
+				failing.Store(true)
+				download(false)
+				if got := requests.Load(); got != before {
+					t.Errorf("got requests %d, want %d", got, before)
+				}
+			})
+		}
+	})
+
+	t.Run("SumDBConcurrentDownloads", func(t *testing.T) {
+		gf := &GoFetcher{
+			Env:     []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=" + vkey + " https://sumdb.example.com"},
+			TempDir: t.TempDir(),
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				rec := httptest.NewRecorder()
+				if req.URL.Host == "sumdb.example.com" {
+					sumdbHandler(rec, req)
+				} else {
+					proxyHandler(rec, req)
+				}
+				return rec.Result(), nil
+			}),
+		}
+		var wg sync.WaitGroup
+		for range 16 {
+			wg.Go(func() {
+				info, mod, zip, err := gf.Download(t.Context(), "example.com", infoVersion)
+				for _, content := range []io.ReadSeekCloser{info, mod, zip} {
+					if content != nil {
+						content.Close()
+					} else {
+						t.Error("missing module content")
+					}
+				}
+				if err != nil {
+					t.Errorf("unexpected error %v", err)
+				}
+			})
+		}
+		wg.Wait()
+		if entries, err := os.ReadDir(gf.TempDir); err != nil {
+			t.Fatal(err)
+		} else if len(entries) != 0 {
+			t.Errorf("unexpected temporary files %v", entries)
+		}
+	})
+
 	t.Run("SumDBTimeout", func(t *testing.T) {
 		for _, tt := range []struct {
 			name         string
@@ -1198,12 +1324,14 @@ func TestGoFetcherDownload(t *testing.T) {
 		} {
 			t.Run(tt.name, func(t *testing.T) {
 				synctest.Test(t, func(t *testing.T) {
+					var failing atomic.Bool
+					failing.Store(true)
 					var attempts atomic.Int32
 					gf := &GoFetcher{
 						Env:     []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=" + tt.envGOSUMDB},
 						TempDir: t.TempDir(),
 						Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-							if strings.HasPrefix(req.URL.Path, tt.pathPrefix) {
+							if failing.Load() && strings.HasPrefix(req.URL.Path, tt.pathPrefix) {
 								attempts.Add(1)
 								if _, ok := req.Context().Deadline(); !ok {
 									t.Error("request has no deadline")
@@ -1242,6 +1370,21 @@ func TestGoFetcherDownload(t *testing.T) {
 						t.Fatal(err)
 					} else if len(entries) != 0 {
 						t.Errorf("unexpected temporary files %v", entries)
+					}
+					failing.Store(false)
+					if tt.name == "Supported" {
+						time.Sleep(10 * time.Second)
+					}
+					info, mod, zip, err = gf.Download(t.Context(), "example.com", infoVersion)
+					for _, content := range []io.ReadSeekCloser{info, mod, zip} {
+						if content != nil {
+							content.Close()
+						} else {
+							t.Error("missing module content after recovery")
+						}
+					}
+					if err != nil {
+						t.Fatalf("unexpected error after recovery %v", err)
 					}
 				})
 			})
@@ -2857,7 +3000,9 @@ func TestVerifyModFile(t *testing.T) {
 				t.Fatalf("unexpected error %v", gf.initErr)
 			}
 
-			err := verifyModFile(gf.sumdbClient, tt.modFile, tt.modulePath, tt.moduleVersion)
+			sumdbClient := sumdb.NewClient(gf.sumdbClientOps)
+			sumdbClient.SetGONOSUMDB(gf.envGONOSUMDB)
+			err := verifyModFile(sumdbClient, tt.modFile, tt.modulePath, tt.moduleVersion)
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatal("expected error")
@@ -3057,7 +3202,9 @@ func TestVerifyZipFile(t *testing.T) {
 				t.Fatalf("unexpected error %v", gf.initErr)
 			}
 
-			err := verifyZipFile(gf.sumdbClient, tt.zipFile, tt.modulePath, tt.moduleVersion)
+			sumdbClient := sumdb.NewClient(gf.sumdbClientOps)
+			sumdbClient.SetGONOSUMDB(gf.envGONOSUMDB)
+			err := verifyZipFile(sumdbClient, tt.zipFile, tt.modulePath, tt.moduleVersion)
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatal("expected error")

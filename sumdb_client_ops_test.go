@@ -1,12 +1,14 @@
 package goproxy
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strconv"
 	"strings"
@@ -15,6 +17,10 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"golang.org/x/mod/module"
+	"golang.org/x/mod/sumdb"
+	"golang.org/x/mod/sumdb/note"
 )
 
 func TestNewSumDBClientOps(t *testing.T) {
@@ -555,6 +561,68 @@ func TestSumDBClientOpsReadRemote(t *testing.T) {
 }
 
 func TestSumDBClientOpsReadConfig(t *testing.T) {
+	t.Run("ClientContinuity", func(t *testing.T) {
+		skey, vkey, err := note.GenerateKey(nil, "sumdb.example.com")
+		if err != nil {
+			t.Fatal(err)
+		}
+		gosum := func(path, vers string) ([]byte, error) {
+			return fmt.Appendf(nil, "%s %s h1:checksum\n", path, vers), nil
+		}
+		original := sumdb.NewServer(sumdb.NewTestServer(skey, gosum))
+		fork := sumdb.NewTestServer(skey, gosum)
+		if _, err := fork.Lookup(t.Context(), module.Version{Path: "example.net", Version: "v1.0.0"}); err != nil {
+			t.Fatal(err)
+		}
+		forkHandler := sumdb.NewServer(fork)
+		var useFork atomic.Bool
+		httpClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			rec := httptest.NewRecorder()
+			if useFork.Load() {
+				forkHandler.ServeHTTP(rec, req)
+			} else {
+				original.ServeHTTP(rec, req)
+			}
+			resp := rec.Result()
+			resp.Request = req
+			return resp, nil
+		})}
+		sco, err := newSumdbClientOps("direct", vkey+" https://sumdb.example.com", httpClient)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lookup := func(vers string) error {
+			cache := &sumdbClientOpsCache{sumdbClientOps: sco}
+			_, err := sumdb.NewClient(cache).Lookup("example.com", vers)
+			if err == nil {
+				cache.save()
+			}
+			return err
+		}
+		if err := lookup("v1.0.0"); err != nil {
+			t.Fatal(err)
+		}
+		latest, err := sco.ReadConfig("sumdb.example.com/latest")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(latest) == 0 {
+			t.Fatal("missing signed tree")
+		}
+		useFork.Store(true)
+		err = lookup("v1.1.0")
+		if err == nil || err.Error() != "example.com@v1.1.0: "+sumdb.ErrSecurity.Error() {
+			t.Fatalf("got error %v, want a security error", err)
+		}
+		if got, err := sco.ReadConfig("sumdb.example.com/latest"); err != nil || !bytes.Equal(got, latest) {
+			t.Errorf("got signed tree %q and error %v, want %q and no error", got, err, latest)
+		}
+		useFork.Store(false)
+		if err := lookup("v1.1.0"); err != nil {
+			t.Fatal(err)
+		}
+	})
+
 	for _, tt := range []struct {
 		n           int
 		file        string
@@ -599,6 +667,82 @@ func TestSumDBClientOpsReadConfig(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSumDBClientOpsWriteConfig(t *testing.T) {
+	t.Run("CompareAndSwap", func(t *testing.T) {
+		sco := &sumdbClientOps{}
+		new := []byte("first tree")
+		if err := sco.WriteConfig("/latest", nil, new); err != nil {
+			t.Fatal(err)
+		}
+		new[0] = 'x'
+		old, err := sco.ReadConfig("/latest")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := string(old), "first tree"; got != want {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+		old[0] = 'x'
+		if err := sco.WriteConfig("/latest", old, []byte("second tree")); err != sumdb.ErrWriteConflict {
+			t.Fatalf("got error %v, want %v", err, sumdb.ErrWriteConflict)
+		}
+		old, err = sco.ReadConfig("/latest")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := string(old), "first tree"; got != want {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+		if err := sco.WriteConfig("/latest", old, []byte("second tree")); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := sco.ReadConfig("/latest"); err != nil || string(got) != "second tree" {
+			t.Errorf("got (%q, %v), want (%q, nil)", got, err, "second tree")
+		}
+	})
+
+	t.Run("ConcurrentWrites", func(t *testing.T) {
+		sco := &sumdbClientOps{}
+		var wg sync.WaitGroup
+		var written atomic.Int32
+		for i := range 16 {
+			wg.Go(func() {
+				if err := sco.WriteConfig("/latest", nil, []byte{byte(i)}); err == nil {
+					written.Add(1)
+				} else if err != sumdb.ErrWriteConflict {
+					t.Errorf("unexpected error %v", err)
+				}
+			})
+		}
+		wg.Wait()
+		if got, want := written.Load(), int32(1); got != want {
+			t.Errorf("got writes %d, want %d", got, want)
+		}
+	})
+}
+
+func TestSumDBClientOpsWriteCache(t *testing.T) {
+	sco := &sumdbClientOps{}
+	data := []byte("cached data")
+	sco.WriteCache("file", data)
+	data[0] = 'x'
+	got, err := sco.ReadCache("file")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "cached data" {
+		t.Fatalf("got %q, want %q", got, "cached data")
+	}
+	got[0] = 'x'
+	got, err = sco.ReadCache("file")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "cached data" {
+		t.Errorf("got %q, want %q", got, "cached data")
 	}
 }
 
@@ -657,5 +801,41 @@ func TestSumDBClientOpsExtraCalls(t *testing.T) {
 				t.Fatalf("unexpected error %v", err)
 			}
 		})
+	}
+}
+
+func TestSumDBClientOpsCacheSave(t *testing.T) {
+	sco := &sumdbClientOps{}
+	sco.WriteCache("existing", []byte("original"))
+	cache := &sumdbClientOpsCache{sumdbClientOps: sco}
+	if got, err := cache.ReadCache("existing"); err != nil || string(got) != "original" {
+		t.Fatalf("got (%q, %v), want (%q, nil)", got, err, "original")
+	}
+	data := []byte("buffered")
+	cache.WriteCache("new", data)
+	data[0] = 'x'
+	if _, err := sco.ReadCache("new"); err != fs.ErrNotExist {
+		t.Errorf("got error %v, want %v", err, fs.ErrNotExist)
+	}
+	got, err := cache.ReadCache("new")
+	if err != nil || string(got) != "buffered" {
+		t.Fatalf("got (%q, %v), want (%q, nil)", got, err, "buffered")
+	}
+	got[0] = 'x'
+	cache.WriteCache("existing", []byte("updated"))
+	if got, err := sco.ReadCache("existing"); err != nil || string(got) != "original" {
+		t.Errorf("got (%q, %v), want (%q, nil)", got, err, "original")
+	}
+	cache.save()
+	for _, tt := range []struct {
+		file string
+		want string
+	}{
+		{"existing", "updated"},
+		{"new", "buffered"},
+	} {
+		if got, err := sco.ReadCache(tt.file); err != nil || string(got) != tt.want {
+			t.Errorf("got (%q, %v), want (%q, nil)", got, err, tt.want)
+		}
 	}
 }

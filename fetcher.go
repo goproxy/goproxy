@@ -129,9 +129,10 @@ type GoFetcher struct {
 	env                   []string
 	envGOPROXY            string
 	envGONOPROXY          string
+	envGONOSUMDB          string
 	directFetchWorkerPool chan struct{}
 	httpClient            *http.Client
-	sumdbClient           *sumdb.Client
+	sumdbClientOps        *sumdbClientOps
 }
 
 // init initializes the f.
@@ -140,7 +141,7 @@ func (gf *GoFetcher) init() {
 	if env == nil {
 		env = os.Environ()
 	}
-	var envGOSUMDB, envGONOSUMDB, envGOPRIVATE string
+	var envGOSUMDB, envGOPRIVATE string
 	for _, e := range env {
 		if k, v, ok := strings.Cut(e, "="); ok {
 			switch k {
@@ -152,7 +153,7 @@ func (gf *GoFetcher) init() {
 			case "GOSUMDB":
 				envGOSUMDB = v
 			case "GONOSUMDB":
-				envGONOSUMDB = v
+				gf.envGONOSUMDB = v
 			case "GOPRIVATE":
 				envGOPRIVATE = v
 			default:
@@ -169,17 +170,17 @@ func (gf *GoFetcher) init() {
 	}
 	gf.envGONOPROXY = cleanCommaSeparatedList(gf.envGONOPROXY)
 	envGOSUMDB = cleanEnvGOSUMDB(envGOSUMDB)
-	if envGONOSUMDB == "" {
-		envGONOSUMDB = envGOPRIVATE
+	if gf.envGONOSUMDB == "" {
+		gf.envGONOSUMDB = envGOPRIVATE
 	}
-	envGONOSUMDB = cleanCommaSeparatedList(envGONOSUMDB)
+	gf.envGONOSUMDB = cleanCommaSeparatedList(gf.envGONOSUMDB)
 	gf.env = append(
 		gf.env,
 		"GO111MODULE=on",
 		"GOPROXY=direct",
 		"GONOPROXY=",
 		"GOSUMDB="+envGOSUMDB,
-		"GONOSUMDB="+envGONOSUMDB,
+		"GONOSUMDB="+gf.envGONOSUMDB,
 		"GOPRIVATE=",
 	)
 
@@ -189,13 +190,7 @@ func (gf *GoFetcher) init() {
 
 	gf.httpClient = &http.Client{Transport: gf.Transport}
 	if envGOSUMDB != "off" {
-		sco, err := newSumdbClientOps(gf.envGOPROXY, envGOSUMDB, gf.httpClient)
-		if err != nil {
-			gf.initErr = err
-			return
-		}
-		gf.sumdbClient = sumdb.NewClient(sco)
-		gf.sumdbClient.SetGONOSUMDB(envGONOSUMDB)
+		gf.sumdbClientOps, gf.initErr = newSumdbClientOps(gf.envGOPROXY, envGOSUMDB, gf.httpClient)
 	}
 }
 
@@ -408,15 +403,19 @@ func (gf *GoFetcher) Download(ctx context.Context, path, version string) (info, 
 
 	// Verify against the checksum database only for proxy downloads. Direct
 	// downloads are verified by the local Go binary itself.
-	if gf.sumdbClient != nil && fromProxy {
-		err = verifyModFile(gf.sumdbClient, modFile, path, version)
+	if gf.sumdbClientOps != nil && fromProxy {
+		sumdbCache := &sumdbClientOpsCache{sumdbClientOps: gf.sumdbClientOps}
+		sumdbClient := sumdb.NewClient(sumdbCache)
+		sumdbClient.SetGONOSUMDB(gf.envGONOSUMDB)
+		err = verifyModFile(sumdbClient, modFile, path, version)
 		if err != nil {
 			return
 		}
-		err = verifyZipFile(gf.sumdbClient, zipFile, path, version)
+		err = verifyZipFile(sumdbClient, zipFile, path, version)
 		if err != nil {
 			return
 		}
+		sumdbCache.save()
 	}
 
 	infoContent := strings.NewReader(marshalInfo(infoVersion, infoTime))
