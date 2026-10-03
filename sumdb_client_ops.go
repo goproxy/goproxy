@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/mod/sumdb"
 )
 
 // sumdbClientOps implements [golang.org/x/mod/sumdb.ClientOps].
@@ -22,6 +24,9 @@ type sumdbClientOps struct {
 	urlValue        *url.URL
 	urlDeterminedAt time.Time
 	urlDetermineErr error
+	latestMu        sync.Mutex
+	latest          []byte
+	cache           sync.Map
 	envGOPROXY      string
 	httpClient      *http.Client
 }
@@ -101,22 +106,67 @@ func (sco *sumdbClientOps) ReadConfig(file string) ([]byte, error) {
 		return []byte(sco.key), nil
 	}
 	if strings.HasSuffix(file, "/latest") {
-		return []byte{}, nil // Empty result means empty tree.
+		sco.latestMu.Lock()
+		defer sco.latestMu.Unlock()
+		return bytes.Clone(sco.latest), nil
 	}
 	return nil, fmt.Errorf("unknown config %s", file)
 }
 
 // WriteConfig implements [golang.org/x/mod/sumdb.ClientOps].
-func (*sumdbClientOps) WriteConfig(file string, old, new []byte) error { return nil }
+func (sco *sumdbClientOps) WriteConfig(_ string, old, new []byte) error {
+	sco.latestMu.Lock()
+	defer sco.latestMu.Unlock()
+	if !bytes.Equal(sco.latest, old) {
+		return sumdb.ErrWriteConflict
+	}
+	sco.latest = bytes.Clone(new)
+	return nil
+}
 
 // ReadCache implements [golang.org/x/mod/sumdb.ClientOps].
-func (*sumdbClientOps) ReadCache(file string) ([]byte, error) { return nil, fs.ErrNotExist }
+func (sco *sumdbClientOps) ReadCache(file string) ([]byte, error) {
+	data, ok := sco.cache.Load(file)
+	if !ok {
+		return nil, fs.ErrNotExist
+	}
+	return bytes.Clone(data.([]byte)), nil
+}
 
 // WriteCache implements [golang.org/x/mod/sumdb.ClientOps].
-func (*sumdbClientOps) WriteCache(file string, data []byte) {}
+func (sco *sumdbClientOps) WriteCache(file string, data []byte) {
+	sco.cache.Store(file, bytes.Clone(data))
+}
 
 // Log implements [golang.org/x/mod/sumdb.ClientOps].
 func (*sumdbClientOps) Log(msg string) {}
 
 // SecurityError implements [golang.org/x/mod/sumdb.ClientOps].
 func (*sumdbClientOps) SecurityError(msg string) {}
+
+// sumdbClientOpsCache buffers cache writes until checksum verification succeeds.
+type sumdbClientOpsCache struct {
+	*sumdbClientOps
+	cache sync.Map
+}
+
+// ReadCache implements [golang.org/x/mod/sumdb.ClientOps].
+func (scoc *sumdbClientOpsCache) ReadCache(file string) ([]byte, error) {
+	if data, ok := scoc.cache.Load(file); ok {
+		return bytes.Clone(data.([]byte)), nil
+	}
+	return scoc.sumdbClientOps.ReadCache(file)
+}
+
+// WriteCache implements [golang.org/x/mod/sumdb.ClientOps].
+func (scoc *sumdbClientOpsCache) WriteCache(file string, data []byte) {
+	scoc.cache.Store(file, bytes.Clone(data))
+}
+
+// save publishes the buffered cache writes.
+func (scoc *sumdbClientOpsCache) save() {
+	scoc.cache.Range(func(file, data any) bool {
+		scoc.sumdbClientOps.WriteCache(file.(string), data.([]byte))
+		return true
+	})
+}
