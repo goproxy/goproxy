@@ -56,11 +56,7 @@ type Goproxy struct {
 	// path at a path segment boundary, the longest name is used.
 	ProxiedSumDBs []string
 
-	// Cacher is used to cache content, such as module files and proxied
-	// checksum database responses.
-	//
-	// Checksum database /latest responses bypass Cacher because their
-	// freshness cannot be determined from cached content.
+	// Cacher is used to cache module files at canonical versions.
 	//
 	// If Cacher is nil, caching is disabled.
 	Cacher Cacher
@@ -165,12 +161,16 @@ func (g *Goproxy) serveFetch(rw http.ResponseWriter, req *http.Request, target s
 		responseNotFound(rw, req, 86400, err)
 		return
 	}
-	switch after {
-	case "latest":
-		g.serveFetchQuery(rw, req, target, modulePath, after, noFetch)
-		return
-	case "v/list":
-		g.serveFetchList(rw, req, target, modulePath, noFetch)
+	if after == "latest" || after == "v/list" {
+		if noFetch {
+			responseNotFound(rw, req, -1, "temporarily unavailable")
+			return
+		}
+		if after == "latest" {
+			g.serveFetchQuery(rw, req, target, modulePath, after)
+		} else {
+			g.serveFetchList(rw, req, target, modulePath)
+		}
 		return
 	}
 
@@ -204,52 +204,36 @@ func (g *Goproxy) serveFetch(rw http.ResponseWriter, req *http.Request, target s
 	if checkCanonicalVersion(modulePath, moduleVersion) == nil {
 		g.serveFetchDownload(rw, req, target, modulePath, moduleVersion, noFetch)
 	} else if ext == ".info" {
-		g.serveFetchQuery(rw, req, target, modulePath, moduleVersion, noFetch)
+		if noFetch {
+			responseNotFound(rw, req, -1, "temporarily unavailable")
+			return
+		}
+		g.serveFetchQuery(rw, req, target, modulePath, moduleVersion)
 	} else {
 		responseNotFound(rw, req, 86400, "unrecognized version")
 	}
 }
 
 // serveFetchQuery serves fetch query requests.
-func (g *Goproxy) serveFetchQuery(rw http.ResponseWriter, req *http.Request, target, modulePath, moduleQuery string, noFetch bool) {
-	const (
-		contentType        = "application/json; charset=utf-8"
-		cacheControlMaxAge = 60
-	)
-	if noFetch {
-		g.serveCache(rw, req, target, contentType, cacheControlMaxAge, nil)
-		return
-	}
+func (g *Goproxy) serveFetchQuery(rw http.ResponseWriter, req *http.Request, target, modulePath, moduleQuery string) {
 	version, time, err := g.fetcher.Query(req.Context(), modulePath, moduleQuery)
 	if err != nil {
-		g.serveCache(rw, req, target, contentType, cacheControlMaxAge, func() {
-			g.logger.Error("failed to query module version", "error", err, "target", target)
-			responseError(rw, req, err, true)
-		})
+		g.logger.Error("failed to query module version", "error", err, "target", target)
+		responseError(rw, req, err, true)
 		return
 	}
-	g.servePutCache(rw, req, target, contentType, cacheControlMaxAge, strings.NewReader(marshalInfo(version, time)))
+	responseSuccess(rw, req, strings.NewReader(marshalInfo(version, time)), "application/json; charset=utf-8", 60)
 }
 
 // serveFetchList serves fetch list requests.
-func (g *Goproxy) serveFetchList(rw http.ResponseWriter, req *http.Request, target, modulePath string, noFetch bool) {
-	const (
-		contentType        = "text/plain; charset=utf-8"
-		cacheControlMaxAge = 60
-	)
-	if noFetch {
-		g.serveCache(rw, req, target, contentType, cacheControlMaxAge, nil)
-		return
-	}
+func (g *Goproxy) serveFetchList(rw http.ResponseWriter, req *http.Request, target, modulePath string) {
 	versions, err := g.fetcher.List(req.Context(), modulePath)
 	if err != nil {
-		g.serveCache(rw, req, target, contentType, cacheControlMaxAge, func() {
-			g.logger.Error("failed to list module versions", "error", err, "target", target)
-			responseError(rw, req, err, true)
-		})
+		g.logger.Error("failed to list module versions", "error", err, "target", target)
+		responseError(rw, req, err, true)
 		return
 	}
-	g.servePutCache(rw, req, target, contentType, cacheControlMaxAge, strings.NewReader(strings.Join(versions, "\n")))
+	responseSuccess(rw, req, strings.NewReader(strings.Join(versions, "\n")), "text/plain; charset=utf-8", 60)
 }
 
 // serveFetchDownload serves fetch download requests.
@@ -268,7 +252,7 @@ func (g *Goproxy) serveFetchDownload(rw http.ResponseWriter, req *http.Request, 
 	}
 
 	if noFetch {
-		g.serveCache(rw, req, target, contentType, cacheControlMaxAge, nil)
+		g.serveCache(rw, req, target, contentType, cacheControlMaxAge)
 		return
 	}
 
@@ -419,15 +403,8 @@ func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, target s
 		}
 	}
 	if err != nil {
-		serveError := func() {
-			g.logger.Error("failed to proxy checksum database", "error", err, "target", target)
-			responseUpstreamError(rw, req, err, true)
-		}
-		if path == "/latest" {
-			serveError()
-		} else {
-			g.serveCache(rw, req, target, contentType, cacheControlMaxAge, serveError)
-		}
+		g.logger.Error("failed to proxy checksum database", "error", err, "target", target)
+		responseUpstreamError(rw, req, err, true)
 		return
 	}
 	if isCacheRestrictedHTTPResponse(header) {
@@ -441,23 +418,15 @@ func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, target s
 		return
 	}
 	defer f.Close()
-	if path == "/latest" {
-		responseSuccess(rw, req, f, contentType, cacheControlMaxAge)
-		return
-	}
-	g.servePutCache(rw, req, target, contentType, cacheControlMaxAge, f)
+	responseSuccess(rw, req, f, contentType, cacheControlMaxAge)
 }
 
 // serveCache serves requests with cached content.
-func (g *Goproxy) serveCache(rw http.ResponseWriter, req *http.Request, name, contentType string, cacheControlMaxAge int, onNotFound func()) {
+func (g *Goproxy) serveCache(rw http.ResponseWriter, req *http.Request, name, contentType string, cacheControlMaxAge int) {
 	content, err := g.cache(req.Context(), name)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			if onNotFound != nil {
-				onNotFound()
-			} else {
-				responseNotFound(rw, req, -1, "temporarily unavailable")
-			}
+			responseNotFound(rw, req, -1, "temporarily unavailable")
 			return
 		}
 		g.logger.Error("failed to get cached content", "error", err, "name", name)
@@ -465,26 +434,6 @@ func (g *Goproxy) serveCache(rw http.ResponseWriter, req *http.Request, name, co
 		return
 	}
 	defer content.Close()
-	responseSuccess(rw, req, content, contentType, cacheControlMaxAge)
-}
-
-// servePutCache serves requests after putting the content to the g.Cacher. If
-// cacheControlMaxAge is -1, the content is served without caching.
-func (g *Goproxy) servePutCache(rw http.ResponseWriter, req *http.Request, name, contentType string, cacheControlMaxAge int, content io.ReadSeeker) {
-	if cacheControlMaxAge == -1 {
-		responseSuccess(rw, req, content, contentType, cacheControlMaxAge)
-		return
-	}
-	if err := g.putCache(req.Context(), name, content); err != nil {
-		g.logger.Error("failed to cache content", "error", err, "name", name)
-		responseInternalServerError(rw, req)
-		return
-	}
-	if _, err := content.Seek(0, io.SeekStart); err != nil {
-		g.logger.Error("failed to seek content", "error", err)
-		responseInternalServerError(rw, req)
-		return
-	}
 	responseSuccess(rw, req, content, contentType, cacheControlMaxAge)
 }
 

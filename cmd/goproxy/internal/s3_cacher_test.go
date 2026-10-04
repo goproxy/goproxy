@@ -440,34 +440,14 @@ func TestS3CacherPut(t *testing.T) {
 			wantContentType: "application/json; charset=utf-8",
 		},
 		{
-			name:            "Latest",
-			key:             "example.com/@latest",
-			wantContentType: "application/json; charset=utf-8",
-		},
-		{
 			name:            "GoMod",
 			key:             "example.com/@v/v1.0.0.mod",
-			wantContentType: "text/plain; charset=utf-8",
-		},
-		{
-			name:            "VersionList",
-			key:             "example.com/@v/list",
 			wantContentType: "text/plain; charset=utf-8",
 		},
 		{
 			name:            "ModuleZip",
 			key:             "example.com/@v/v1.0.0.zip",
 			wantContentType: "application/zip",
-		},
-		{
-			name:            "SumDBLatest",
-			key:             "sumdb/sum.golang.org/latest",
-			wantContentType: "text/plain; charset=utf-8",
-		},
-		{
-			name:            "SumDBLookup",
-			key:             "sumdb/sum.golang.org/lookup/example.com@v1.0.0",
-			wantContentType: "text/plain; charset=utf-8",
 		},
 		{
 			name:            "Unknown",

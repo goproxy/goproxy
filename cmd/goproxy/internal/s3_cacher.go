@@ -176,21 +176,13 @@ func (s3c *s3Cacher) Put(ctx context.Context, name string, content io.ReadSeeker
 	}
 
 	contentType := "application/octet-stream"
-	nameExt := filepath.Ext(name)
-	switch {
-	case nameExt == ".info", strings.HasSuffix(name, "/@latest"):
+	switch filepath.Ext(name) {
+	case ".info":
 		contentType = "application/json; charset=utf-8"
-	case nameExt == ".mod", strings.HasSuffix(name, "/@v/list"):
+	case ".mod":
 		contentType = "text/plain; charset=utf-8"
-	case nameExt == ".zip":
+	case ".zip":
 		contentType = "application/zip"
-	case strings.HasPrefix(name, "sumdb/"):
-		if elems := strings.Split(name, "/"); len(elems) >= 3 {
-			switch elems[2] {
-			case "latest", "lookup":
-				contentType = "text/plain; charset=utf-8"
-			}
-		}
 	}
 
 	if size <= s3c.partSize {
