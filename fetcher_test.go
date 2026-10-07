@@ -131,7 +131,7 @@ func TestGoFetcherInit(t *testing.T) {
 				} else if got, want := gf.httpClient.Transport, http.DefaultTransport; got != want {
 					t.Errorf("got %#v, want %#v", got, want)
 				}
-				if gf.sumdbClientOps == nil {
+				if gf.sumdbClientState == nil {
 					t.Error("unexpected nil")
 				}
 			}
@@ -1314,6 +1314,250 @@ func TestGoFetcherDownload(t *testing.T) {
 			t.Fatal(err)
 		} else if len(entries) != 0 {
 			t.Errorf("unexpected temporary files %v", entries)
+		}
+	})
+
+	t.Run("SumDBCancellation", func(t *testing.T) {
+		for _, tt := range []struct {
+			name       string
+			envGOSUMDB string
+			pathPrefix string
+			bodyStatus int
+		}{
+			{"Supported", vkey, "/sumdb/sumdb.example.com/supported", 0},
+			{"Lookup", vkey + " https://sumdb.example.com", "/lookup/", 0},
+			{"LookupBody", vkey + " https://sumdb.example.com", "/lookup/", http.StatusOK},
+			{"LookupErrorBody", vkey + " https://sumdb.example.com", "/lookup/", http.StatusServiceUnavailable},
+			{"Tile", vkey + " https://sumdb.example.com", "/tile/", 0},
+			{"TileBody", vkey + " https://sumdb.example.com", "/tile/", http.StatusOK},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				for _, mode := range []struct {
+					name    string
+					wantErr error
+				}{
+					{"Canceled", context.Canceled},
+					{"DeadlineExceeded", context.DeadlineExceeded},
+				} {
+					t.Run(mode.name, func(t *testing.T) {
+						synctest.Test(t, func(t *testing.T) {
+							var ctx context.Context
+							var cancel context.CancelFunc
+							if mode.wantErr == context.DeadlineExceeded {
+								ctx, cancel = context.WithTimeout(t.Context(), time.Second)
+							} else {
+								ctx, cancel = context.WithCancel(t.Context())
+								go func() {
+									time.Sleep(time.Second)
+									cancel()
+								}()
+							}
+							defer cancel()
+							var blocking atomic.Bool
+							blocking.Store(true)
+							var attempts atomic.Int32
+							var body *testHTTPResponseBody
+							gf := &GoFetcher{
+								Env:     []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=" + tt.envGOSUMDB},
+								TempDir: t.TempDir(),
+								Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+									if blocking.Load() && strings.HasPrefix(req.URL.Path, tt.pathPrefix) {
+										attempts.Add(1)
+										if tt.bodyStatus != 0 {
+											r, w := io.Pipe()
+											t.Cleanup(func() { r.Close() })
+											body = &testHTTPResponseBody{Reader: r}
+											go func() {
+												io.WriteString(w, "partial")
+												<-req.Context().Done()
+												w.CloseWithError(req.Context().Err())
+											}()
+											return &http.Response{StatusCode: tt.bodyStatus, Body: body}, nil
+										}
+										<-req.Context().Done()
+										return nil, req.Context().Err()
+									}
+									rec := httptest.NewRecorder()
+									if req.URL.Host == "sumdb.example.com" {
+										sumdbHandler(rec, req)
+									} else {
+										proxyHandler(rec, req)
+									}
+									return rec.Result(), nil
+								}),
+							}
+							download := func(ctx context.Context, wantErr error) {
+								t.Helper()
+								info, mod, zip, err := gf.Download(ctx, "example.com", infoVersion)
+								if !errors.Is(err, wantErr) {
+									t.Errorf("got error %v, want %v", err, wantErr)
+								}
+								for _, content := range []io.ReadSeekCloser{info, mod, zip} {
+									if content != nil {
+										content.Close()
+										if wantErr != nil {
+											t.Error("unexpected module content")
+										}
+									} else if wantErr == nil {
+										t.Error("missing module content")
+									}
+								}
+								if entries, err := os.ReadDir(gf.TempDir); err != nil {
+									t.Fatal(err)
+								} else if len(entries) != 0 {
+									t.Errorf("unexpected temporary files %v", entries)
+								}
+							}
+							started := time.Now()
+							download(ctx, mode.wantErr)
+							if got, want := time.Since(started), time.Second; got != want {
+								t.Errorf("got duration %v, want %v", got, want)
+							}
+							if got, want := attempts.Load(), int32(1); got != want {
+								t.Errorf("got attempts %d, want %d", got, want)
+							}
+							if body != nil && !body.closed {
+								t.Error("response body was not closed")
+							}
+							blocking.Store(false)
+							download(t.Context(), nil)
+						})
+					})
+				}
+			})
+		}
+	})
+
+	t.Run("SumDBCanceledVerification", func(t *testing.T) {
+		for _, tt := range []struct {
+			name string
+			file string
+		}{
+			{"Mod", "go.mod"},
+			{"Zip", "example.com@v1.0.0/go.mod"},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				gf := &GoFetcher{
+					Env:     []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=" + vkey + " https://sumdb.example.com"},
+					TempDir: t.TempDir(),
+					Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						rec := httptest.NewRecorder()
+						if req.URL.Host == "sumdb.example.com" {
+							sumdbHandler(rec, req)
+						} else {
+							proxyHandler(rec, req)
+						}
+						return rec.Result(), nil
+					}),
+				}
+				defaultHash := dirhash.DefaultHash
+				t.Cleanup(func() { dirhash.DefaultHash = defaultHash })
+				dirhash.DefaultHash = func(files []string, open func(string) (io.ReadCloser, error)) (string, error) {
+					hash, err := defaultHash(files, open)
+					if slices.Contains(files, tt.file) {
+						cancel()
+					}
+					return hash, err
+				}
+				info, mod, zip, err := gf.Download(ctx, "example.com", infoVersion)
+				if !errors.Is(err, context.Canceled) {
+					t.Errorf("got error %v, want cancellation", err)
+				}
+				for _, content := range []io.ReadSeekCloser{info, mod, zip} {
+					if content != nil {
+						content.Close()
+						t.Error("unexpected module content")
+					}
+				}
+				gf.sumdbClientState.cache.Range(func(key, value any) bool {
+					t.Errorf("unexpected shared cache entry %v", key)
+					return true
+				})
+				if entries, err := os.ReadDir(gf.TempDir); err != nil {
+					t.Fatal(err)
+				} else if len(entries) != 0 {
+					t.Errorf("unexpected temporary files %v", entries)
+				}
+			})
+		}
+	})
+
+	t.Run("SumDBConcurrentCancellation", func(t *testing.T) {
+		for _, tt := range []struct {
+			name       string
+			envGOSUMDB string
+			pathPrefix string
+		}{
+			{"Supported", vkey, "/sumdb/sumdb.example.com/supported"},
+			{"Lookup", vkey + " https://sumdb.example.com", "/lookup/"},
+			{"Tile", vkey + " https://sumdb.example.com", "/tile/"},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					type contextKey struct{}
+					ctx, cancel := context.WithCancel(context.WithValue(t.Context(), contextKey{}, true))
+					defer cancel()
+					started, release := make(chan struct{}), make(chan struct{})
+					gf := &GoFetcher{
+						Env:     []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=" + tt.envGOSUMDB},
+						TempDir: t.TempDir(),
+						Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+							if strings.HasPrefix(req.URL.Path, tt.pathPrefix) {
+								if req.Context().Value(contextKey{}) == true {
+									close(started)
+									<-req.Context().Done()
+									return nil, req.Context().Err()
+								}
+								<-release
+								if err := req.Context().Err(); err != nil {
+									return nil, err
+								}
+							}
+							rec := httptest.NewRecorder()
+							if req.URL.Host == "sumdb.example.com" {
+								sumdbHandler(rec, req)
+							} else {
+								proxyHandler(rec, req)
+							}
+							return rec.Result(), nil
+						}),
+					}
+					download := func(ctx context.Context, done chan<- error) {
+						info, mod, zip, err := gf.Download(ctx, "example.com", infoVersion)
+						for _, content := range []io.ReadSeekCloser{info, mod, zip} {
+							if content != nil {
+								content.Close()
+								if err != nil {
+									t.Error("unexpected module content")
+								}
+							} else if err == nil {
+								t.Error("missing module content")
+							}
+						}
+						done <- err
+					}
+					canceledDone, activeDone := make(chan error, 1), make(chan error, 1)
+					go download(ctx, canceledDone)
+					<-started
+					go download(t.Context(), activeDone)
+					synctest.Wait()
+					cancel()
+					if err := <-canceledDone; !errors.Is(err, context.Canceled) {
+						t.Errorf("got error %v, want cancellation", err)
+					}
+					close(release)
+					if err := <-activeDone; err != nil {
+						t.Errorf("unexpected error from active download %v", err)
+					}
+					if entries, err := os.ReadDir(gf.TempDir); err != nil {
+						t.Fatal(err)
+					} else if len(entries) != 0 {
+						t.Errorf("unexpected temporary files %v", entries)
+					}
+				})
+			})
 		}
 	})
 
@@ -3009,7 +3253,7 @@ func TestVerifyModFile(t *testing.T) {
 				t.Fatalf("unexpected error %v", gf.initErr)
 			}
 
-			sumdbClient := sumdb.NewClient(gf.sumdbClientOps)
+			sumdbClient := sumdb.NewClient(&sumdbClientOps{sumdbClientState: gf.sumdbClientState, ctx: t.Context()})
 			sumdbClient.SetGONOSUMDB(gf.envGONOSUMDB)
 			err := verifyModFile(sumdbClient, tt.modFile, tt.modulePath, tt.moduleVersion)
 			if tt.wantErr != nil {
@@ -3211,7 +3455,7 @@ func TestVerifyZipFile(t *testing.T) {
 				t.Fatalf("unexpected error %v", gf.initErr)
 			}
 
-			sumdbClient := sumdb.NewClient(gf.sumdbClientOps)
+			sumdbClient := sumdb.NewClient(&sumdbClientOps{sumdbClientState: gf.sumdbClientState, ctx: t.Context()})
 			sumdbClient.SetGONOSUMDB(gf.envGONOSUMDB)
 			err := verifyZipFile(sumdbClient, tt.zipFile, tt.modulePath, tt.moduleVersion)
 			if tt.wantErr != nil {

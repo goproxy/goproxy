@@ -33,8 +33,7 @@ const (
 	maxS3PartSize int64 = 5 << 30
 )
 
-// s3Cacher implements [github.com/goproxy/goproxy.Cacher] using an
-// S3-compatible service.
+// s3Cacher implements [goproxy.Cacher] using an S3-compatible service.
 type s3Cacher struct {
 	client   *s3.Client
 	bucket   *string
@@ -132,7 +131,7 @@ func parseS3Endpoint(endpoint string, disableTLS bool) (*url.URL, error) {
 	return endpointURL, nil
 }
 
-// Get implements [github.com/goproxy/goproxy.Cacher].
+// Get implements [goproxy.Cacher].
 func (s3c *s3Cacher) Get(ctx context.Context, name string) (io.ReadCloser, error) {
 	key := new(name)
 	headOutput, err := s3c.client.HeadObject(ctx, &s3.HeadObjectInput{
@@ -165,7 +164,7 @@ func (s3c *s3Cacher) Get(ctx context.Context, name string) (io.ReadCloser, error
 	}, nil
 }
 
-// Put implements [github.com/goproxy/goproxy.Cacher].
+// Put implements [goproxy.Cacher].
 func (s3c *s3Cacher) Put(ctx context.Context, name string, content io.ReadSeeker) error {
 	size, err := content.Seek(0, io.SeekEnd)
 	if err != nil {
@@ -398,12 +397,12 @@ func (s3c *s3Cache) closeBody() error {
 	return err
 }
 
-// LastModified implements [github.com/goproxy/goproxy.Cacher.Get].
+// LastModified implements [goproxy.Cacher.Get].
 func (s3c *s3Cache) LastModified() time.Time {
 	return s3c.lastModified
 }
 
-// ETag implements [github.com/goproxy/goproxy.Cacher.Get].
+// ETag implements [goproxy.Cacher.Get].
 func (s3c *s3Cache) ETag() string {
 	return s3c.etag
 }
