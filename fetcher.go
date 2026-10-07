@@ -407,9 +407,9 @@ func (gf *GoFetcher) Download(ctx context.Context, path, version string) (info, 
 		sumdbOps := &sumdbClientOps{sumdbClientState: gf.sumdbClientState, ctx: ctx}
 		sumdbClient := sumdb.NewClient(sumdbOps)
 		sumdbClient.SetGONOSUMDB(gf.envGONOSUMDB)
-		err = verifyModFile(sumdbClient, modFile, path, version)
+		err = verifyModFile(ctx, sumdbClient, modFile, path, version)
 		if err == nil && ctx.Err() == nil {
-			err = verifyZipFile(sumdbClient, zipFile, path, version)
+			err = verifyZipFile(ctx, sumdbClient, zipFile, path, version)
 		}
 		// sumdb.Client.Lookup does not preserve error identity.
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -793,7 +793,7 @@ func checkModFile(name string) error {
 
 // verifyModFile uses the sumdbClient to verify the mod file targeted by the
 // name with the modulePath and moduleVersion.
-func verifyModFile(sumdbClient *sumdb.Client, name, modulePath, moduleVersion string) error {
+func verifyModFile(ctx context.Context, sumdbClient *sumdb.Client, name, modulePath, moduleVersion string) error {
 	sumLines, err := sumdbClient.Lookup(modulePath, moduleVersion+"/go.mod")
 	if err != nil {
 		if errors.Is(err, sumdb.ErrGONOSUMDB) {
@@ -801,7 +801,10 @@ func verifyModFile(sumdbClient *sumdb.Client, name, modulePath, moduleVersion st
 		}
 		return fmt.Errorf("%w: %w", errBadUpstream, err)
 	}
-	modHash, err := dirhash.DefaultHash([]string{"go.mod"}, func(string) (io.ReadCloser, error) { return os.Open(name) })
+	modHash, err := hashFiles(ctx, []string{"go.mod"}, func(string) (io.ReadCloser, error) { return os.Open(name) })
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
 	if err != nil {
 		return &internalError{err: err}
 	}
@@ -826,7 +829,7 @@ func checkZipFile(name, modulePath, moduleVersion string) error {
 
 // verifyZipFile uses the sumdbClient to verify the zip file targeted by the
 // name with the modulePath and moduleVersion.
-func verifyZipFile(sumdbClient *sumdb.Client, name, modulePath, moduleVersion string) error {
+func verifyZipFile(ctx context.Context, sumdbClient *sumdb.Client, name, modulePath, moduleVersion string) error {
 	sumLines, err := sumdbClient.Lookup(modulePath, moduleVersion)
 	if err != nil {
 		if errors.Is(err, sumdb.ErrGONOSUMDB) {
@@ -834,7 +837,15 @@ func verifyZipFile(sumdbClient *sumdb.Client, name, modulePath, moduleVersion st
 		}
 		return fmt.Errorf("%w: %w", errBadUpstream, err)
 	}
-	zipHash, err := dirhash.HashZip(name, dirhash.DefaultHash)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	zipHash, err := dirhash.HashZip(name, func(files []string, open func(string) (io.ReadCloser, error)) (string, error) {
+		return hashFiles(ctx, files, open)
+	})
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
 	if err != nil {
 		if _, ok := errors.AsType[*fs.PathError](err); ok {
 			return &internalError{err: err}
@@ -846,6 +857,35 @@ func verifyZipFile(sumdbClient *sumdb.Client, name, modulePath, moduleVersion st
 		return fmt.Errorf("%w: %s@%s: invalid version: untrusted revision %s", errBadUpstream, modulePath, moduleVersion, moduleVersion)
 	}
 	return nil
+}
+
+// hashFiles is like [dirhash.DefaultHash] but checks ctx before opening and
+// reading each file.
+func hashFiles(ctx context.Context, files []string, open func(string) (io.ReadCloser, error)) (string, error) {
+	return dirhash.DefaultHash(files, func(name string) (io.ReadCloser, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		r, err := open(name)
+		if err != nil {
+			return nil, err
+		}
+		return contextReadCloser{ReadCloser: r, ctx: ctx}, nil
+	})
+}
+
+// contextReadCloser checks ctx before reading the underlying [io.ReadCloser].
+type contextReadCloser struct {
+	io.ReadCloser
+	ctx context.Context
+}
+
+// Read implements [io.Reader].
+func (r contextReadCloser) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.ReadCloser.Read(p)
 }
 
 // closerFunc is an adapter to allow the use of an ordinary function as an [io.Closer].

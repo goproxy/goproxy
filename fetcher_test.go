@@ -1,6 +1,7 @@
 package goproxy
 
 import (
+	archivezip "archive/zip"
 	"bufio"
 	"bytes"
 	"context"
@@ -22,6 +23,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/iotest"
 	"testing/synctest"
 	"time"
 
@@ -1429,56 +1431,113 @@ func TestGoFetcherDownload(t *testing.T) {
 	})
 
 	t.Run("SumDBCanceledVerification", func(t *testing.T) {
-		for _, tt := range []struct {
+		for _, file := range []struct {
 			name string
-			file string
+			path string
 		}{
 			{"Mod", "go.mod"},
 			{"Zip", "example.com@v1.0.0/go.mod"},
 		} {
-			t.Run(tt.name, func(t *testing.T) {
-				ctx, cancel := context.WithCancel(t.Context())
-				defer cancel()
-				gf := &GoFetcher{
-					Env:     []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=" + vkey + " https://sumdb.example.com"},
-					TempDir: t.TempDir(),
-					Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-						rec := httptest.NewRecorder()
-						if req.URL.Host == "sumdb.example.com" {
-							sumdbHandler(rec, req)
-						} else {
-							proxyHandler(rec, req)
-						}
-						return rec.Result(), nil
-					}),
-				}
-				defaultHash := dirhash.DefaultHash
-				t.Cleanup(func() { dirhash.DefaultHash = defaultHash })
-				dirhash.DefaultHash = func(files []string, open func(string) (io.ReadCloser, error)) (string, error) {
-					hash, err := defaultHash(files, open)
-					if slices.Contains(files, tt.file) {
-						cancel()
-					}
-					return hash, err
-				}
-				info, mod, zip, err := gf.Download(ctx, "example.com", infoVersion)
-				if !errors.Is(err, context.Canceled) {
-					t.Errorf("got error %v, want cancellation", err)
-				}
-				for _, content := range []io.ReadSeekCloser{info, mod, zip} {
-					if content != nil {
-						content.Close()
-						t.Error("unexpected module content")
-					}
-				}
-				gf.sumdbClientState.cache.Range(func(key, value any) bool {
-					t.Errorf("unexpected shared cache entry %v", key)
-					return true
-				})
-				if entries, err := os.ReadDir(gf.TempDir); err != nil {
-					t.Fatal(err)
-				} else if len(entries) != 0 {
-					t.Errorf("unexpected temporary files %v", entries)
+			t.Run(file.name, func(t *testing.T) {
+				for _, tt := range []struct {
+					name  string
+					stage string
+					err   error
+				}{
+					{"BeforeOpenCanceled", "BeforeOpen", context.Canceled},
+					{"BeforeOpenDeadlineExceeded", "BeforeOpen", context.DeadlineExceeded},
+					{"BeforeReadCanceled", "BeforeRead", context.Canceled},
+					{"BeforeReadDeadlineExceeded", "BeforeRead", context.DeadlineExceeded},
+					{"DuringReadCanceled", "DuringRead", context.Canceled},
+					{"DuringReadDeadlineExceeded", "DuringRead", context.DeadlineExceeded},
+					{"AfterHashCanceled", "AfterHash", context.Canceled},
+					{"AfterHashDeadlineExceeded", "AfterHash", context.DeadlineExceeded},
+				} {
+					t.Run(tt.name, func(t *testing.T) {
+						synctest.Test(t, func(t *testing.T) {
+							ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+							defer cancel()
+							stop := func() {
+								if tt.err == context.Canceled {
+									cancel()
+								} else {
+									<-ctx.Done()
+								}
+							}
+							gf := &GoFetcher{
+								Env:     []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=" + vkey + " https://sumdb.example.com"},
+								TempDir: t.TempDir(),
+								Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+									rec := httptest.NewRecorder()
+									if req.URL.Host == "sumdb.example.com" {
+										sumdbHandler(rec, req)
+									} else {
+										proxyHandler(rec, req)
+									}
+									return rec.Result(), nil
+								}),
+							}
+							defaultHash := dirhash.DefaultHash
+							t.Cleanup(func() { dirhash.DefaultHash = defaultHash })
+							var stopped bool
+							dirhash.DefaultHash = func(files []string, open func(string) (io.ReadCloser, error)) (string, error) {
+								if !slices.Contains(files, file.path) {
+									return defaultHash(files, open)
+								}
+								stopped = true
+								if tt.stage == "BeforeOpen" {
+									stop()
+								}
+								hash, err := defaultHash(files, func(name string) (io.ReadCloser, error) {
+									r, err := open(name)
+									if err != nil {
+										return nil, err
+									}
+									if tt.stage == "DuringRead" {
+										if _, err := io.ReadFull(r, make([]byte, 1)); err != nil {
+											r.Close()
+											return nil, err
+										}
+									}
+									if tt.stage == "BeforeRead" || tt.stage == "DuringRead" {
+										stop()
+										if n, err := r.Read(make([]byte, 1)); n != 0 || err != tt.err {
+											t.Errorf("got read %d, %v, want 0, %v", n, err, tt.err)
+										}
+									}
+									return r, nil
+								})
+								if tt.stage == "AfterHash" {
+									stop()
+								} else if err != tt.err {
+									t.Errorf("got hashing error %v, want %v", err, tt.err)
+								}
+								return hash, err
+							}
+							info, mod, zip, err := gf.Download(ctx, "example.com", infoVersion)
+							if err != tt.err {
+								t.Errorf("got error %v, want %v", err, tt.err)
+							}
+							if !stopped {
+								t.Error("checksum hashing was not reached")
+							}
+							for _, content := range []io.ReadSeekCloser{info, mod, zip} {
+								if content != nil {
+									content.Close()
+									t.Error("unexpected module content")
+								}
+							}
+							gf.sumdbClientState.cache.Range(func(key, value any) bool {
+								t.Errorf("unexpected shared cache entry %v", key)
+								return true
+							})
+							if entries, err := os.ReadDir(gf.TempDir); err != nil {
+								t.Fatal(err)
+							} else if len(entries) != 0 {
+								t.Errorf("unexpected temporary files %v", entries)
+							}
+						})
+					})
 				}
 			})
 		}
@@ -3255,7 +3314,7 @@ func TestVerifyModFile(t *testing.T) {
 
 			sumdbClient := sumdb.NewClient(&sumdbClientOps{sumdbClientState: gf.sumdbClientState, ctx: t.Context()})
 			sumdbClient.SetGONOSUMDB(gf.envGONOSUMDB)
-			err := verifyModFile(sumdbClient, tt.modFile, tt.modulePath, tt.moduleVersion)
+			err := verifyModFile(t.Context(), sumdbClient, tt.modFile, tt.modulePath, tt.moduleVersion)
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatal("expected error")
@@ -3457,7 +3516,7 @@ func TestVerifyZipFile(t *testing.T) {
 
 			sumdbClient := sumdb.NewClient(&sumdbClientOps{sumdbClientState: gf.sumdbClientState, ctx: t.Context()})
 			sumdbClient.SetGONOSUMDB(gf.envGONOSUMDB)
-			err := verifyZipFile(sumdbClient, tt.zipFile, tt.modulePath, tt.moduleVersion)
+			err := verifyZipFile(t.Context(), sumdbClient, tt.zipFile, tt.modulePath, tt.moduleVersion)
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatal("expected error")
@@ -3480,6 +3539,229 @@ func TestVerifyZipFile(t *testing.T) {
 				t.Fatalf("unexpected error %v", err)
 			}
 		})
+	}
+
+	t.Run("CanceledBeforeHash", func(t *testing.T) {
+		gf := &GoFetcher{Env: []string{"GOPROXY=off", "GOSUMDB=" + vkey + " " + sumdbServer.URL}}
+		gf.initOnce.Do(gf.init)
+		if gf.initErr != nil {
+			t.Fatal(gf.initErr)
+		}
+		sumdbClient := sumdb.NewClient(&sumdbClientOps{sumdbClientState: gf.sumdbClientState, ctx: t.Context()})
+		if _, err := sumdbClient.Lookup("example.com", "v1.0.0"); err != nil {
+			t.Fatal(err)
+		}
+		defaultHash := dirhash.DefaultHash
+		t.Cleanup(func() { dirhash.DefaultHash = defaultHash })
+		dirhash.DefaultHash = func(files []string, open func(string) (io.ReadCloser, error)) (string, error) {
+			t.Error("hashing was started after cancellation")
+			return defaultHash(files, open)
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		if err := verifyZipFile(ctx, sumdbClient, zipFile, "example.com", "v1.0.0"); err != context.Canceled {
+			t.Errorf("got error %v, want cancellation", err)
+		}
+	})
+
+	t.Run("CorruptContent", func(t *testing.T) {
+		var buf bytes.Buffer
+		zw := archivezip.NewWriter(&buf)
+		w, err := zw.CreateHeader(&archivezip.FileHeader{Name: "example.com@v1.0.0/go.mod", Method: archivezip.Store})
+		if err != nil {
+			t.Fatal(err)
+		}
+		content := []byte("module example.com")
+		if _, err := w.Write(content); err != nil {
+			t.Fatal(err)
+		}
+		if err := zw.Close(); err != nil {
+			t.Fatal(err)
+		}
+		buf.Bytes()[bytes.Index(buf.Bytes(), content)] ^= 1
+		zipFile, err := makeTempFile(t, buf.Bytes())
+		if err != nil {
+			t.Fatal(err)
+		}
+		gf := &GoFetcher{Env: []string{"GOPROXY=off", "GOSUMDB=" + vkey + " " + sumdbServer.URL}}
+		gf.initOnce.Do(gf.init)
+		if gf.initErr != nil {
+			t.Fatal(gf.initErr)
+		}
+		sumdbClient := sumdb.NewClient(&sumdbClientOps{sumdbClientState: gf.sumdbClientState, ctx: t.Context()})
+		err = verifyZipFile(t.Context(), sumdbClient, zipFile, "example.com", "v1.0.0")
+		if !errors.Is(err, errBadUpstream) || !errors.Is(err, archivezip.ErrChecksum) {
+			t.Errorf("got error %v, want an upstream checksum error", err)
+		}
+		if _, ok := errors.AsType[*internalError](err); ok {
+			t.Errorf("got error %v, want an upstream error", err)
+		}
+	})
+}
+
+func TestHashFiles(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		files []string
+	}{
+		{"Empty", nil},
+		{"SingleFile", []string{"go.mod"}},
+		{"MultipleFiles", []string{"b.go", "go.mod", "a.go"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			open := func(name string) (io.ReadCloser, error) {
+				return io.NopCloser(strings.NewReader("content for " + name)), nil
+			}
+			want, err := dirhash.DefaultHash(tt.files, open)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var closed int
+			got, err := hashFiles(t.Context(), tt.files, func(name string) (io.ReadCloser, error) {
+				return struct {
+					io.Reader
+					io.Closer
+				}{strings.NewReader("content for " + name), closerFunc(func() error {
+					closed++
+					return nil
+				})}, nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != want {
+				t.Errorf("got hash %q, want %q", got, want)
+			}
+			if got, want := closed, len(tt.files); got != want {
+				t.Errorf("got closed files %d, want %d", got, want)
+			}
+		})
+	}
+
+	t.Run("FileErrors", func(t *testing.T) {
+		for _, tt := range []struct {
+			name string
+			read bool
+			err  error
+		}{
+			{"Open", false, fs.ErrPermission},
+			{"Read", true, io.ErrUnexpectedEOF},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				var closed bool
+				hash, err := hashFiles(t.Context(), []string{"go.mod"}, func(string) (io.ReadCloser, error) {
+					if !tt.read {
+						return nil, tt.err
+					}
+					return struct {
+						io.Reader
+						io.Closer
+					}{iotest.ErrReader(tt.err), closerFunc(func() error {
+						closed = true
+						return nil
+					})}, nil
+				})
+				if hash != "" || err != tt.err {
+					t.Errorf("got %q, %v, want an empty hash and %v", hash, err, tt.err)
+				}
+				if closed != tt.read {
+					t.Errorf("got closed %t, want %t", closed, tt.read)
+				}
+			})
+		}
+	})
+
+	t.Run("CanceledBetweenFiles", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		var opened, closed int
+		hash, err := hashFiles(ctx, []string{"b", "a"}, func(name string) (io.ReadCloser, error) {
+			opened++
+			if name != "a" {
+				t.Errorf("unexpected file opened %q", name)
+			}
+			return struct {
+				io.Reader
+				io.Closer
+			}{strings.NewReader("content"), closerFunc(func() error {
+				closed++
+				cancel()
+				return nil
+			})}, nil
+		})
+		if hash != "" || err != context.Canceled {
+			t.Errorf("got %q, %v, want an empty hash and cancellation", hash, err)
+		}
+		if opened != 1 || closed != 1 {
+			t.Errorf("got opened %d, closed %d, want 1, 1", opened, closed)
+		}
+	})
+
+	t.Run("DuringRead", func(t *testing.T) {
+		for _, tt := range []struct {
+			name string
+			err  error
+		}{
+			{"Canceled", context.Canceled},
+			{"DeadlineExceeded", context.DeadlineExceeded},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+					defer cancel()
+					content := bytes.Repeat([]byte("content"), 10000)
+					var bytesRead, reads int
+					var closed bool
+					hash, err := hashFiles(ctx, []string{"go.mod"}, func(string) (io.ReadCloser, error) {
+						r := &testReadSeeker{
+							ReadSeeker: bytes.NewReader(content),
+							read: func(rs io.ReadSeeker, p []byte) (int, error) {
+								reads++
+								if reads != 1 {
+									t.Error("unexpected read after cancellation")
+								}
+								n, err := rs.Read(p)
+								bytesRead += n
+								if tt.err == context.Canceled {
+									cancel()
+								} else {
+									<-ctx.Done()
+								}
+								return n, err
+							},
+						}
+						return struct {
+							io.Reader
+							io.Closer
+							io.WriterTo
+						}{r, closerFunc(func() error {
+							closed = true
+							return nil
+						}), writerToFunc(func(w io.Writer) (int64, error) {
+							t.Error("WriterTo bypassed cancellation checks")
+							return io.Copy(w, bytes.NewReader(content))
+						})}, nil
+					})
+					if hash != "" || err != tt.err {
+						t.Errorf("got %q, %v, want an empty hash and %v", hash, err, tt.err)
+					}
+					if bytesRead == 0 || bytesRead >= len(content) {
+						t.Errorf("got bytes read %d, want part of %d", bytesRead, len(content))
+					}
+					if !closed {
+						t.Error("file was not closed")
+					}
+				})
+			})
+		}
+	})
+}
+
+func TestContextReadCloserRead(t *testing.T) {
+	content := []byte("module example.com")
+	r := contextReadCloser{ReadCloser: io.NopCloser(bytes.NewReader(content)), ctx: t.Context()}
+	if err := iotest.TestReader(r, content); err != nil {
+		t.Fatal(err)
 	}
 }
 
