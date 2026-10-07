@@ -15,12 +15,46 @@ import (
 	"golang.org/x/mod/sumdb"
 )
 
-// sumdbClientOps implements [golang.org/x/mod/sumdb.ClientOps].
+// sumdbClientOps implements [sumdb.ClientOps] for one download. It buffers
+// cache writes until checksum verification succeeds.
 type sumdbClientOps struct {
+	*sumdbClientState
+	ctx   context.Context
+	cache sync.Map
+}
+
+// ReadRemote implements [sumdb.ClientOps].
+func (sco *sumdbClientOps) ReadRemote(path string) ([]byte, error) {
+	return sco.sumdbClientState.ReadRemote(sco.ctx, path)
+}
+
+// ReadCache implements [sumdb.ClientOps].
+func (sco *sumdbClientOps) ReadCache(file string) ([]byte, error) {
+	if data, ok := sco.cache.Load(file); ok {
+		return bytes.Clone(data.([]byte)), nil
+	}
+	return sco.sumdbClientState.ReadCache(file)
+}
+
+// WriteCache implements [sumdb.ClientOps].
+func (sco *sumdbClientOps) WriteCache(file string, data []byte) {
+	sco.cache.Store(file, bytes.Clone(data))
+}
+
+// saveCache publishes the buffered cache writes.
+func (sco *sumdbClientOps) saveCache() {
+	sco.cache.Range(func(file, data any) bool {
+		sco.sumdbClientState.WriteCache(file.(string), data.([]byte))
+		return true
+	})
+}
+
+// sumdbClientState holds shared checksum database client state.
+type sumdbClientState struct {
 	name            string
 	key             string
 	directURL       *url.URL
-	urlMu           sync.Mutex
+	urlLock         chan struct{}
 	urlValue        *url.URL
 	urlDeterminedAt time.Time
 	urlDetermineErr error
@@ -31,142 +65,130 @@ type sumdbClientOps struct {
 	httpClient      *http.Client
 }
 
-// newSumdbClientOps creates a new [sumdbClientOps].
-func newSumdbClientOps(envGOPROXY, envGOSUMDB string, httpClient *http.Client) (*sumdbClientOps, error) {
+// newSumdbClientState creates a new [sumdbClientState].
+func newSumdbClientState(envGOPROXY, envGOSUMDB string, httpClient *http.Client) (*sumdbClientState, error) {
 	var (
-		sco         = &sumdbClientOps{envGOPROXY: envGOPROXY, httpClient: httpClient}
+		scs = &sumdbClientState{
+			urlLock:    make(chan struct{}, 1),
+			envGOPROXY: envGOPROXY,
+			httpClient: httpClient,
+		}
+
 		u           *url.URL
 		isDirectURL bool
 		err         error
 	)
-	sco.name, sco.key, u, isDirectURL, err = parseEnvGOSUMDB(envGOSUMDB)
+	scs.name, scs.key, u, isDirectURL, err = parseEnvGOSUMDB(envGOSUMDB)
 	if err != nil {
 		return nil, err
 	}
 	if isDirectURL {
-		sco.directURL = u
+		scs.directURL = u
 	} else {
-		sco.urlValue = u
+		scs.urlValue = u
 	}
-	return sco, nil
+	return scs, nil
 }
 
 // url returns the URL for connecting to the checksum database.
-func (sco *sumdbClientOps) url() (*url.URL, error) {
-	sco.urlMu.Lock()
-	defer sco.urlMu.Unlock()
-
-	if sco.urlValue != nil {
-		return sco.urlValue, nil
+func (scs *sumdbClientState) url(ctx context.Context) (*url.URL, error) {
+	select {
+	case scs.urlLock <- struct{}{}:
+		defer func() { <-scs.urlLock }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
-	if time.Since(sco.urlDeterminedAt) < 10*time.Second && sco.urlDetermineErr != nil {
-		return nil, sco.urlDetermineErr
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
-	u := sco.directURL
-	err := walkEnvGOPROXY(sco.envGOPROXY, func(proxy *url.URL) error {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	if scs.urlValue != nil {
+		return scs.urlValue, nil
+	}
+	if time.Since(scs.urlDeterminedAt) < 10*time.Second && scs.urlDetermineErr != nil {
+		return nil, scs.urlDetermineErr
+	}
+
+	u := scs.directURL
+	err := walkEnvGOPROXY(scs.envGOPROXY, func(proxy *url.URL) error {
+		ctx, cancel := context.WithTimeout(ctx, time.Minute)
 		defer cancel()
-		pu := proxy.JoinPath("sumdb", sco.name)
-		if _, err := httpGet(ctx, sco.httpClient, pu.JoinPath("/supported").String(), nil); err != nil {
+		pu := proxy.JoinPath("sumdb", scs.name)
+		if _, err := httpGet(ctx, scs.httpClient, pu.JoinPath("/supported").String(), nil); err != nil {
 			return err
 		}
 		u = pu
 		return nil
 	}, func() error { return nil })
-	sco.urlDeterminedAt = time.Now()
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		sco.urlDetermineErr = err
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	sco.urlDetermineErr = nil
+	scs.urlDeterminedAt = time.Now()
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		scs.urlDetermineErr = err
+		return nil, err
+	}
+	scs.urlDetermineErr = nil
 
-	sco.urlValue = u
+	scs.urlValue = u
 	return u, nil
 }
 
-// ReadRemote implements [golang.org/x/mod/sumdb.ClientOps].
-func (sco *sumdbClientOps) ReadRemote(path string) ([]byte, error) {
-	u, err := sco.url()
+// ReadRemote reads the content at the given path from the checksum database.
+func (scs *sumdbClientState) ReadRemote(ctx context.Context, path string) ([]byte, error) {
+	u, err := scs.url(ctx)
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 	var buf bytes.Buffer
-	if _, err := httpGet(ctx, sco.httpClient, u.JoinPath(path).String(), &buf); err != nil {
+	if _, err := httpGet(ctx, scs.httpClient, u.JoinPath(path).String(), &buf); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
 }
 
-// ReadConfig implements [golang.org/x/mod/sumdb.ClientOps].
-func (sco *sumdbClientOps) ReadConfig(file string) ([]byte, error) {
+// ReadConfig implements [sumdb.ClientOps].
+func (scs *sumdbClientState) ReadConfig(file string) ([]byte, error) {
 	if file == "key" {
-		return []byte(sco.key), nil
+		return []byte(scs.key), nil
 	}
 	if strings.HasSuffix(file, "/latest") {
-		sco.latestMu.Lock()
-		defer sco.latestMu.Unlock()
-		return bytes.Clone(sco.latest), nil
+		scs.latestMu.Lock()
+		defer scs.latestMu.Unlock()
+		return bytes.Clone(scs.latest), nil
 	}
 	return nil, fmt.Errorf("unknown config %s", file)
 }
 
-// WriteConfig implements [golang.org/x/mod/sumdb.ClientOps].
-func (sco *sumdbClientOps) WriteConfig(_ string, old, new []byte) error {
-	sco.latestMu.Lock()
-	defer sco.latestMu.Unlock()
-	if !bytes.Equal(sco.latest, old) {
+// WriteConfig implements [sumdb.ClientOps].
+func (scs *sumdbClientState) WriteConfig(_ string, old, new []byte) error {
+	scs.latestMu.Lock()
+	defer scs.latestMu.Unlock()
+	if !bytes.Equal(scs.latest, old) {
 		return sumdb.ErrWriteConflict
 	}
-	sco.latest = bytes.Clone(new)
+	scs.latest = bytes.Clone(new)
 	return nil
 }
 
-// ReadCache implements [golang.org/x/mod/sumdb.ClientOps].
-func (sco *sumdbClientOps) ReadCache(file string) ([]byte, error) {
-	data, ok := sco.cache.Load(file)
+// ReadCache implements [sumdb.ClientOps].
+func (scs *sumdbClientState) ReadCache(file string) ([]byte, error) {
+	data, ok := scs.cache.Load(file)
 	if !ok {
 		return nil, fs.ErrNotExist
 	}
 	return bytes.Clone(data.([]byte)), nil
 }
 
-// WriteCache implements [golang.org/x/mod/sumdb.ClientOps].
-func (sco *sumdbClientOps) WriteCache(file string, data []byte) {
-	sco.cache.Store(file, bytes.Clone(data))
+// WriteCache implements [sumdb.ClientOps].
+func (scs *sumdbClientState) WriteCache(file string, data []byte) {
+	scs.cache.Store(file, bytes.Clone(data))
 }
 
-// Log implements [golang.org/x/mod/sumdb.ClientOps].
-func (*sumdbClientOps) Log(msg string) {}
+// Log implements [sumdb.ClientOps].
+func (*sumdbClientState) Log(msg string) {}
 
-// SecurityError implements [golang.org/x/mod/sumdb.ClientOps].
-func (*sumdbClientOps) SecurityError(msg string) {}
-
-// sumdbClientOpsCache buffers cache writes until checksum verification succeeds.
-type sumdbClientOpsCache struct {
-	*sumdbClientOps
-	cache sync.Map
-}
-
-// ReadCache implements [golang.org/x/mod/sumdb.ClientOps].
-func (scoc *sumdbClientOpsCache) ReadCache(file string) ([]byte, error) {
-	if data, ok := scoc.cache.Load(file); ok {
-		return bytes.Clone(data.([]byte)), nil
-	}
-	return scoc.sumdbClientOps.ReadCache(file)
-}
-
-// WriteCache implements [golang.org/x/mod/sumdb.ClientOps].
-func (scoc *sumdbClientOpsCache) WriteCache(file string, data []byte) {
-	scoc.cache.Store(file, bytes.Clone(data))
-}
-
-// save publishes the buffered cache writes.
-func (scoc *sumdbClientOpsCache) save() {
-	scoc.cache.Range(func(file, data any) bool {
-		scoc.sumdbClientOps.WriteCache(file.(string), data.([]byte))
-		return true
-	})
-}
+// SecurityError implements [sumdb.ClientOps].
+func (*sumdbClientState) SecurityError(msg string) {}

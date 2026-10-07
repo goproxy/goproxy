@@ -132,7 +132,7 @@ type GoFetcher struct {
 	envGONOSUMDB          string
 	directFetchWorkerPool chan struct{}
 	httpClient            *http.Client
-	sumdbClientOps        *sumdbClientOps
+	sumdbClientState      *sumdbClientState
 }
 
 // init initializes the f.
@@ -190,7 +190,7 @@ func (gf *GoFetcher) init() {
 
 	gf.httpClient = &http.Client{Transport: gf.Transport}
 	if envGOSUMDB != "off" {
-		gf.sumdbClientOps, gf.initErr = newSumdbClientOps(gf.envGOPROXY, envGOSUMDB, gf.httpClient)
+		gf.sumdbClientState, gf.initErr = newSumdbClientState(gf.envGOPROXY, envGOSUMDB, gf.httpClient)
 	}
 }
 
@@ -403,19 +403,22 @@ func (gf *GoFetcher) Download(ctx context.Context, path, version string) (info, 
 
 	// Verify against the checksum database only for proxy downloads. Direct
 	// downloads are verified by the local Go binary itself.
-	if gf.sumdbClientOps != nil && fromProxy {
-		sumdbCache := &sumdbClientOpsCache{sumdbClientOps: gf.sumdbClientOps}
-		sumdbClient := sumdb.NewClient(sumdbCache)
+	if gf.sumdbClientState != nil && fromProxy {
+		sumdbOps := &sumdbClientOps{sumdbClientState: gf.sumdbClientState, ctx: ctx}
+		sumdbClient := sumdb.NewClient(sumdbOps)
 		sumdbClient.SetGONOSUMDB(gf.envGONOSUMDB)
 		err = verifyModFile(sumdbClient, modFile, path, version)
+		if err == nil && ctx.Err() == nil {
+			err = verifyZipFile(sumdbClient, zipFile, path, version)
+		}
+		// sumdb.Client.Lookup does not preserve error identity.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			err = ctxErr
+		}
 		if err != nil {
 			return
 		}
-		err = verifyZipFile(sumdbClient, zipFile, path, version)
-		if err != nil {
-			return
-		}
-		sumdbCache.save()
+		sumdbOps.saveCache()
 	}
 
 	infoContent := strings.NewReader(marshalInfo(infoVersion, infoTime))

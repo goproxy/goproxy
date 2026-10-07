@@ -23,7 +23,188 @@ import (
 	"golang.org/x/mod/sumdb/note"
 )
 
-func TestNewSumDBClientOps(t *testing.T) {
+func TestSumDBClientOpsReadRemote(t *testing.T) {
+	type contextKey struct{}
+	for _, tt := range []struct {
+		name        string
+		statusCode  int
+		wantContent string
+		wantErr     error
+	}{
+		{"Success", http.StatusOK, "remote data", nil},
+		{"NotFound", http.StatusNotFound, "", fs.ErrNotExist},
+		{"Canceled", 0, "", context.Canceled},
+		{"DeadlineExceeded", 0, "", context.DeadlineExceeded},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithTimeout(context.WithValue(t.Context(), contextKey{}, tt.name), time.Second)
+				defer cancel()
+				client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					if got, want := req.URL.Path, "/lookup/example.com@v1.0.0"; got != want {
+						t.Errorf("got path %q, want %q", got, want)
+					}
+					if got, want := req.Context().Value(contextKey{}), tt.name; got != want {
+						t.Errorf("got context value %v, want %v", got, want)
+					}
+					if got, ok := req.Context().Deadline(); !ok {
+						t.Error("request has no deadline")
+					} else if want, _ := ctx.Deadline(); got != want {
+						t.Errorf("got deadline %v, want %v", got, want)
+					}
+					if tt.wantErr == context.Canceled {
+						cancel()
+					}
+					if tt.statusCode == 0 {
+						<-req.Context().Done()
+						return nil, req.Context().Err()
+					}
+					return &http.Response{
+						StatusCode: tt.statusCode,
+						Body:       io.NopCloser(strings.NewReader("remote data")),
+					}, nil
+				})}
+				scs, err := newSumdbClientState("direct", defaultEnvGOSUMDB+" https://sumdb.example.com", client)
+				if err != nil {
+					t.Fatalf("unexpected error %v", err)
+				}
+				ops := &sumdbClientOps{sumdbClientState: scs, ctx: ctx}
+				started := time.Now()
+				b, err := ops.ReadRemote("/lookup/example.com@v1.0.0")
+				if got, want := err, tt.wantErr; !errors.Is(got, want) {
+					t.Errorf("got error %v, want %v", got, want)
+				}
+				if got, want := string(b), tt.wantContent; got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
+				if tt.wantErr == context.DeadlineExceeded {
+					if got, want := time.Since(started), time.Second; got != want {
+						t.Errorf("got duration %v, want %v", got, want)
+					}
+				}
+			})
+		})
+	}
+}
+
+func TestSumDBClientOpsReadCache(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		shared      []byte
+		buffered    []byte
+		wantContent string
+		wantErr     error
+	}{
+		{"Missing", nil, nil, "", fs.ErrNotExist},
+		{"Shared", []byte("shared"), nil, "shared", nil},
+		{"Buffered", nil, []byte("buffered"), "buffered", nil},
+		{"BufferedOverridesShared", []byte("shared"), []byte("buffered"), "buffered", nil},
+		{"EmptyBufferedOverridesShared", []byte("shared"), []byte{}, "", nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			scs := &sumdbClientState{}
+			if tt.shared != nil {
+				scs.WriteCache("file", tt.shared)
+			}
+			ops := &sumdbClientOps{sumdbClientState: scs}
+			if tt.buffered != nil {
+				ops.WriteCache("file", tt.buffered)
+			}
+			b, err := ops.ReadCache("file")
+			if got, want := err, tt.wantErr; !errors.Is(got, want) {
+				t.Fatalf("got error %v, want %v", got, want)
+			}
+			if got, want := string(b), tt.wantContent; got != want {
+				t.Fatalf("got %q, want %q", got, want)
+			}
+			if len(b) > 0 {
+				b[0] = 'x'
+				if got, err := ops.ReadCache("file"); err != nil || string(got) != tt.wantContent {
+					t.Errorf("got (%q, %v), want (%q, nil)", got, err, tt.wantContent)
+				}
+			}
+		})
+	}
+}
+
+func TestSumDBClientOpsWriteCache(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		data    []byte
+		shared  bool
+		replace bool
+	}{
+		{"New", []byte("buffered"), false, false},
+		{"ReplaceShared", []byte("buffered"), true, false},
+		{"ReplaceBuffered", []byte("buffered"), true, true},
+		{"Empty", []byte{}, true, false},
+		{"Nil", nil, true, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			scs := &sumdbClientState{}
+			var wantShared string
+			wantErr := fs.ErrNotExist
+			if tt.shared {
+				scs.WriteCache("file", []byte("shared"))
+				wantShared, wantErr = "shared", nil
+			}
+			ops := &sumdbClientOps{sumdbClientState: scs}
+			if tt.replace {
+				ops.WriteCache("file", []byte("original"))
+			}
+			data := bytes.Clone(tt.data)
+			want := string(data)
+			ops.WriteCache("file", data)
+			if len(data) > 0 {
+				data[0] = 'x'
+			}
+			if got, err := ops.ReadCache("file"); err != nil || string(got) != want {
+				t.Errorf("got (%q, %v), want (%q, nil)", got, err, want)
+			}
+			if got, err := scs.ReadCache("file"); !errors.Is(err, wantErr) || string(got) != wantShared {
+				t.Errorf("got (%q, %v), want (%q, %v)", got, err, wantShared, wantErr)
+			}
+			other := &sumdbClientOps{sumdbClientState: scs}
+			if got, err := other.ReadCache("file"); !errors.Is(err, wantErr) || string(got) != wantShared {
+				t.Errorf("got (%q, %v) from another download, want (%q, %v)", got, err, wantShared, wantErr)
+			}
+		})
+	}
+}
+
+func TestSumDBClientOpsSaveCache(t *testing.T) {
+	t.Run("Empty", func(t *testing.T) {
+		scs := &sumdbClientState{}
+		scs.WriteCache("existing", []byte("original"))
+		ops := &sumdbClientOps{sumdbClientState: scs}
+		ops.saveCache()
+		if got, err := scs.ReadCache("existing"); err != nil || string(got) != "original" {
+			t.Errorf("got (%q, %v), want (%q, nil)", got, err, "original")
+		}
+	})
+
+	t.Run("Buffered", func(t *testing.T) {
+		scs := &sumdbClientState{}
+		scs.WriteCache("existing", []byte("original"))
+		ops := &sumdbClientOps{sumdbClientState: scs}
+		ops.WriteCache("existing", []byte("updated"))
+		ops.WriteCache("new", []byte("buffered"))
+		ops.saveCache()
+		for _, tt := range []struct {
+			file string
+			want string
+		}{
+			{"existing", "updated"},
+			{"new", "buffered"},
+		} {
+			if got, err := scs.ReadCache(tt.file); err != nil || string(got) != tt.want {
+				t.Errorf("got (%q, %v) for %q, want (%q, nil)", got, err, tt.file, tt.want)
+			}
+		}
+	})
+}
+
+func TestNewSumDBClientState(t *testing.T) {
 	for _, tt := range []struct {
 		n          int
 		envGOSUMDB string
@@ -34,7 +215,7 @@ func TestNewSumDBClientOps(t *testing.T) {
 		{3, "", errors.New("missing GOSUMDB")},
 	} {
 		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
-			sco, err := newSumdbClientOps(defaultEnvGOPROXY, tt.envGOSUMDB, http.DefaultClient)
+			scs, err := newSumdbClientState(defaultEnvGOPROXY, tt.envGOSUMDB, http.DefaultClient)
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatal("expected error")
@@ -46,10 +227,10 @@ func TestNewSumDBClientOps(t *testing.T) {
 				if err != nil {
 					t.Fatalf("unexpected error %v", err)
 				}
-				if got, want := sco.name, defaultEnvGOSUMDB; got != want {
+				if got, want := scs.name, defaultEnvGOSUMDB; got != want {
 					t.Errorf("got %q, want %q", got, want)
 				}
-				if got, want := sco.key, sumGolangOrgKey; got != want {
+				if got, want := scs.key, sumGolangOrgKey; got != want {
 					t.Errorf("got %q, want %q", got, want)
 				}
 			}
@@ -57,7 +238,139 @@ func TestNewSumDBClientOps(t *testing.T) {
 	}
 }
 
-func TestSumDBClientOpsURL(t *testing.T) {
+func TestSumDBClientStateURL(t *testing.T) {
+	t.Run("ConcurrentCancellation", func(t *testing.T) {
+		for _, tt := range []struct {
+			name  string
+			owner bool
+		}{
+			{"Owner", true},
+			{"Waiter", false},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				for _, mode := range []struct {
+					name    string
+					wantErr error
+				}{
+					{"Canceled", context.Canceled},
+					{"DeadlineExceeded", context.DeadlineExceeded},
+				} {
+					t.Run(mode.name, func(t *testing.T) {
+						synctest.Test(t, func(t *testing.T) {
+							startedAt := time.Now()
+							var ctx context.Context
+							var cancel context.CancelFunc
+							if mode.wantErr == context.DeadlineExceeded {
+								ctx, cancel = context.WithTimeout(t.Context(), time.Second)
+							} else {
+								ctx, cancel = context.WithCancel(t.Context())
+							}
+							defer cancel()
+							started, release := make(chan struct{}), make(chan struct{})
+							var attempts atomic.Int32
+							client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+								if attempts.Add(1) == 1 {
+									close(started)
+									select {
+									case <-req.Context().Done():
+										return nil, req.Context().Err()
+									case <-release:
+									}
+								}
+								return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+							})}
+							scs, err := newSumdbClientState("https://example.com", defaultEnvGOSUMDB, client)
+							if err != nil {
+								t.Fatal(err)
+							}
+							ownerCtx, waiterCtx := t.Context(), ctx
+							if tt.owner {
+								ownerCtx, waiterCtx = ctx, t.Context()
+							}
+							ownerDone, waiterDone := make(chan error, 1), make(chan error, 1)
+							lookup := func(ctx context.Context, done chan<- error) {
+								u, err := scs.url(ctx)
+								if err == nil && u.String() != "https://example.com/sumdb/"+defaultEnvGOSUMDB {
+									t.Errorf("unexpected URL %v", u)
+								}
+								done <- err
+							}
+							go lookup(ownerCtx, ownerDone)
+							<-started
+							go lookup(waiterCtx, waiterDone)
+							synctest.Wait()
+							time.Sleep(time.Second)
+							if mode.wantErr == context.Canceled {
+								cancel()
+							}
+							canceledDone, activeDone := waiterDone, ownerDone
+							if tt.owner {
+								canceledDone, activeDone = ownerDone, waiterDone
+							}
+							if err := <-canceledDone; !errors.Is(err, mode.wantErr) {
+								t.Errorf("got error %v, want %v", err, mode.wantErr)
+							}
+							close(release)
+							if err := <-activeDone; err != nil {
+								t.Errorf("unexpected error from active caller %v", err)
+							}
+							lookup(t.Context(), activeDone)
+							if err := <-activeDone; err != nil {
+								t.Errorf("unexpected error from later caller %v", err)
+							}
+							wantAttempts := int32(1)
+							if tt.owner {
+								wantAttempts = 2
+							}
+							if got := attempts.Load(); got != wantAttempts {
+								t.Errorf("got attempts %d, want %d", got, wantAttempts)
+							}
+							if got, want := time.Since(startedAt), time.Second; got != want {
+								t.Errorf("got duration %v, want %v", got, want)
+							}
+						})
+					})
+				}
+			})
+		}
+	})
+
+	t.Run("AlreadyCanceled", func(t *testing.T) {
+		for _, tt := range []struct {
+			name string
+			warm bool
+		}{
+			{"Cold", false},
+			{"Warm", true},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				attempts := 0
+				client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					attempts++
+					return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+				})}
+				scs, err := newSumdbClientState("https://example.com", defaultEnvGOSUMDB, client)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if tt.warm {
+					if _, err := scs.url(t.Context()); err != nil {
+						t.Fatal(err)
+					}
+				}
+				ctx, cancel := context.WithCancel(t.Context())
+				cancel()
+				before := attempts
+				if u, err := scs.url(ctx); u != nil || !errors.Is(err, context.Canceled) {
+					t.Errorf("got (%v, %v), want no URL and cancellation", u, err)
+				}
+				if attempts != before {
+					t.Errorf("got attempts %d, want %d", attempts, before)
+				}
+			})
+		}
+	})
+
 	t.Run("ConcurrentDiscovery", func(t *testing.T) {
 		for _, tt := range []struct {
 			name        string
@@ -89,12 +402,12 @@ func TestSumDBClientOpsURL(t *testing.T) {
 						Request:    req,
 					}, nil
 				})}
-				sco, err := newSumdbClientOps("https://example.com", defaultEnvGOSUMDB, client)
+				scs, err := newSumdbClientState("https://example.com", defaultEnvGOSUMDB, client)
 				if err != nil {
 					t.Fatal(err)
 				}
 				lookup := func() {
-					u, err := sco.url()
+					u, err := scs.url(t.Context())
 					if err != nil {
 						t.Errorf("unexpected error %v", err)
 						return
@@ -134,30 +447,30 @@ func TestSumDBClientOpsURL(t *testing.T) {
 					Request:    req,
 				}, nil
 			})}
-			sco, err := newSumdbClientOps("https://example.com", defaultEnvGOSUMDB, client)
+			scs, err := newSumdbClientState("https://example.com", defaultEnvGOSUMDB, client)
 			if err != nil {
 				t.Fatal(err)
 			}
-			u, err := sco.url()
+			u, err := scs.url(t.Context())
 			if err == nil || u != nil {
 				t.Fatalf("got (%v, %v), want an error and no URL", u, err)
 			}
 			time.Sleep(10*time.Second - time.Nanosecond)
-			if nextURL, nextErr := sco.url(); nextURL != u || nextErr != err {
+			if nextURL, nextErr := scs.url(t.Context()); nextURL != u || nextErr != err {
 				t.Errorf("got (%v, %v), want (%v, %v)", nextURL, nextErr, u, err)
 			}
 			if got, want := attempts, 1; got != want {
 				t.Errorf("got attempts %d, want %d", got, want)
 			}
 			time.Sleep(time.Nanosecond)
-			u, err = sco.url()
+			u, err = scs.url(t.Context())
 			if err != nil {
 				t.Fatal(err)
 			}
 			if got, want := u.String(), "https://example.com/sumdb/"+defaultEnvGOSUMDB; got != want {
 				t.Errorf("got URL %q, want %q", got, want)
 			}
-			if nextURL, nextErr := sco.url(); nextURL != u || nextErr != nil {
+			if nextURL, nextErr := scs.url(t.Context()); nextURL != u || nextErr != nil {
 				t.Errorf("got (%v, %v), want (%v, nil)", nextURL, nextErr, u)
 			}
 			if got, want := attempts, 2; got != want {
@@ -194,12 +507,12 @@ func TestSumDBClientOpsURL(t *testing.T) {
 						}
 						return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
 					})}
-					sco, err := newSumdbClientOps("https://example.com"+tt.suffix, defaultEnvGOSUMDB, client)
+					scs, err := newSumdbClientState("https://example.com"+tt.suffix, defaultEnvGOSUMDB, client)
 					if err != nil {
 						t.Fatal(err)
 					}
 					started := time.Now()
-					u, err := sco.url()
+					u, err := scs.url(t.Context())
 					if tt.wantURL == "" {
 						if !errors.Is(err, context.DeadlineExceeded) || u != nil {
 							t.Errorf("got (%v, %v), want a timeout and no URL", u, err)
@@ -209,7 +522,7 @@ func TestSumDBClientOpsURL(t *testing.T) {
 					} else if got := u.String(); got != tt.wantURL {
 						t.Errorf("got URL %q, want %q", got, tt.wantURL)
 					}
-					if nextURL, nextErr := sco.url(); nextURL != u || nextErr != err {
+					if nextURL, nextErr := scs.url(t.Context()); nextURL != u || nextErr != err {
 						t.Errorf("got (%v, %v), want (%v, %v)", nextURL, nextErr, u, err)
 					}
 					if !slices.Equal(hosts, tt.wantHosts) {
@@ -254,11 +567,11 @@ func TestSumDBClientOpsURL(t *testing.T) {
 							Request:    req,
 						}, nil
 					})}
-					sco, err := newSumdbClientOps("https://example.com"+tt.suffix, defaultEnvGOSUMDB, client)
+					scs, err := newSumdbClientState("https://example.com"+tt.suffix, defaultEnvGOSUMDB, client)
 					if err != nil {
 						t.Fatal(err)
 					}
-					u, err := sco.url()
+					u, err := scs.url(t.Context())
 					wantAttempts := 1
 					if statusCode == http.StatusBadRequest && !strings.HasPrefix(tt.suffix, "|") {
 						if err == nil || errors.Is(err, fs.ErrNotExist) {
@@ -278,7 +591,7 @@ func TestSumDBClientOpsURL(t *testing.T) {
 							wantAttempts = 2
 						}
 					}
-					if nextURL, nextErr := sco.url(); nextURL != u || nextErr != err {
+					if nextURL, nextErr := scs.url(t.Context()); nextURL != u || nextErr != err {
 						t.Errorf("got (%v, %v), want (%v, %v)", nextURL, nextErr, u, err)
 					}
 					if got, want := attempts, wantAttempts; got != want {
@@ -351,12 +664,12 @@ func TestSumDBClientOpsURL(t *testing.T) {
 			proxyServer := newHTTPTestServer(t, tt.proxyHandler)
 			envGOPROXY := tt.envGOPROXY(proxyServer.URL)
 
-			sco, err := newSumdbClientOps(envGOPROXY, tt.envGOSUMDB, http.DefaultClient)
+			scs, err := newSumdbClientState(envGOPROXY, tt.envGOSUMDB, http.DefaultClient)
 			if err != nil {
 				t.Fatalf("unexpected error %v", err)
 			}
 
-			u, err := sco.url()
+			u, err := scs.url(t.Context())
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatal("expected error")
@@ -374,7 +687,7 @@ func TestSumDBClientOpsURL(t *testing.T) {
 			}
 
 			if tt.doubleCheck {
-				u2, err2 := sco.url()
+				u2, err2 := scs.url(t.Context())
 				if got, want := err2, err; got != want {
 					t.Errorf("got %q, want %q", got, want)
 				}
@@ -386,7 +699,7 @@ func TestSumDBClientOpsURL(t *testing.T) {
 	}
 }
 
-func TestSumDBClientOpsReadRemote(t *testing.T) {
+func TestSumDBClientStateReadRemote(t *testing.T) {
 	t.Run("Timeout", func(t *testing.T) {
 		for _, tt := range []struct {
 			name           string
@@ -445,12 +758,12 @@ func TestSumDBClientOpsReadRemote(t *testing.T) {
 					if tt.discoveryDelay > 0 {
 						envGOSUMDB = defaultEnvGOSUMDB
 					}
-					sco, err := newSumdbClientOps("https://example.com", envGOSUMDB, client)
+					scs, err := newSumdbClientState("https://example.com", envGOSUMDB, client)
 					if err != nil {
 						t.Fatal(err)
 					}
 					started := time.Now()
-					b, err := sco.ReadRemote("/lookup/example.com@v1.0.0")
+					b, err := scs.ReadRemote(t.Context(), "/lookup/example.com@v1.0.0")
 					if !errors.Is(err, context.DeadlineExceeded) || !isFetchTimedOutError(err) {
 						t.Errorf("got error %v, want a timeout", err)
 					}
@@ -481,19 +794,19 @@ func TestSumDBClientOpsReadRemote(t *testing.T) {
 				<-req.Context().Done()
 				return nil, req.Context().Err()
 			})}
-			sco, err := newSumdbClientOps("direct", defaultEnvGOSUMDB+" https://example.com", client)
+			scs, err := newSumdbClientState("direct", defaultEnvGOSUMDB+" https://example.com", client)
 			if err != nil {
 				t.Fatal(err)
 			}
 			done := make(chan error, 1)
 			go func() {
-				_, err := sco.ReadRemote("/lookup/first.example.com@v1.0.0")
+				_, err := scs.ReadRemote(t.Context(), "/lookup/first.example.com@v1.0.0")
 				done <- err
 			}()
 			synctest.Wait()
 			time.Sleep(30 * time.Second)
 			started := time.Now()
-			_, err = sco.ReadRemote("/lookup/second.example.com@v1.0.0")
+			_, err = scs.ReadRemote(t.Context(), "/lookup/second.example.com@v1.0.0")
 			if !errors.Is(err, context.DeadlineExceeded) {
 				t.Errorf("got error %v, want a timeout", err)
 			}
@@ -535,12 +848,12 @@ func TestSumDBClientOpsReadRemote(t *testing.T) {
 		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
 			proxyServer := newHTTPTestServer(t, tt.proxyHandler)
 
-			sco, err := newSumdbClientOps(proxyServer.URL, defaultEnvGOSUMDB, http.DefaultClient)
+			scs, err := newSumdbClientState(proxyServer.URL, defaultEnvGOSUMDB, http.DefaultClient)
 			if err != nil {
 				t.Fatalf("unexpected error %v", err)
 			}
 
-			b, err := sco.ReadRemote("file")
+			b, err := scs.ReadRemote(t.Context(), "file")
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatal("expected error")
@@ -560,7 +873,7 @@ func TestSumDBClientOpsReadRemote(t *testing.T) {
 	}
 }
 
-func TestSumDBClientOpsReadConfig(t *testing.T) {
+func TestSumDBClientStateReadConfig(t *testing.T) {
 	t.Run("ClientContinuity", func(t *testing.T) {
 		skey, vkey, err := note.GenerateKey(nil, "sumdb.example.com")
 		if err != nil {
@@ -587,22 +900,22 @@ func TestSumDBClientOpsReadConfig(t *testing.T) {
 			resp.Request = req
 			return resp, nil
 		})}
-		sco, err := newSumdbClientOps("direct", vkey+" https://sumdb.example.com", httpClient)
+		scs, err := newSumdbClientState("direct", vkey+" https://sumdb.example.com", httpClient)
 		if err != nil {
 			t.Fatal(err)
 		}
 		lookup := func(vers string) error {
-			cache := &sumdbClientOpsCache{sumdbClientOps: sco}
-			_, err := sumdb.NewClient(cache).Lookup("example.com", vers)
+			ops := &sumdbClientOps{sumdbClientState: scs, ctx: t.Context()}
+			_, err := sumdb.NewClient(ops).Lookup("example.com", vers)
 			if err == nil {
-				cache.save()
+				ops.saveCache()
 			}
 			return err
 		}
 		if err := lookup("v1.0.0"); err != nil {
 			t.Fatal(err)
 		}
-		latest, err := sco.ReadConfig("sumdb.example.com/latest")
+		latest, err := scs.ReadConfig("sumdb.example.com/latest")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -614,7 +927,7 @@ func TestSumDBClientOpsReadConfig(t *testing.T) {
 		if err == nil || err.Error() != "example.com@v1.1.0: "+sumdb.ErrSecurity.Error() {
 			t.Fatalf("got error %v, want a security error", err)
 		}
-		if got, err := sco.ReadConfig("sumdb.example.com/latest"); err != nil || !bytes.Equal(got, latest) {
+		if got, err := scs.ReadConfig("sumdb.example.com/latest"); err != nil || !bytes.Equal(got, latest) {
 			t.Errorf("got signed tree %q and error %v, want %q and no error", got, err, latest)
 		}
 		useFork.Store(false)
@@ -645,12 +958,12 @@ func TestSumDBClientOpsReadConfig(t *testing.T) {
 		},
 	} {
 		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
-			sco, err := newSumdbClientOps("direct", defaultEnvGOSUMDB, http.DefaultClient)
+			scs, err := newSumdbClientState("direct", defaultEnvGOSUMDB, http.DefaultClient)
 			if err != nil {
 				t.Fatalf("unexpected error %v", err)
 			}
 
-			b, err := sco.ReadConfig(tt.file)
+			b, err := scs.ReadConfig(tt.file)
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatal("expected error")
@@ -670,15 +983,22 @@ func TestSumDBClientOpsReadConfig(t *testing.T) {
 	}
 }
 
-func TestSumDBClientOpsWriteConfig(t *testing.T) {
+func TestSumDBClientStateWriteConfig(t *testing.T) {
+	t.Run("Empty", func(t *testing.T) {
+		scs := &sumdbClientState{}
+		if err := scs.WriteConfig("", nil, nil); err != nil {
+			t.Fatalf("unexpected error %v", err)
+		}
+	})
+
 	t.Run("CompareAndSwap", func(t *testing.T) {
-		sco := &sumdbClientOps{}
+		scs := &sumdbClientState{}
 		new := []byte("first tree")
-		if err := sco.WriteConfig("/latest", nil, new); err != nil {
+		if err := scs.WriteConfig("/latest", nil, new); err != nil {
 			t.Fatal(err)
 		}
 		new[0] = 'x'
-		old, err := sco.ReadConfig("/latest")
+		old, err := scs.ReadConfig("/latest")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -686,31 +1006,31 @@ func TestSumDBClientOpsWriteConfig(t *testing.T) {
 			t.Fatalf("got %q, want %q", got, want)
 		}
 		old[0] = 'x'
-		if err := sco.WriteConfig("/latest", old, []byte("second tree")); err != sumdb.ErrWriteConflict {
+		if err := scs.WriteConfig("/latest", old, []byte("second tree")); err != sumdb.ErrWriteConflict {
 			t.Fatalf("got error %v, want %v", err, sumdb.ErrWriteConflict)
 		}
-		old, err = sco.ReadConfig("/latest")
+		old, err = scs.ReadConfig("/latest")
 		if err != nil {
 			t.Fatal(err)
 		}
 		if got, want := string(old), "first tree"; got != want {
 			t.Fatalf("got %q, want %q", got, want)
 		}
-		if err := sco.WriteConfig("/latest", old, []byte("second tree")); err != nil {
+		if err := scs.WriteConfig("/latest", old, []byte("second tree")); err != nil {
 			t.Fatal(err)
 		}
-		if got, err := sco.ReadConfig("/latest"); err != nil || string(got) != "second tree" {
+		if got, err := scs.ReadConfig("/latest"); err != nil || string(got) != "second tree" {
 			t.Errorf("got (%q, %v), want (%q, nil)", got, err, "second tree")
 		}
 	})
 
 	t.Run("ConcurrentWrites", func(t *testing.T) {
-		sco := &sumdbClientOps{}
+		scs := &sumdbClientState{}
 		var wg sync.WaitGroup
 		var written atomic.Int32
 		for i := range 16 {
 			wg.Go(func() {
-				if err := sco.WriteConfig("/latest", nil, []byte{byte(i)}); err == nil {
+				if err := scs.WriteConfig("/latest", nil, []byte{byte(i)}); err == nil {
 					written.Add(1)
 				} else if err != sumdb.ErrWriteConflict {
 					t.Errorf("unexpected error %v", err)
@@ -724,118 +1044,71 @@ func TestSumDBClientOpsWriteConfig(t *testing.T) {
 	})
 }
 
-func TestSumDBClientOpsWriteCache(t *testing.T) {
-	sco := &sumdbClientOps{}
-	data := []byte("cached data")
-	sco.WriteCache("file", data)
-	data[0] = 'x'
-	got, err := sco.ReadCache("file")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(got) != "cached data" {
-		t.Fatalf("got %q, want %q", got, "cached data")
-	}
-	got[0] = 'x'
-	got, err = sco.ReadCache("file")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(got) != "cached data" {
-		t.Errorf("got %q, want %q", got, "cached data")
-	}
-}
-
-func TestSumDBClientOpsExtraCalls(t *testing.T) {
+func TestSumDBClientStateReadCache(t *testing.T) {
 	for _, tt := range []struct {
-		n       int
-		call    func(sco *sumdbClientOps) error
+		name    string
+		data    []byte
 		wantErr error
 	}{
-		{
-			n: 1,
-			call: func(sco *sumdbClientOps) error {
-				return sco.WriteConfig("", nil, nil)
-			},
-		},
-		{
-			n: 2,
-			call: func(sco *sumdbClientOps) error {
-				sco.WriteCache("", nil)
-				return nil
-			},
-		},
-		{
-			n: 3,
-			call: func(sco *sumdbClientOps) error {
-				sco.Log("")
-				return nil
-			},
-		},
-		{
-			n: 4,
-			call: func(sco *sumdbClientOps) error {
-				sco.SecurityError("")
-				return nil
-			},
-		},
-		{
-			n: 5,
-			call: func(sco *sumdbClientOps) error {
-				_, err := sco.ReadCache("")
-				return err
-			},
-			wantErr: fs.ErrNotExist,
-		},
+		{"Missing", nil, fs.ErrNotExist},
+		{"Content", []byte("cached data"), nil},
+		{"Empty", []byte{}, nil},
+		{"Nil", nil, nil},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
-			err := tt.call(&sumdbClientOps{})
-			if tt.wantErr != nil {
-				if err == nil {
-					t.Fatal("expected error")
+		t.Run(tt.name, func(t *testing.T) {
+			scs := &sumdbClientState{}
+			if tt.wantErr == nil {
+				scs.WriteCache("file", tt.data)
+			}
+			b, err := scs.ReadCache("file")
+			if got, want := err, tt.wantErr; !errors.Is(got, want) {
+				t.Fatalf("got error %v, want %v", got, want)
+			}
+			want := string(tt.data)
+			if got := string(b); got != want {
+				t.Fatalf("got %q, want %q", got, want)
+			}
+			if len(b) > 0 {
+				b[0] = 'x'
+				if got, err := scs.ReadCache("file"); err != nil || string(got) != want {
+					t.Errorf("got (%q, %v), want (%q, nil)", got, err, want)
 				}
-				if got, want := err, tt.wantErr; !compareErrors(got, want) {
-					t.Errorf("got %v, want %v", got, want)
-				}
-			} else if err != nil {
-				t.Fatalf("unexpected error %v", err)
 			}
 		})
 	}
 }
 
-func TestSumDBClientOpsCacheSave(t *testing.T) {
-	sco := &sumdbClientOps{}
-	sco.WriteCache("existing", []byte("original"))
-	cache := &sumdbClientOpsCache{sumdbClientOps: sco}
-	if got, err := cache.ReadCache("existing"); err != nil || string(got) != "original" {
-		t.Fatalf("got (%q, %v), want (%q, nil)", got, err, "original")
-	}
-	data := []byte("buffered")
-	cache.WriteCache("new", data)
-	data[0] = 'x'
-	if _, err := sco.ReadCache("new"); err != fs.ErrNotExist {
-		t.Errorf("got error %v, want %v", err, fs.ErrNotExist)
-	}
-	got, err := cache.ReadCache("new")
-	if err != nil || string(got) != "buffered" {
-		t.Fatalf("got (%q, %v), want (%q, nil)", got, err, "buffered")
-	}
-	got[0] = 'x'
-	cache.WriteCache("existing", []byte("updated"))
-	if got, err := sco.ReadCache("existing"); err != nil || string(got) != "original" {
-		t.Errorf("got (%q, %v), want (%q, nil)", got, err, "original")
-	}
-	cache.save()
+func TestSumDBClientStateWriteCache(t *testing.T) {
 	for _, tt := range []struct {
+		name string
 		file string
-		want string
+		data []byte
 	}{
-		{"existing", "updated"},
-		{"new", "buffered"},
+		{"Content", "file", []byte("cached data")},
+		{"Empty", "file", []byte{}},
+		{"Nil", "", nil},
 	} {
-		if got, err := sco.ReadCache(tt.file); err != nil || string(got) != tt.want {
-			t.Errorf("got (%q, %v), want (%q, nil)", got, err, tt.want)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			scs := &sumdbClientState{}
+			data := bytes.Clone(tt.data)
+			want := string(data)
+			scs.WriteCache(tt.file, data)
+			if len(data) > 0 {
+				data[0] = 'x'
+			}
+			if got, err := scs.ReadCache(tt.file); err != nil || string(got) != want {
+				t.Errorf("got (%q, %v), want (%q, nil)", got, err, want)
+			}
+		})
 	}
+}
+
+func TestSumDBClientStateLog(t *testing.T) {
+	scs := &sumdbClientState{}
+	scs.Log("")
+}
+
+func TestSumDBClientStateSecurityError(t *testing.T) {
+	scs := &sumdbClientState{}
+	scs.SecurityError("")
 }
