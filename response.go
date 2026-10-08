@@ -37,6 +37,21 @@ func responseString(rw http.ResponseWriter, req *http.Request, statusCode, cache
 	}
 }
 
+// responseBadRequest responses "bad request" to the client with optional msgs.
+func responseBadRequest(rw http.ResponseWriter, req *http.Request, msgs ...any) {
+	var msg string
+	if len(msgs) > 0 {
+		msg = fmt.Sprint(msgs...)
+		if msg != "" && msg != "bad request" && !strings.HasPrefix(msg, "bad request: ") {
+			msg = "bad request: " + msg
+		}
+	}
+	if msg == "" {
+		msg = "bad request"
+	}
+	responseString(rw, req, http.StatusBadRequest, -1, msg)
+}
+
 // responseNotFound responses "not found" to the client with the
 // cacheControlMaxAge and optional msgs.
 func responseNotFound(rw http.ResponseWriter, req *http.Request, cacheControlMaxAge int, msgs ...any) {

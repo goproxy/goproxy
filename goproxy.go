@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/sumdb/tlog"
@@ -125,10 +126,19 @@ func (g *Goproxy) init() {
 func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	g.initOnce.Do(g.init)
 
-	switch req.Method {
-	case http.MethodGet, http.MethodHead:
-	default:
+	if req.ContentLength != 0 && req.ProtoMajor == 1 {
+		// Prevent net/http from draining rejected request bodies.
+		rw.Header().Set("Connection", "close")
+		http.NewResponseController(rw).SetReadDeadline(time.Now())
+	}
+
+	if req.Method != http.MethodGet && req.Method != http.MethodHead {
 		responseMethodNotAllowed(rw, req, -1)
+		return
+	}
+
+	if req.ContentLength != 0 {
+		responseBadRequest(rw, req, "request bodies are not supported")
 		return
 	}
 

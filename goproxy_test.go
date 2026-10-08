@@ -17,6 +17,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
 	"os"
 	"path"
 	"path/filepath"
@@ -153,6 +154,266 @@ func TestGoproxyInit(t *testing.T) {
 }
 
 func TestGoproxyServeHTTP(t *testing.T) {
+	t.Run("RequestBodies", func(t *testing.T) {
+		t.Run("Validation", func(t *testing.T) {
+			for _, tt := range []struct {
+				name           string
+				method         string
+				path           string
+				contentLength  int64
+				protoMajor     int
+				wantStatusCode int
+			}{
+				{"Latest", http.MethodGet, "/example.com/@latest", 1, 1, http.StatusBadRequest},
+				{"List", http.MethodGet, "/example.com/@v/list", 1, 1, http.StatusBadRequest},
+				{"Info", http.MethodGet, "/example.com/@v/v1.0.0.info", 1, 1, http.StatusBadRequest},
+				{"Mod", http.MethodGet, "/example.com/@v/v1.0.0.mod", 1, 1, http.StatusBadRequest},
+				{"Zip", http.MethodGet, "/example.com/@v/v1.0.0.zip", 1, 1, http.StatusBadRequest},
+				{"SumDBLatest", http.MethodGet, "/sumdb/sum.golang.org/latest", 1, 1, http.StatusBadRequest},
+				{"SumDBLookup", http.MethodGet, "/sumdb/sum.golang.org/lookup/example.com@v1.0.0", 1, 1, http.StatusBadRequest},
+				{"SumDBTile", http.MethodGet, "/sumdb/sum.golang.org/tile/8/0/000.p/1", 1, 1, http.StatusBadRequest},
+				{"InvalidPath", http.MethodGet, "/invalid/", 1, 1, http.StatusBadRequest},
+				{"HEAD", http.MethodHead, "/example.com/@v/v1.0.0.info", 1, 1, http.StatusBadRequest},
+				{"UnknownLength", http.MethodGet, "/sumdb/sum.golang.org/supported", -1, 1, http.StatusBadRequest},
+				{"HTTP2", http.MethodGet, "/sumdb/sum.golang.org/supported", -1, 2, http.StatusBadRequest},
+				{"UnsupportedMethod", http.MethodPost, "/sumdb/sum.golang.org/supported", 1, 1, http.StatusMethodNotAllowed},
+				{"NoBody", http.MethodGet, "/sumdb/sum.golang.org/supported", 0, 1, http.StatusOK},
+			} {
+				t.Run(tt.name, func(t *testing.T) {
+					g := &Goproxy{
+						ProxiedSumDBs: []string{"sum.golang.org"},
+						Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+							t.Error("unexpected upstream request")
+							return nil, errors.New("unexpected upstream request")
+						}),
+						Cacher: &testCacher{
+							get: func(context.Context, Cacher, string) (io.ReadCloser, error) {
+								t.Error("unexpected cache read")
+								return nil, fs.ErrNotExist
+							},
+							put: func(context.Context, Cacher, string, io.ReadSeeker) error {
+								t.Error("unexpected cache write")
+								return nil
+							},
+						},
+						Logger: slog.New(slog.DiscardHandler),
+					}
+					req := httptest.NewRequest(tt.method, tt.path, nil)
+					req.ProtoMajor = tt.protoMajor
+					req.ContentLength = tt.contentLength
+					if tt.contentLength != 0 {
+						req.Body = io.NopCloser(&testReadSeeker{read: func(io.ReadSeeker, []byte) (int, error) {
+							t.Error("unexpected request body read")
+							return 0, io.EOF
+						}})
+					}
+					rec := httptest.NewRecorder()
+					g.ServeHTTP(rec, req)
+					if got, want := rec.Code, tt.wantStatusCode; got != want {
+						t.Errorf("got status %d, want %d", got, want)
+					}
+					wantContent := "bad request: request bodies are not supported"
+					wantCacheControl, wantConnection, wantAllow := "no-store", "", ""
+					wantContentType := "text/plain; charset=utf-8"
+					if tt.contentLength != 0 && tt.protoMajor == 1 {
+						wantConnection = "close"
+					}
+					if tt.wantStatusCode == http.StatusOK {
+						wantContent, wantCacheControl = "", "public, max-age=86400"
+						wantContentType = ""
+					} else if tt.wantStatusCode == http.StatusMethodNotAllowed {
+						wantContent, wantAllow = "method not allowed", "GET, HEAD"
+					}
+					if tt.method == http.MethodHead {
+						wantContent = ""
+					}
+					if got, want := rec.Body.String(), wantContent; got != want {
+						t.Errorf("got content %q, want %q", got, want)
+					}
+					for name, want := range map[string]string{
+						"Cache-Control": wantCacheControl,
+						"Content-Type":  wantContentType,
+						"Connection":    wantConnection,
+						"Allow":         wantAllow,
+					} {
+						if got := rec.Header().Get(name); got != want {
+							t.Errorf("got %s %q, want %q", name, got, want)
+						}
+					}
+				})
+			}
+		})
+
+		t.Run("HTTP1", func(t *testing.T) {
+			for _, wrapper := range []struct {
+				name    string
+				wrapped bool
+			}{
+				{"Unwrapped", false},
+				{"Wrapped", true},
+			} {
+				for _, tt := range []struct {
+					name           string
+					method         string
+					headers        string
+					body           string
+					wantStatusCode int
+				}{
+					{"NoBody", http.MethodGet, "", "", http.StatusOK},
+					{"EmptyBody", http.MethodGet, "Content-Length: 0\r\n", "", http.StatusOK},
+					{"GETLength", http.MethodGet, "Content-Length: 1\r\n", "", http.StatusBadRequest},
+					{"HEADLength", http.MethodHead, "Content-Length: 1\r\n", "", http.StatusBadRequest},
+					{"GETFullBody", http.MethodGet, "Content-Length: 1\r\n", "x", http.StatusBadRequest},
+					{"GETPartialBody", http.MethodGet, "Content-Length: 2\r\n", "x", http.StatusBadRequest},
+					{"GETChunked", http.MethodGet, "Transfer-Encoding: chunked\r\n", "", http.StatusBadRequest},
+					{"HEADChunked", http.MethodHead, "Transfer-Encoding: chunked\r\n", "", http.StatusBadRequest},
+					{"GETChunkedBody", http.MethodGet, "Transfer-Encoding: chunked\r\n", "1\r\nx\r\n0\r\n\r\n", http.StatusBadRequest},
+					{"GETContinue", http.MethodGet, "Content-Length: 1\r\nExpect: 100-continue\r\n", "", http.StatusBadRequest},
+					{"POSTLength", http.MethodPost, "Content-Length: 1\r\n", "", http.StatusMethodNotAllowed},
+					{"POSTChunked", http.MethodPost, "Transfer-Encoding: chunked\r\n", "", http.StatusMethodNotAllowed},
+				} {
+					t.Run(wrapper.name+"/"+tt.name, func(t *testing.T) {
+						g := &Goproxy{ProxiedSumDBs: []string{"sum.golang.org"}}
+						server := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+							if wrapper.wrapped {
+								rw = testUnwrapResponseWriter{rw}
+							}
+							g.ServeHTTP(rw, req)
+						}))
+						conn, err := net.DialTimeout("tcp", server.Listener.Addr().String(), time.Second)
+						if err != nil {
+							t.Fatal(err)
+						}
+						defer conn.Close()
+						if err := conn.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+							t.Fatal(err)
+						}
+						if _, err := fmt.Fprintf(conn, "%s /sumdb/sum.golang.org/supported HTTP/1.1\r\nHost: localhost\r\n%s\r\n%s", tt.method, tt.headers, tt.body); err != nil {
+							t.Fatal(err)
+						}
+						reader := bufio.NewReader(conn)
+						resp, err := http.ReadResponse(reader, &http.Request{Method: tt.method})
+						if err != nil {
+							t.Fatalf("response waited for the request body: %v", err)
+						}
+						defer resp.Body.Close()
+						if got, want := resp.StatusCode, tt.wantStatusCode; got != want {
+							t.Errorf("got status %d, want %d", got, want)
+						}
+						wantCacheControl := "no-store"
+						wantClose := tt.wantStatusCode != http.StatusOK
+						if !wantClose {
+							wantCacheControl = "public, max-age=86400"
+						}
+						if got, want := resp.Header.Get("Cache-Control"), wantCacheControl; got != want {
+							t.Errorf("got cache control %q, want %q", got, want)
+						}
+						if got, want := resp.Close, wantClose; got != want {
+							t.Errorf("got connection closure %t, want %t", got, want)
+						}
+						wantContent := "bad request: request bodies are not supported"
+						if tt.wantStatusCode == http.StatusOK {
+							wantContent = ""
+						} else if tt.wantStatusCode == http.StatusMethodNotAllowed {
+							wantContent = "method not allowed"
+							if got, want := resp.Header.Get("Allow"), "GET, HEAD"; got != want {
+								t.Errorf("got allow %q, want %q", got, want)
+							}
+						}
+						if tt.method == http.MethodHead {
+							wantContent = ""
+						}
+						content, err := io.ReadAll(resp.Body)
+						if err != nil {
+							t.Fatal(err)
+						}
+						if got, want := string(content), wantContent; got != want {
+							t.Errorf("got content %q, want %q", got, want)
+						}
+						if wantClose {
+							if _, err := reader.ReadByte(); !errors.Is(err, io.EOF) {
+								t.Errorf("connection waited for the request body: %v", err)
+							}
+						}
+					})
+				}
+			}
+		})
+
+		t.Run("HTTP2", func(t *testing.T) {
+			server := httptest.NewUnstartedServer(&Goproxy{ProxiedSumDBs: []string{"sum.golang.org"}})
+			server.EnableHTTP2 = true
+			server.StartTLS()
+			t.Cleanup(server.Close)
+			client := server.Client()
+			client.Timeout = 2 * time.Second
+			for _, tt := range []struct {
+				name          string
+				contentLength int64
+			}{
+				{"KnownLength", 1},
+				{"UnknownLength", -1},
+			} {
+				for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost} {
+					t.Run(tt.name+"/"+method, func(t *testing.T) {
+						bodyReader, bodyWriter := io.Pipe()
+						defer bodyReader.Close()
+						defer bodyWriter.Close()
+						req, err := http.NewRequestWithContext(t.Context(), method, server.URL+"/sumdb/sum.golang.org/supported", bodyReader)
+						if err != nil {
+							t.Fatal(err)
+						}
+						req.ContentLength = tt.contentLength
+						resp, err := client.Do(req)
+						if err != nil {
+							t.Fatalf("response waited for the request body: %v", err)
+						}
+						defer resp.Body.Close()
+						bodyWriter.Close()
+						wantStatusCode := http.StatusBadRequest
+						wantContent := "bad request: request bodies are not supported"
+						if method == http.MethodPost {
+							wantStatusCode, wantContent = http.StatusMethodNotAllowed, "method not allowed"
+						}
+						if resp.ProtoMajor != 2 || resp.StatusCode != wantStatusCode || resp.Close {
+							t.Errorf("got protocol %d, status %d, close %t, want HTTP/2, status %d, no closure", resp.ProtoMajor, resp.StatusCode, resp.Close, wantStatusCode)
+						}
+						if got, want := resp.Header.Get("Cache-Control"), "no-store"; got != want {
+							t.Errorf("got cache control %q, want %q", got, want)
+						}
+						content, err := io.ReadAll(resp.Body)
+						if err != nil {
+							t.Fatal(err)
+						}
+						if method == http.MethodHead {
+							wantContent = ""
+						}
+						if got, want := string(content), wantContent; got != want {
+							t.Errorf("got content %q, want %q", got, want)
+						}
+
+						var reused bool
+						ctx := httptrace.WithClientTrace(t.Context(), &httptrace.ClientTrace{GotConn: func(info httptrace.GotConnInfo) {
+							reused = info.Reused
+						}})
+						req, err = http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/sumdb/sum.golang.org/supported", nil)
+						if err != nil {
+							t.Fatal(err)
+						}
+						resp, err = client.Do(req)
+						if err != nil {
+							t.Fatal(err)
+						}
+						defer resp.Body.Close()
+						if !reused || resp.ProtoMajor != 2 || resp.StatusCode != http.StatusOK {
+							t.Errorf("got reused %t, protocol %d, status %d, want a reused HTTP/2 connection and 200", reused, resp.ProtoMajor, resp.StatusCode)
+						}
+					})
+				}
+			}
+		})
+	})
+
 	t.Run("GOPROXYOff", func(t *testing.T) {
 		info := marshalInfo("v1.0.1", time.Time{})
 		cacher := DirCacher(t.TempDir())
@@ -3209,6 +3470,10 @@ func compareErrors(got, want error) bool {
 	}
 	return errors.Is(got, want) || got.Error() == want.Error()
 }
+
+type testUnwrapResponseWriter struct{ http.ResponseWriter }
+
+func (rw testUnwrapResponseWriter) Unwrap() http.ResponseWriter { return rw.ResponseWriter }
 
 func newHTTPTestServer(t *testing.T, handler http.Handler) *httptest.Server {
 	server := httptest.NewServer(handler)
