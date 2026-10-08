@@ -135,8 +135,8 @@ func responseSuccess(rw http.ResponseWriter, req *http.Request, content io.Reade
 	}
 }
 
-// responseError responses error to the client with the err and cacheSensitive.
-func responseError(rw http.ResponseWriter, req *http.Request, err error, cacheSensitive bool) {
+// responseError responses error to the client with the err.
+func responseError(rw http.ResponseWriter, req *http.Request, err error) {
 	if _, ok := errors.AsType[*internalError](err); ok {
 		responseInternalServerError(rw, req)
 		return
@@ -147,10 +147,7 @@ func responseError(rw http.ResponseWriter, req *http.Request, err error, cacheSe
 	if errors.Is(err, fs.ErrNotExist) {
 		cacheControlMaxAge := -1
 		if _, ok := errors.AsType[*uncacheableError](err); !ok && !isBadUpstream && !isFetchTimedOut {
-			cacheControlMaxAge = 600
-			if cacheSensitive {
-				cacheControlMaxAge = 60
-			}
+			cacheControlMaxAge = 60
 		}
 		msg := err.Error()
 		if err == fs.ErrNotExist {
@@ -169,13 +166,13 @@ func responseError(rw http.ResponseWriter, req *http.Request, err error, cacheSe
 // responseUpstreamError is like [responseError] but reports upstream failures
 // with 502, 503, or 504. Local failures must be marked with [internalError],
 // and missing resources with [notExistError].
-func responseUpstreamError(rw http.ResponseWriter, req *http.Request, err error, cacheSensitive bool) {
+func responseUpstreamError(rw http.ResponseWriter, req *http.Request, err error) {
 	if _, ok := errors.AsType[*internalError](err); ok || errors.Is(err, context.Canceled) {
 		responseInternalServerError(rw, req)
 		return
 	}
 	if _, ok := errors.AsType[*notExistError](err); ok {
-		responseError(rw, req, err, cacheSensitive)
+		responseError(rw, req, err)
 		return
 	}
 

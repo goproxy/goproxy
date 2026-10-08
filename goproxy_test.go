@@ -153,6 +153,57 @@ func TestGoproxyInit(t *testing.T) {
 }
 
 func TestGoproxyServeHTTP(t *testing.T) {
+	t.Run("GOPROXYOff", func(t *testing.T) {
+		info := marshalInfo("v1.0.1", time.Time{})
+		cacher := DirCacher(t.TempDir())
+		if err := cacher.Put(t.Context(), "example.com/@v/v1.0.1.info", strings.NewReader(info)); err != nil {
+			t.Fatal(err)
+		}
+		g := &Goproxy{
+			Fetcher: &GoFetcher{Env: []string{"GOPROXY=off", "GOSUMDB=off"}},
+			Cacher:  cacher,
+			Logger:  slog.New(slog.DiscardHandler),
+		}
+		for _, tt := range []struct {
+			name             string
+			path             string
+			wantStatusCode   int
+			wantCacheControl string
+			wantContent      string
+		}{
+			{"Latest", "/example.com/@latest", http.StatusNotFound, "no-store", "not found: module lookup disabled by GOPROXY=off"},
+			{"List", "/example.com/@v/list", http.StatusNotFound, "no-store", "not found: module lookup disabled by GOPROXY=off"},
+			{"Revision", "/example.com/@v/main.info", http.StatusNotFound, "no-store", "not found: module lookup disabled by GOPROXY=off"},
+			{"Info", "/example.com/@v/v1.0.0.info", http.StatusNotFound, "no-store", "not found: module lookup disabled by GOPROXY=off"},
+			{"Mod", "/example.com/@v/v1.0.0.mod", http.StatusNotFound, "no-store", "not found: module lookup disabled by GOPROXY=off"},
+			{"Zip", "/example.com/@v/v1.0.0.zip", http.StatusNotFound, "no-store", "not found: module lookup disabled by GOPROXY=off"},
+			{"CachedInfo", "/example.com/@v/v1.0.1.info", http.StatusOK, "public, max-age=604800", info},
+		} {
+			for _, method := range []string{http.MethodGet, http.MethodHead} {
+				t.Run(tt.name+"/"+method, func(t *testing.T) {
+					rec := httptest.NewRecorder()
+					g.ServeHTTP(rec, httptest.NewRequest(method, tt.path, nil))
+					if got, want := rec.Code, tt.wantStatusCode; got != want {
+						t.Errorf("got %d, want %d", got, want)
+					}
+					if got, want := rec.Header().Get("Cache-Control"), tt.wantCacheControl; got != want {
+						t.Errorf("got %q, want %q", got, want)
+					}
+					if got, want := rec.Header().Get("Vary"), "Disable-Module-Fetch"; got != want {
+						t.Errorf("got %q, want %q", got, want)
+					}
+					wantContent := tt.wantContent
+					if method == http.MethodHead {
+						wantContent = ""
+					}
+					if got, want := rec.Body.String(), wantContent; got != want {
+						t.Errorf("got %q, want %q", got, want)
+					}
+				})
+			}
+		}
+	})
+
 	t.Run("DynamicQueryCaching", func(t *testing.T) {
 		info := marshalInfo("v1.0.0", time.Time{})
 		for _, resource := range []struct {
@@ -671,17 +722,16 @@ func TestGoproxyServeHTTP(t *testing.T) {
 					fmt.Fprint(rw, "module unavailable")
 				}))
 				for _, resource := range []struct {
-					name         string
-					path         string
-					cacheControl string
+					name string
+					path string
 				}{
-					{"Latest", "/example.com/@latest", "public, max-age=60"},
-					{"Query", "/example.com/@v/master.info", "public, max-age=60"},
-					{"List", "/example.com/@v/list", "public, max-age=60"},
-					{"Info", "/example.com/@v/v1.0.0.info", "public, max-age=600"},
-					{"Mod", "/example.com/@v/v1.0.0.mod", "public, max-age=600"},
-					{"Zip", "/example.com/@v/v1.0.0.zip", "public, max-age=600"},
-					{"SumDB", "/sumdb/sumdb.example.com/latest", "public, max-age=60"},
+					{"Latest", "/example.com/@latest"},
+					{"Query", "/example.com/@v/master.info"},
+					{"List", "/example.com/@v/list"},
+					{"Info", "/example.com/@v/v1.0.0.info"},
+					{"Mod", "/example.com/@v/v1.0.0.mod"},
+					{"Zip", "/example.com/@v/v1.0.0.zip"},
+					{"SumDB", "/sumdb/sumdb.example.com/latest"},
 				} {
 					t.Run(resource.name, func(t *testing.T) {
 						g := &Goproxy{
@@ -698,7 +748,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 								rec := httptest.NewRecorder()
 								g.ServeHTTP(rec, httptest.NewRequest(method, resource.path, nil))
 								wantStatusCode := http.StatusNotFound
-								wantCacheControl := resource.cacheControl
+								wantCacheControl := "public, max-age=60"
 								wantContent := "not found: module unavailable"
 								if tt.restricted {
 									wantCacheControl = "no-store"
@@ -760,7 +810,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 					if got, want := recr.Header.Get("Allow"), "GET, HEAD"; got != want {
 						t.Errorf("got %q, want %q", got, want)
 					}
-					if got, want := recr.Header.Get("Cache-Control"), "public, max-age=86400"; got != want {
+					if got, want := recr.Header.Get("Cache-Control"), "no-store"; got != want {
 						t.Errorf("got %q, want %q", got, want)
 					}
 					if b, err := io.ReadAll(recr.Body); err != nil {
@@ -813,7 +863,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 			wantStatusCode:   http.StatusMethodNotAllowed,
 			wantAllow:        "GET, HEAD",
 			wantContentType:  "text/plain; charset=utf-8",
-			wantCacheControl: "public, max-age=86400",
+			wantCacheControl: "no-store",
 			wantContent:      "method not allowed",
 		},
 		{
@@ -853,7 +903,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 			path:             "/sumdb/sumdb.example.com/supported",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
-			wantCacheControl: "public, max-age=86400",
+			wantCacheControl: "public, max-age=60",
 			wantContent:      "not found",
 		},
 	} {
@@ -1703,7 +1753,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			target:           "example.com/@v/v1.0.0.info",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
-			wantCacheControl: "public, max-age=600",
+			wantCacheControl: "public, max-age=60",
 			wantContent:      "not found",
 		},
 		{
@@ -1989,7 +2039,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 				contentType  string
 				cacheControl string
 			}{
-				{"Latest", "/latest", "latest", "text/plain; charset=utf-8", "public, max-age=3600"},
+				{"Latest", "/latest", "latest", "text/plain; charset=utf-8", "public, max-age=60"},
 				{"Lookup", "/lookup/example.com@v1.0.0", "lookup", "text/plain; charset=utf-8", "public, max-age=86400"},
 				{"DataTile", "/tile/8/data/000", "data", "text/plain; charset=utf-8", "public, max-age=86400"},
 				{"HashTile", "/tile/8/0/000.p/1", strings.Repeat("x", tlog.HashSize), "application/octet-stream", "public, max-age=86400"},
@@ -2071,7 +2121,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 			maxAge   int
 			bodySize int
 		}{
-			{"Latest", "/latest", 3600, 6},
+			{"Latest", "/latest", 60, 6},
 			{"Lookup", "/lookup/example.com@v1.0.0", 86400, 6},
 			{"DataTile", "/tile/2/data/000", 86400, 6},
 			{"PartialDataTile", "/tile/2/data/000.p/1", 86400, 6},
@@ -2299,7 +2349,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 				maxAge      int
 			}{
 				{"Supported", "/supported", "", 86400},
-				{"Latest", "/latest", "text/plain; charset=utf-8", 3600},
+				{"Latest", "/latest", "text/plain; charset=utf-8", 60},
 				{"Lookup", "/lookup/example.com/!project@v1.2.3", "text/plain; charset=utf-8", 86400},
 				{"HashTile", "/tile/2/0/000", "application/octet-stream", 86400},
 				{"PartialHashTile", "/tile/3/0/000.p/4", "application/octet-stream", 86400},
@@ -2412,21 +2462,22 @@ func TestGoproxyServeSumDB(t *testing.T) {
 			Logger:  slog.New(slog.DiscardHandler),
 		}
 		for _, tt := range []struct {
-			name string
-			path string
+			name             string
+			path             string
+			wantCacheControl string
 		}{
-			{"UnknownHost", "other.example.com/v2/supported"},
-			{"HostSuffix", "sumdb.example.com.evil/supported"},
-			{"UnknownPath", "sumdb.example.com/v3/supported"},
-			{"PathSuffix", "sumdb.example.com/v20/supported"},
-			{"MissingResource", "sumdb.example.com/v2"},
-			{"UnknownResource", "sumdb.example.com/v2/unknown"},
-			{"SupportedSuffix", "sumdb.example.com/v2/supported/extra"},
-			{"LatestSuffix", "sumdb.example.com/v2/latest/extra"},
-			{"InvalidLookup", "sumdb.example.com/v2/lookup/example.com@main"},
-			{"InvalidTile", "sumdb.example.com/v2/tile/8/0/1"},
-			{"LookupNameOverlap", "sumdb.example.com/lookup/example.com@v1.0.0"},
-			{"TileNameOverlap", "sumdb.example.com/tile/2/0/000"},
+			{"UnknownHost", "other.example.com/v2/supported", "public, max-age=60"},
+			{"HostSuffix", "sumdb.example.com.evil/supported", "public, max-age=60"},
+			{"UnknownPath", "sumdb.example.com/v3/supported", "public, max-age=86400"},
+			{"PathSuffix", "sumdb.example.com/v20/supported", "public, max-age=86400"},
+			{"MissingResource", "sumdb.example.com/v2", "public, max-age=86400"},
+			{"UnknownResource", "sumdb.example.com/v2/unknown", "public, max-age=86400"},
+			{"SupportedSuffix", "sumdb.example.com/v2/supported/extra", "public, max-age=86400"},
+			{"LatestSuffix", "sumdb.example.com/v2/latest/extra", "public, max-age=86400"},
+			{"InvalidLookup", "sumdb.example.com/v2/lookup/example.com@main", "public, max-age=86400"},
+			{"InvalidTile", "sumdb.example.com/v2/tile/8/0/1", "public, max-age=86400"},
+			{"LookupNameOverlap", "sumdb.example.com/lookup/example.com@v1.0.0", "public, max-age=86400"},
+			{"TileNameOverlap", "sumdb.example.com/tile/2/0/000", "public, max-age=86400"},
 		} {
 			for _, method := range []string{http.MethodGet, http.MethodHead} {
 				t.Run(tt.name+"/"+method, func(t *testing.T) {
@@ -2435,7 +2486,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 					if got, want := rec.Code, http.StatusNotFound; got != want {
 						t.Errorf("got status %d, want %d", got, want)
 					}
-					if got, want := rec.Header().Get("Cache-Control"), "public, max-age=86400"; got != want {
+					if got, want := rec.Header().Get("Cache-Control"), tt.wantCacheControl; got != want {
 						t.Errorf("got cache control %q, want %q", got, want)
 					}
 				})
@@ -2670,7 +2721,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 					wantContentType := tt.wantContentType
 					wantCacheControl := "public, max-age=86400"
 					if tt.path == "/latest" {
-						wantCacheControl = "public, max-age=3600"
+						wantCacheControl = "public, max-age=60"
 					}
 					if !tt.valid {
 						wantStatusCode, wantContent = http.StatusBadGateway, "bad gateway"
@@ -2866,7 +2917,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 			target:           "sumdb/sumdb.example.com/latest",
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "text/plain; charset=utf-8",
-			wantCacheControl: "public, max-age=3600",
+			wantCacheControl: "public, max-age=60",
 			wantContent:      "/latest",
 		},
 		{
@@ -2900,7 +2951,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 			target:           "sumdb/sumdb.example.com",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
-			wantCacheControl: "public, max-age=86400",
+			wantCacheControl: "public, max-age=60",
 			wantContent:      "not found",
 		},
 		{
@@ -2916,7 +2967,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 			target:           "sumdb/sumdb2.example.com/supported",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
-			wantCacheControl: "public, max-age=86400",
+			wantCacheControl: "public, max-age=60",
 			wantContent:      "not found",
 		},
 		{
@@ -2924,7 +2975,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 			target:           "://invalid",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
-			wantCacheControl: "public, max-age=86400",
+			wantCacheControl: "public, max-age=60",
 			wantContent:      "not found",
 		},
 		{

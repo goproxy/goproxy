@@ -181,7 +181,6 @@ func newServerHandler(cfg *serverCmdConfig, base http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/", base)
 	mux.HandleFunc("GET /healthz", func(rw http.ResponseWriter, _ *http.Request) {
-		rw.Header().Set("Cache-Control", "no-store")
 		rw.WriteHeader(http.StatusNoContent)
 	})
 
@@ -198,7 +197,10 @@ func newServerHandler(cfg *serverCmdConfig, base http.Handler) http.Handler {
 			})
 		}(handler)
 	}
-	return handler
+	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		rw.Header().Set("Cache-Control", "no-store")
+		handler.ServeHTTP(rw, req)
+	})
 }
 
 // httpDirFS implements [http.FileSystem] for the local file system.
