@@ -2530,7 +2530,7 @@ func TestWalkEnvGOPROXY(t *testing.T) {
 				if !errors.Is(err, fs.ErrNotExist) {
 					t.Fatalf("got %v, want %v", err, fs.ErrNotExist)
 				}
-				if _, ok := errors.AsType[*uncacheableError](err); !ok {
+				if _, ok := errors.AsType[*uncacheableNotExistError](err); !ok {
 					t.Errorf("got %v, want an uncacheable error", err)
 				}
 				if got, want := err.Error(), "module lookup disabled by GOPROXY=off"; got != want {
@@ -2666,7 +2666,7 @@ func TestWalkEnvGOPROXY(t *testing.T) {
 
 	t.Run("CacheRestrictions", func(t *testing.T) {
 		ordinaryErr := notExistErrorf("module unavailable")
-		restrictedErr := &uncacheableError{err: ordinaryErr}
+		restrictedErr := &uncacheableNotExistError{notExistError{err: ordinaryErr}}
 		for _, tt := range []struct {
 			name     string
 			firstErr error

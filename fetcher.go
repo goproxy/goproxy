@@ -566,7 +566,7 @@ func (gf *GoFetcher) execGo(ctx context.Context, args ...string) ([]byte, error)
 		msg = strings.TrimPrefix(msg, "go list -m: ")
 		msg = strings.TrimRight(msg, "\n")
 		// Go command diagnostics do not reliably distinguish absence from transient failures.
-		return nil, &uncacheableError{err: notExistErrorf("%s", msg)}
+		return nil, uncacheableNotExistErrorf("%s", msg)
 	}
 	return output, nil
 }
@@ -636,7 +636,7 @@ func walkEnvGOPROXY(envGOPROXY string, onProxy func(proxy *url.URL) error, onDir
 		case "direct":
 			return onDirect()
 		case "off":
-			return &uncacheableError{err: notExistErrorf("module lookup disabled by GOPROXY=off")}
+			return uncacheableNotExistErrorf("module lookup disabled by GOPROXY=off")
 		}
 		u, err := url.Parse(proxy)
 		if err != nil {

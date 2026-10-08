@@ -81,14 +81,16 @@ func notExistErrorf(format string, v ...any) error {
 	return &notExistError{err: fmt.Errorf(format, v...)}
 }
 
-// uncacheableError marks an error whose response must not be cached.
-type uncacheableError struct{ err error }
+// uncacheableNotExistError is a [notExistError] whose response must not be cached.
+type uncacheableNotExistError struct{ notExistError }
 
-// Error implements [error].
-func (e *uncacheableError) Error() string { return e.err.Error() }
+// Unwrap returns the underlying [notExistError].
+func (e *uncacheableNotExistError) Unwrap() error { return &e.notExistError }
 
-// Unwrap returns the underlying error.
-func (e *uncacheableError) Unwrap() error { return e.err }
+// uncacheableNotExistErrorf formats an error message and returns an [uncacheableNotExistError].
+func uncacheableNotExistErrorf(format string, v ...any) error {
+	return &uncacheableNotExistError{notExistError{err: fmt.Errorf(format, v...)}}
+}
 
 // httpError records an HTTP response status and its underlying error.
 type httpError struct {

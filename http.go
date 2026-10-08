@@ -87,11 +87,10 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 
 		switch resp.StatusCode {
 		case http.StatusNotFound, http.StatusGone:
-			err := notExistErrorf("%s", respBody)
 			if isCacheRestrictedHTTPResponse(resp.Header) {
-				return nil, &uncacheableError{err: err}
+				return nil, uncacheableNotExistErrorf("%s", respBody)
 			}
-			return nil, err
+			return nil, notExistErrorf("%s", respBody)
 		case http.StatusTooManyRequests,
 			http.StatusInternalServerError,
 			http.StatusBadGateway,
