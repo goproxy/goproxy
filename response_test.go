@@ -82,6 +82,49 @@ func TestResponseString(t *testing.T) {
 	}
 }
 
+func TestResponseBadRequest(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		msgs        []any
+		wantContent string
+	}{
+		{"NoMessage", nil, "bad request"},
+		{"EmptyMessage", []any{""}, "bad request"},
+		{"StatusText", []any{"bad request"}, "bad request"},
+		{"WithoutPrefix", []any{"foobar"}, "bad request: foobar"},
+		{"WithPrefix", []any{"bad request: foobar"}, "bad request: foobar"},
+		{"MultipleMessages", []any{"foo", "bar"}, "bad request: foobar"},
+		{"ErrorMessage", []any{errors.New("foobar")}, "bad request: foobar"},
+	} {
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			t.Run(tt.name+"/"+method, func(t *testing.T) {
+				rec := httptest.NewRecorder()
+				rec.Header().Set("Cache-Control", "public, max-age=86400")
+				responseBadRequest(rec, httptest.NewRequest(method, "/", nil), tt.msgs...)
+				recr := rec.Result()
+				if got, want := recr.StatusCode, http.StatusBadRequest; got != want {
+					t.Errorf("got %d, want %d", got, want)
+				}
+				if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
+				if got, want := recr.Header.Get("Cache-Control"), "no-store"; got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
+				wantContent := tt.wantContent
+				if method == http.MethodHead {
+					wantContent = ""
+				}
+				if b, err := io.ReadAll(recr.Body); err != nil {
+					t.Errorf("unexpected error %v", err)
+				} else if got, want := string(b), wantContent; got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
+			})
+		}
+	}
+}
+
 func TestResponseNotFound(t *testing.T) {
 	for _, tt := range []struct {
 		n           int

@@ -199,6 +199,10 @@ func newServerHandler(cfg *serverCmdConfig, base http.Handler) http.Handler {
 	}
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		rw.Header().Set("Cache-Control", "no-store")
+		if req.ContentLength != 0 {
+			base.ServeHTTP(rw, req)
+			return
+		}
 		handler.ServeHTTP(rw, req)
 	})
 }
