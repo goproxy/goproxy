@@ -55,8 +55,9 @@ type serverCmdConfig struct {
 	s3CacherOpts               s3CacherOptions
 	tempDir                    string
 	insecure                   bool
-	connectTimeout             time.Duration
+	readHeaderTimeout          time.Duration
 	fetchTimeout               time.Duration
+	connectTimeout             time.Duration
 	shutdownTimeout            time.Duration
 	logFormat                  string
 }
@@ -84,8 +85,9 @@ func newServerCmdConfig(cmd *cobra.Command) *serverCmdConfig {
 	fs.Int64Var(&cfg.s3CacherOpts.partSize, "cacher-s3-part-size", 100<<20, "multipart upload part size for the S3 cacher")
 	fs.StringVar(&cfg.tempDir, "temp-dir", os.TempDir(), "directory for storing temporary files")
 	fs.BoolVar(&cfg.insecure, "insecure", false, "allow insecure TLS connections")
-	fs.DurationVar(&cfg.connectTimeout, "connect-timeout", 30*time.Second, "maximum amount of time (0 means no limit) will wait for an outgoing connection to establish")
+	fs.DurationVar(&cfg.readHeaderTimeout, "read-header-timeout", 10*time.Second, "maximum amount of time (0 means no limit) will wait for incoming request headers to be read")
 	fs.DurationVar(&cfg.fetchTimeout, "fetch-timeout", 10*time.Minute, "maximum amount of time (0 means no limit) will wait for a fetch to complete")
+	fs.DurationVar(&cfg.connectTimeout, "connect-timeout", 30*time.Second, "maximum amount of time (0 means no limit) will wait for an outgoing connection to establish")
 	fs.DurationVar(&cfg.shutdownTimeout, "shutdown-timeout", 10*time.Second, "maximum amount of time (0 means no limit) will wait for the server to shutdown")
 	fs.StringVar(&cfg.logFormat, "log-format", "text", "log format to use (valid values: text, json)")
 	return cfg
@@ -138,9 +140,10 @@ func runServerCmd(cmd *cobra.Command, args []string, cfg *serverCmdConfig) error
 	handler := newServerHandler(cfg, g)
 
 	server := &http.Server{
-		Addr:        cfg.address,
-		Handler:     handler,
-		BaseContext: func(_ net.Listener) context.Context { return cmd.Context() },
+		Addr:              cfg.address,
+		Handler:           handler,
+		ReadHeaderTimeout: cfg.readHeaderTimeout,
+		BaseContext:       func(_ net.Listener) context.Context { return cmd.Context() },
 	}
 	stopCtx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
