@@ -744,19 +744,19 @@ func TestResponseError(t *testing.T) {
 		}
 	})
 
-	t.Run("Uncacheable", func(t *testing.T) {
+	t.Run("UncacheableNotExist", func(t *testing.T) {
 		for _, tt := range []struct {
 			name           string
 			err            error
 			wantStatusCode int
 			wantContent    string
 		}{
-			{"Direct", &uncacheableError{err: notExistErrorf("module unavailable")}, http.StatusNotFound, "not found: module unavailable"},
-			{"Wrapped", fmt.Errorf("fetch failed: %w", &uncacheableError{err: notExistErrorf("module unavailable")}), http.StatusNotFound, "not found: fetch failed: module unavailable"},
-			{"Nested", notExistErrorf("fetch failed: %w", &uncacheableError{err: errors.New("module unavailable")}), http.StatusNotFound, "not found: fetch failed: module unavailable"},
-			{"Joined", errors.Join(notExistErrorf("module unavailable"), &uncacheableError{err: errors.New("fetch failed")}), http.StatusNotFound, "not found: module unavailable\nfetch failed"},
-			{"Timeout", &uncacheableError{err: &notExistError{err: testTimeoutError{errors.New("operation timed out"), true}}}, http.StatusNotFound, "not found: operation timed out"},
-			{"Internal", &uncacheableError{err: errors.New("operation failed")}, http.StatusInternalServerError, "internal server error"},
+			{"Direct", uncacheableNotExistErrorf("module unavailable"), http.StatusNotFound, "not found: module unavailable"},
+			{"Wrapped", fmt.Errorf("fetch failed: %w", uncacheableNotExistErrorf("module unavailable")), http.StatusNotFound, "not found: fetch failed: module unavailable"},
+			{"Nested", notExistErrorf("fetch failed: %w", uncacheableNotExistErrorf("module unavailable")), http.StatusNotFound, "not found: fetch failed: module unavailable"},
+			{"Joined", errors.Join(notExistErrorf("module unavailable"), uncacheableNotExistErrorf("fetch failed")), http.StatusNotFound, "not found: module unavailable\nfetch failed"},
+			{"Timeout", &uncacheableNotExistError{notExistError{err: testTimeoutError{errors.New("operation timed out"), true}}}, http.StatusNotFound, "not found: operation timed out"},
+			{"Internal", &uncacheableNotExistError{notExistError{err: &internalError{err: errors.New("operation failed")}}}, http.StatusInternalServerError, "internal server error"},
 		} {
 			t.Run(tt.name, func(t *testing.T) {
 				for _, method := range []string{http.MethodGet, http.MethodHead} {
@@ -970,7 +970,7 @@ func TestResponseUpstreamError(t *testing.T) {
 		{"Canceled", context.Canceled, http.StatusInternalServerError, "no-store", "internal server error"},
 		{"CanceledNotExist", errors.Join(context.Canceled, upstreamErr), http.StatusInternalServerError, "no-store", "internal server error"},
 		{"NotExist", notExistErrorf("module unavailable"), http.StatusNotFound, "public, max-age=60", "not found: module unavailable"},
-		{"UncacheableNotExist", &uncacheableError{err: notExistErrorf("module unavailable")}, http.StatusNotFound, "no-store", "not found: module unavailable"},
+		{"UncacheableNotExist", uncacheableNotExistErrorf("module unavailable"), http.StatusNotFound, "no-store", "not found: module unavailable"},
 		{"OtherUpstream", errors.New("operation failed"), http.StatusBadGateway, "no-store", "bad gateway"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

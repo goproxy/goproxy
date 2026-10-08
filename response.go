@@ -146,7 +146,7 @@ func responseError(rw http.ResponseWriter, req *http.Request, err error) {
 	isFetchTimedOut := isFetchTimedOutError(err)
 	if errors.Is(err, fs.ErrNotExist) {
 		cacheControlMaxAge := -1
-		if _, ok := errors.AsType[*uncacheableError](err); !ok && !isBadUpstream && !isFetchTimedOut {
+		if _, ok := errors.AsType[*uncacheableNotExistError](err); !ok && !isBadUpstream && !isFetchTimedOut {
 			cacheControlMaxAge = 60
 		}
 		msg := err.Error()
