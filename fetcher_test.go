@@ -2384,7 +2384,7 @@ func TestGoFetcherExecGo(t *testing.T) {
 					t.Fatalf("got %v, want %v", err, fs.ErrNotExist)
 				}
 				rec := httptest.NewRecorder()
-				responseError(rec, httptest.NewRequest(http.MethodGet, "/", nil), err, false)
+				responseError(rec, httptest.NewRequest(http.MethodGet, "/", nil), err)
 				if got, want := rec.Code, http.StatusNotFound; got != want {
 					t.Errorf("got %d, want %d", got, want)
 				}
@@ -2505,6 +2505,44 @@ func TestCleanEnvGOPROXY(t *testing.T) {
 }
 
 func TestWalkEnvGOPROXY(t *testing.T) {
+	t.Run("Off", func(t *testing.T) {
+		for _, tt := range []struct {
+			name           string
+			envGOPROXY     string
+			proxyErr       error
+			wantProxyCalls int
+		}{
+			{"Only", "off", nil, 0},
+			{"BeforeDirect", "off,direct", nil, 0},
+			{"BeforeProxy", "off,https://example.com", nil, 0},
+			{"AfterAbsence", "https://example.com,off", fs.ErrNotExist, 1},
+			{"AfterFailure", "https://example.com|off", errBadUpstream, 1},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				var proxyCalls int
+				err := walkEnvGOPROXY(tt.envGOPROXY, func(*url.URL) error {
+					proxyCalls++
+					return tt.proxyErr
+				}, func() error {
+					t.Error("unexpected direct fetch")
+					return nil
+				})
+				if !errors.Is(err, fs.ErrNotExist) {
+					t.Fatalf("got %v, want %v", err, fs.ErrNotExist)
+				}
+				if _, ok := errors.AsType[*uncacheableError](err); !ok {
+					t.Errorf("got %v, want an uncacheable error", err)
+				}
+				if got, want := err.Error(), "module lookup disabled by GOPROXY=off"; got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
+				if got, want := proxyCalls, tt.wantProxyCalls; got != want {
+					t.Errorf("got proxy calls %d, want %d", got, want)
+				}
+			})
+		}
+	})
+
 	t.Run("InternalErrors", func(t *testing.T) {
 		gf := &GoFetcher{TempDir: filepath.Join(t.TempDir(), "missing")}
 		proxy := &url.URL{Scheme: "https", Host: "example.com"}

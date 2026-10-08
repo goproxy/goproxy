@@ -128,7 +128,7 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	switch req.Method {
 	case http.MethodGet, http.MethodHead:
 	default:
-		responseMethodNotAllowed(rw, req, 86400)
+		responseMethodNotAllowed(rw, req, -1)
 		return
 	}
 
@@ -219,7 +219,7 @@ func (g *Goproxy) serveFetchQuery(rw http.ResponseWriter, req *http.Request, tar
 	version, time, err := g.fetcher.Query(req.Context(), modulePath, moduleQuery)
 	if err != nil {
 		g.logger.Error("failed to query module version", "error", err, "target", target)
-		responseError(rw, req, err, true)
+		responseError(rw, req, err)
 		return
 	}
 	responseSuccess(rw, req, strings.NewReader(marshalInfo(version, time)), "application/json; charset=utf-8", 60)
@@ -230,7 +230,7 @@ func (g *Goproxy) serveFetchList(rw http.ResponseWriter, req *http.Request, targ
 	versions, err := g.fetcher.List(req.Context(), modulePath)
 	if err != nil {
 		g.logger.Error("failed to list module versions", "error", err, "target", target)
-		responseError(rw, req, err, true)
+		responseError(rw, req, err)
 		return
 	}
 	responseSuccess(rw, req, strings.NewReader(strings.Join(versions, "\n")), "text/plain; charset=utf-8", 60)
@@ -269,7 +269,7 @@ func (g *Goproxy) serveFetchDownload(rw http.ResponseWriter, req *http.Request, 
 	info, mod, zip, err := g.fetcher.Download(req.Context(), modulePath, moduleVersion)
 	if err != nil {
 		g.logger.Error("failed to download module version", "error", err, "target", target)
-		responseError(rw, req, err, false)
+		responseError(rw, req, err)
 		return
 	}
 	defer info.Close()
@@ -323,7 +323,7 @@ func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, target s
 	}
 	u, ok := g.proxiedSumDBs[name]
 	if !ok {
-		responseNotFound(rw, req, 86400)
+		responseNotFound(rw, req, 60)
 		return
 	}
 	path = path[len(name):]
@@ -340,7 +340,7 @@ func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, target s
 		return
 	case path == "/latest":
 		contentType = "text/plain; charset=utf-8"
-		cacheControlMaxAge = 3600
+		cacheControlMaxAge = 60
 	case strings.HasPrefix(path, "/lookup/"):
 		escapedModulePath, escapedModuleVersion, ok := strings.Cut(strings.TrimPrefix(path, "/lookup/"), "@")
 		if !ok {
@@ -404,7 +404,7 @@ func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, target s
 	}
 	if err != nil {
 		g.logger.Error("failed to proxy checksum database", "error", err, "target", target)
-		responseUpstreamError(rw, req, err, true)
+		responseUpstreamError(rw, req, err)
 		return
 	}
 	if isCacheRestrictedHTTPResponse(header) {

@@ -717,32 +717,27 @@ func TestResponseError(t *testing.T) {
 		} {
 			t.Run(tt.name, func(t *testing.T) {
 				for _, method := range []string{http.MethodGet, http.MethodHead} {
-					for _, cacheSensitive := range []bool{false, true} {
-						rec := httptest.NewRecorder()
-						responseError(rec, httptest.NewRequest(method, "/", nil), tt.err, cacheSensitive)
-						wantStatusCode := http.StatusInternalServerError
-						wantCacheControl := "no-store"
-						wantContent := "internal server error"
-						if tt.err == cause {
-							wantStatusCode = http.StatusNotFound
-							wantCacheControl = "public, max-age=600"
-							if cacheSensitive {
-								wantCacheControl = "public, max-age=60"
-							}
-							wantContent = "not found: " + cause.Error()
-						}
-						if got, want := rec.Code, wantStatusCode; got != want {
-							t.Errorf("method %s, cache sensitive %t: got %d, want %d", method, cacheSensitive, got, want)
-						}
-						if got, want := rec.Header().Get("Cache-Control"), wantCacheControl; got != want {
-							t.Errorf("method %s, cache sensitive %t: got %q, want %q", method, cacheSensitive, got, want)
-						}
-						if method == http.MethodHead {
-							wantContent = ""
-						}
-						if got, want := rec.Body.String(), wantContent; got != want {
-							t.Errorf("method %s, cache sensitive %t: got %q, want %q", method, cacheSensitive, got, want)
-						}
+					rec := httptest.NewRecorder()
+					responseError(rec, httptest.NewRequest(method, "/", nil), tt.err)
+					wantStatusCode := http.StatusInternalServerError
+					wantCacheControl := "no-store"
+					wantContent := "internal server error"
+					if tt.err == cause {
+						wantStatusCode = http.StatusNotFound
+						wantCacheControl = "public, max-age=60"
+						wantContent = "not found: " + cause.Error()
+					}
+					if got, want := rec.Code, wantStatusCode; got != want {
+						t.Errorf("method %s: got %d, want %d", method, got, want)
+					}
+					if got, want := rec.Header().Get("Cache-Control"), wantCacheControl; got != want {
+						t.Errorf("method %s: got %q, want %q", method, got, want)
+					}
+					if method == http.MethodHead {
+						wantContent = ""
+					}
+					if got, want := rec.Body.String(), wantContent; got != want {
+						t.Errorf("method %s: got %q, want %q", method, got, want)
 					}
 				}
 			})
@@ -766,22 +761,20 @@ func TestResponseError(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				for _, method := range []string{http.MethodGet, http.MethodHead} {
 					t.Run(method, func(t *testing.T) {
-						for _, cacheSensitive := range []bool{false, true} {
-							rec := httptest.NewRecorder()
-							responseError(rec, httptest.NewRequest(method, "/", nil), tt.err, cacheSensitive)
-							if got, want := rec.Code, tt.wantStatusCode; got != want {
-								t.Errorf("cache sensitive %t: got status %d, want %d", cacheSensitive, got, want)
-							}
-							if got, want := rec.Header().Get("Cache-Control"), "no-store"; got != want {
-								t.Errorf("cache sensitive %t: got cache control %q, want %q", cacheSensitive, got, want)
-							}
-							wantContent := tt.wantContent
-							if method == http.MethodHead {
-								wantContent = ""
-							}
-							if got, want := rec.Body.String(), wantContent; got != want {
-								t.Errorf("cache sensitive %t: got content %q, want %q", cacheSensitive, got, want)
-							}
+						rec := httptest.NewRecorder()
+						responseError(rec, httptest.NewRequest(method, "/", nil), tt.err)
+						if got, want := rec.Code, tt.wantStatusCode; got != want {
+							t.Errorf("got status %d, want %d", got, want)
+						}
+						if got, want := rec.Header().Get("Cache-Control"), "no-store"; got != want {
+							t.Errorf("got cache control %q, want %q", got, want)
+						}
+						wantContent := tt.wantContent
+						if method == http.MethodHead {
+							wantContent = ""
+						}
+						if got, want := rec.Body.String(), wantContent; got != want {
+							t.Errorf("got content %q, want %q", got, want)
 						}
 					})
 				}
@@ -829,26 +822,24 @@ func TestResponseError(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				for _, method := range []string{http.MethodGet, http.MethodHead} {
 					t.Run(method, func(t *testing.T) {
-						for _, cacheSensitive := range []bool{false, true} {
-							rec := httptest.NewRecorder()
-							responseError(rec, httptest.NewRequest(method, "/", nil), tt.err, cacheSensitive)
-							resp := rec.Result()
-							if got, want := resp.StatusCode, tt.wantStatusCode; got != want {
-								t.Errorf("cache sensitive %t: got status %d, want %d", cacheSensitive, got, want)
-							}
-							if got, want := resp.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
-								t.Errorf("cache sensitive %t: got content type %q, want %q", cacheSensitive, got, want)
-							}
-							if got, want := resp.Header.Get("Cache-Control"), "no-store"; got != want {
-								t.Errorf("cache sensitive %t: got cache control %q, want %q", cacheSensitive, got, want)
-							}
-							wantContent := tt.wantContent
-							if method == http.MethodHead {
-								wantContent = ""
-							}
-							if got, want := rec.Body.String(), wantContent; got != want {
-								t.Errorf("cache sensitive %t: got content %q, want %q", cacheSensitive, got, want)
-							}
+						rec := httptest.NewRecorder()
+						responseError(rec, httptest.NewRequest(method, "/", nil), tt.err)
+						resp := rec.Result()
+						if got, want := resp.StatusCode, tt.wantStatusCode; got != want {
+							t.Errorf("got status %d, want %d", got, want)
+						}
+						if got, want := resp.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+							t.Errorf("got content type %q, want %q", got, want)
+						}
+						if got, want := resp.Header.Get("Cache-Control"), "no-store"; got != want {
+							t.Errorf("got cache control %q, want %q", got, want)
+						}
+						wantContent := tt.wantContent
+						if method == http.MethodHead {
+							wantContent = ""
+						}
+						if got, want := rec.Body.String(), wantContent; got != want {
+							t.Errorf("got content %q, want %q", got, want)
 						}
 					})
 				}
@@ -859,7 +850,6 @@ func TestResponseError(t *testing.T) {
 	for _, tt := range []struct {
 		n                int
 		err              error
-		cacheSensitive   bool
 		wantStatusCode   int
 		wantCacheControl string
 		wantContent      string
@@ -868,7 +858,7 @@ func TestResponseError(t *testing.T) {
 			n:                1,
 			err:              fs.ErrNotExist,
 			wantStatusCode:   http.StatusNotFound,
-			wantCacheControl: "public, max-age=600",
+			wantCacheControl: "public, max-age=60",
 			wantContent:      "not found",
 		},
 		{
@@ -887,24 +877,23 @@ func TestResponseError(t *testing.T) {
 		},
 		{
 			n:                4,
-			err:              notExistErrorf("cache sensitive"),
-			cacheSensitive:   true,
+			err:              notExistErrorf("module unavailable"),
 			wantStatusCode:   http.StatusNotFound,
 			wantCacheControl: "public, max-age=60",
-			wantContent:      "not found: cache sensitive",
+			wantContent:      "not found: module unavailable",
 		},
 		{
 			n:                5,
 			err:              notExistErrorf("not found: bad upstream"),
 			wantStatusCode:   http.StatusNotFound,
-			wantCacheControl: "public, max-age=600",
+			wantCacheControl: "public, max-age=60",
 			wantContent:      "not found: bad upstream",
 		},
 		{
 			n:                6,
 			err:              notExistErrorf("not found: fetch timed out"),
 			wantStatusCode:   http.StatusNotFound,
-			wantCacheControl: "public, max-age=600",
+			wantCacheControl: "public, max-age=60",
 			wantContent:      "not found: fetch timed out",
 		},
 		{
@@ -925,13 +914,12 @@ func TestResponseError(t *testing.T) {
 			n:                9,
 			err:              notExistErrorf("unknown revision %q", "fetch timed out"),
 			wantStatusCode:   http.StatusNotFound,
-			wantCacheControl: "public, max-age=600",
+			wantCacheControl: "public, max-age=60",
 			wantContent:      `not found: unknown revision "fetch timed out"`,
 		},
 		{
 			n:                10,
 			err:              notExistErrorf("unknown revision %q", "bad upstream"),
-			cacheSensitive:   true,
 			wantStatusCode:   http.StatusNotFound,
 			wantCacheControl: "public, max-age=60",
 			wantContent:      `not found: unknown revision "bad upstream"`,
@@ -939,7 +927,7 @@ func TestResponseError(t *testing.T) {
 	} {
 		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			responseError(rec, httptest.NewRequest("", "/", nil), tt.err, tt.cacheSensitive)
+			responseError(rec, httptest.NewRequest("", "/", nil), tt.err)
 			recr := rec.Result()
 			if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
 				t.Errorf("got %d, want %d", got, want)
@@ -981,36 +969,30 @@ func TestResponseUpstreamError(t *testing.T) {
 		{"NestedLocal", &httpError{err: localErr}, http.StatusInternalServerError, "no-store", "internal server error"},
 		{"Canceled", context.Canceled, http.StatusInternalServerError, "no-store", "internal server error"},
 		{"CanceledNotExist", errors.Join(context.Canceled, upstreamErr), http.StatusInternalServerError, "no-store", "internal server error"},
-		{"NotExist", notExistErrorf("module unavailable"), http.StatusNotFound, "public, max-age=600", "not found: module unavailable"},
+		{"NotExist", notExistErrorf("module unavailable"), http.StatusNotFound, "public, max-age=60", "not found: module unavailable"},
 		{"UncacheableNotExist", &uncacheableError{err: notExistErrorf("module unavailable")}, http.StatusNotFound, "no-store", "not found: module unavailable"},
 		{"OtherUpstream", errors.New("operation failed"), http.StatusBadGateway, "no-store", "bad gateway"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			for _, method := range []string{http.MethodGet, http.MethodHead} {
 				t.Run(method, func(t *testing.T) {
-					for _, cacheSensitive := range []bool{false, true} {
-						rec := httptest.NewRecorder()
-						responseUpstreamError(rec, httptest.NewRequest(method, "/", nil), tt.err, cacheSensitive)
-						if got, want := rec.Code, tt.wantStatusCode; got != want {
-							t.Errorf("cache sensitive %t: got status %d, want %d", cacheSensitive, got, want)
-						}
-						wantCacheControl := tt.wantCacheControl
-						if cacheSensitive && wantCacheControl == "public, max-age=600" {
-							wantCacheControl = "public, max-age=60"
-						}
-						if got, want := rec.Header().Get("Cache-Control"), wantCacheControl; got != want {
-							t.Errorf("cache sensitive %t: got cache control %q, want %q", cacheSensitive, got, want)
-						}
-						if got, want := rec.Header().Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
-							t.Errorf("cache sensitive %t: got content type %q, want %q", cacheSensitive, got, want)
-						}
-						wantContent := tt.wantContent
-						if method == http.MethodHead {
-							wantContent = ""
-						}
-						if got, want := rec.Body.String(), wantContent; got != want {
-							t.Errorf("cache sensitive %t: got content %q, want %q", cacheSensitive, got, want)
-						}
+					rec := httptest.NewRecorder()
+					responseUpstreamError(rec, httptest.NewRequest(method, "/", nil), tt.err)
+					if got, want := rec.Code, tt.wantStatusCode; got != want {
+						t.Errorf("got status %d, want %d", got, want)
+					}
+					if got, want := rec.Header().Get("Cache-Control"), tt.wantCacheControl; got != want {
+						t.Errorf("got cache control %q, want %q", got, want)
+					}
+					if got, want := rec.Header().Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+						t.Errorf("got content type %q, want %q", got, want)
+					}
+					wantContent := tt.wantContent
+					if method == http.MethodHead {
+						wantContent = ""
+					}
+					if got, want := rec.Body.String(), wantContent; got != want {
+						t.Errorf("got content %q, want %q", got, want)
 					}
 				})
 			}

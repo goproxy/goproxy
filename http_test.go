@@ -166,8 +166,8 @@ func TestHTTPGet(t *testing.T) {
 		}{
 			{"BadRequest", http.StatusBadRequest, 1, nil, http.StatusInternalServerError, "no-store"},
 			{"RequestTimeout", http.StatusRequestTimeout, 1, nil, http.StatusInternalServerError, "no-store"},
-			{"NotFound", http.StatusNotFound, 1, fs.ErrNotExist, http.StatusNotFound, "public, max-age=600"},
-			{"Gone", http.StatusGone, 1, fs.ErrNotExist, http.StatusNotFound, "public, max-age=600"},
+			{"NotFound", http.StatusNotFound, 1, fs.ErrNotExist, http.StatusNotFound, "public, max-age=60"},
+			{"Gone", http.StatusGone, 1, fs.ErrNotExist, http.StatusNotFound, "public, max-age=60"},
 			{"TooManyRequests", http.StatusTooManyRequests, 3, errBadUpstream, http.StatusNotFound, "no-store"},
 			{"InternalServerError", http.StatusInternalServerError, 3, errBadUpstream, http.StatusNotFound, "no-store"},
 			{"BadGateway", http.StatusBadGateway, 3, errBadUpstream, http.StatusNotFound, "no-store"},
@@ -209,7 +209,7 @@ func TestHTTPGet(t *testing.T) {
 						t.Errorf("got attempts %d, want %d", got, want)
 					}
 					rec := httptest.NewRecorder()
-					responseError(rec, httptest.NewRequest(http.MethodGet, "/", nil), err, false)
+					responseError(rec, httptest.NewRequest(http.MethodGet, "/", nil), err)
 					if got, want := rec.Code, tt.wantStatusCode; got != want {
 						t.Errorf("got module status %d, want %d", got, want)
 					}
@@ -644,8 +644,8 @@ func TestHTTPGet(t *testing.T) {
 								t.Errorf("got %q, want %q", got, want)
 							}
 							rec := httptest.NewRecorder()
-							responseError(rec, httptest.NewRequest(http.MethodGet, "/", nil), err, false)
-							if got, want := rec.Header().Get("Cache-Control"), "public, max-age=600"; got != want {
+							responseError(rec, httptest.NewRequest(http.MethodGet, "/", nil), err)
+							if got, want := rec.Header().Get("Cache-Control"), "public, max-age=60"; got != want {
 								t.Errorf("got %q, want %q", got, want)
 							}
 						case http.StatusBadRequest, http.StatusNotImplemented:
@@ -679,7 +679,7 @@ func TestHTTPGet(t *testing.T) {
 				body             string
 				wantCacheControl string
 			}{
-				{"OrdinaryAbsence", nil, "module unavailable", "public, max-age=600"},
+				{"OrdinaryAbsence", nil, "module unavailable", "public, max-age=60"},
 				{"NoStore", http.Header{"Cache-Control": {"no-store"}}, "module unavailable", "no-store"},
 				{"NoCache", http.Header{"Cache-Control": {"no-cache"}}, "module unavailable", "no-store"},
 				{"Private", http.Header{"Cache-Control": {"private"}}, "module unavailable", "no-store"},
@@ -689,15 +689,15 @@ func TestHTTPGet(t *testing.T) {
 				{"QuotedZeroMaxAge", http.Header{"Cache-Control": {`max-age="\0"`}}, "module unavailable", "no-store"},
 				{"ZeroSharedMaxAge", http.Header{"Cache-Control": {"s-maxage=0"}}, "module unavailable", "no-store"},
 				{"PositiveSharedMaxAge", http.Header{"Cache-Control": {"s-maxage=60"}}, "module unavailable", "no-store"},
-				{"PositiveMaxAge", http.Header{"Cache-Control": {"max-age=60"}}, "module unavailable", "public, max-age=600"},
+				{"PositiveMaxAge", http.Header{"Cache-Control": {"max-age=60"}}, "module unavailable", "public, max-age=60"},
 				{"InvalidMaxAge", http.Header{"Cache-Control": {"max-age=invalid"}}, "module unavailable", "no-store"},
 				{"DuplicateMaxAge", http.Header{"Cache-Control": {"max-age=60, max-age=120"}}, "module unavailable", "no-store"},
 				{"VaryAll", http.Header{"Vary": {"*"}}, "module unavailable", "no-store"},
-				{"BadUpstreamText", nil, "unknown revision bad upstream", "public, max-age=600"},
-				{"TimeoutText", nil, "unknown revision fetch timed out", "public, max-age=600"},
+				{"BadUpstreamText", nil, "unknown revision bad upstream", "public, max-age=60"},
+				{"TimeoutText", nil, "unknown revision fetch timed out", "public, max-age=60"},
 				{"RestrictedTimeoutText", http.Header{"Cache-Control": {"no-store"}}, "request timed out", "no-store"},
 				{"RestrictionAfterSplitQuotedArgument", http.Header{"Cache-Control": {`extension="a`, `b", no-store`}}, "module unavailable", "no-store"},
-				{"SplitQuotedArgument", http.Header{"Cache-Control": {`extension="a`, "no-store", `b", public`}}, "module unavailable", "public, max-age=600"},
+				{"SplitQuotedArgument", http.Header{"Cache-Control": {`extension="a`, "no-store", `b", public`}}, "module unavailable", "public, max-age=60"},
 			} {
 				t.Run(strconv.Itoa(statusCode)+"/"+tt.name, func(t *testing.T) {
 					server := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
@@ -726,7 +726,7 @@ func TestHTTPGet(t *testing.T) {
 						t.Errorf("got %q, want %q", got, want)
 					}
 					rec := httptest.NewRecorder()
-					responseError(rec, httptest.NewRequest(http.MethodGet, "/", nil), err, false)
+					responseError(rec, httptest.NewRequest(http.MethodGet, "/", nil), err)
 					if got, want := rec.Code, wantStatusCode; got != want {
 						t.Errorf("got %d, want %d", got, want)
 					}
@@ -998,9 +998,9 @@ func TestHTTPGetTemp(t *testing.T) {
 			header           http.Header
 			wantCacheControl string
 		}{
-			{"ContentLength", false, false, nil, "public, max-age=600"},
-			{"Chunked", true, false, nil, "public, max-age=600"},
-			{"Gzip", false, true, nil, "public, max-age=600"},
+			{"ContentLength", false, false, nil, "public, max-age=60"},
+			{"Chunked", true, false, nil, "public, max-age=60"},
+			{"Gzip", false, true, nil, "public, max-age=60"},
 			{"NoStore", false, false, http.Header{"Cache-Control": {"no-store"}}, "no-store"},
 			{"NoCache", true, false, http.Header{"Cache-Control": {"no-cache"}}, "no-store"},
 			{"Private", false, true, http.Header{"Cache-Control": {"private"}}, "no-store"},
@@ -1043,7 +1043,7 @@ func TestHTTPGetTemp(t *testing.T) {
 				}
 				for _, method := range []string{http.MethodGet, http.MethodHead} {
 					rec := httptest.NewRecorder()
-					responseError(rec, httptest.NewRequest(method, "/", nil), err, false)
+					responseError(rec, httptest.NewRequest(method, "/", nil), err)
 					if got, want := rec.Code, http.StatusNotFound; got != want {
 						t.Errorf("method %s: got status %d, want %d", method, got, want)
 					}

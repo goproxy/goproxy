@@ -636,7 +636,7 @@ func walkEnvGOPROXY(envGOPROXY string, onProxy func(proxy *url.URL) error, onDir
 		case "direct":
 			return onDirect()
 		case "off":
-			return notExistErrorf("module lookup disabled by GOPROXY=off")
+			return &uncacheableError{err: notExistErrorf("module lookup disabled by GOPROXY=off")}
 		}
 		u, err := url.Parse(proxy)
 		if err != nil {
