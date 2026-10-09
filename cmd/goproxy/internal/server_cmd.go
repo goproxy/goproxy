@@ -8,8 +8,10 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -35,9 +37,10 @@ During a direct module fetch, the Go binary is called while holding a lock file
 in the module cache directory (specified by GOMODCACHE) to prevent potential
 conflicts. Misuse of a shared GOMODCACHE may lead to deadlocks.
 `),
+		Args: cobra.NoArgs,
 	}
 	cfg := newServerCmdConfig(cmd)
-	cmd.RunE = func(cmd *cobra.Command, args []string) error { return runServerCmd(cmd, args, cfg) }
+	cmd.RunE = func(cmd *cobra.Command, _ []string) error { return runServerCmd(cmd, cfg) }
 	return cmd
 }
 
@@ -56,6 +59,7 @@ type serverCmdConfig struct {
 	tempDir                    string
 	insecure                   bool
 	readHeaderTimeout          time.Duration
+	idleTimeout                time.Duration
 	fetchTimeout               time.Duration
 	connectTimeout             time.Duration
 	shutdownTimeout            time.Duration
@@ -66,39 +70,80 @@ type serverCmdConfig struct {
 func newServerCmdConfig(cmd *cobra.Command) *serverCmdConfig {
 	cfg := &serverCmdConfig{}
 	fs := cmd.Flags()
+	fs.SortFlags = false
 	fs.StringVar(&cfg.address, "address", "localhost:8080", "TCP address that the server listens on")
-	fs.StringVar(&cfg.tlsCertFile, "tls-cert-file", "", "path to the TLS certificate file")
-	fs.StringVar(&cfg.tlsKeyFile, "tls-key-file", "", "path to the TLS key file")
-	fs.StringVar(&cfg.pathPrefix, "path-prefix", "", "prefix for all request paths")
+	fs.StringVar(&cfg.tlsCertFile, "tls-cert-file", "", "path to the TLS certificate file (requires --tls-key-file)")
+	fs.StringVar(&cfg.tlsKeyFile, "tls-key-file", "", "path to the TLS key file (requires --tls-cert-file)")
+	fs.StringVar(&cfg.pathPrefix, "path-prefix", "", "absolute path prefix for all request paths")
 	fs.StringVar(&cfg.goBin, "go-bin", "go", "path to the Go binary that is used to execute direct fetches")
-	fs.IntVar(&cfg.maxConcurrentDirectFetches, "max-concurrent-direct-fetches", 0, "maximum number (0 means no limit) of concurrent direct fetches")
+	fs.IntVar(&cfg.maxConcurrentDirectFetches, "max-concurrent-direct-fetches", 0, "maximum number of concurrent direct fetches (0 means no limit)")
 	fs.StringSliceVar(&cfg.proxiedSumDBs, "proxied-sumdbs", nil, "list of proxied checksum databases")
 	fs.StringVar(&cfg.cacher, "cacher", "dir", "cacher to use (valid values: dir, s3)")
 	fs.StringVar(&cfg.cacherDir, "cacher-dir", "caches", "directory for the dir cacher")
-	fs.StringVar(&cfg.s3CacherOpts.accessKeyID, "cacher-s3-access-key-id", "", "access key ID for the S3 cacher")
-	fs.StringVar(&cfg.s3CacherOpts.secretAccessKey, "cacher-s3-secret-access-key", "", "secret access key for the S3 cacher")
+	fs.StringVar(&cfg.s3CacherOpts.accessKeyID, "cacher-s3-access-key-id", "", "access key ID for the S3 cacher (requires --cacher-s3-secret-access-key)")
+	fs.StringVar(&cfg.s3CacherOpts.secretAccessKey, "cacher-s3-secret-access-key", "", "secret access key for the S3 cacher (requires --cacher-s3-access-key-id)")
 	fs.StringVar(&cfg.s3CacherOpts.endpoint, "cacher-s3-endpoint", defaultS3Endpoint, "endpoint for the S3 cacher")
 	fs.BoolVar(&cfg.s3CacherOpts.disableTLS, "cacher-s3-disable-tls", false, "disable TLS for the S3 cacher")
 	fs.StringVar(&cfg.s3CacherOpts.region, "cacher-s3-region", "us-east-1", "region for the S3 cacher")
-	fs.StringVar(&cfg.s3CacherOpts.bucket, "cacher-s3-bucket", "", "bucket name for the S3 cacher")
+	fs.StringVar(&cfg.s3CacherOpts.bucket, "cacher-s3-bucket", "", "bucket name for the S3 cacher (required when --cacher=s3)")
 	fs.BoolVar(&cfg.s3CacherOpts.forcePathStyle, "cacher-s3-force-path-style", false, "force path-style addressing for the S3 cacher")
 	fs.Int64Var(&cfg.s3CacherOpts.partSize, "cacher-s3-part-size", 100<<20, "multipart upload part size for the S3 cacher")
 	fs.StringVar(&cfg.tempDir, "temp-dir", os.TempDir(), "directory for storing temporary files")
-	fs.BoolVar(&cfg.insecure, "insecure", false, "allow insecure TLS connections")
-	fs.DurationVar(&cfg.readHeaderTimeout, "read-header-timeout", 10*time.Second, "maximum amount of time (0 means no limit) will wait for incoming request headers to be read")
-	fs.DurationVar(&cfg.fetchTimeout, "fetch-timeout", 10*time.Minute, "maximum amount of time (0 means no limit) will wait for a fetch to complete")
-	fs.DurationVar(&cfg.connectTimeout, "connect-timeout", 30*time.Second, "maximum amount of time (0 means no limit) will wait for an outgoing connection to establish")
-	fs.DurationVar(&cfg.shutdownTimeout, "shutdown-timeout", 10*time.Second, "maximum amount of time (0 means no limit) will wait for the server to shutdown")
+	fs.BoolVar(&cfg.insecure, "insecure", false, "skip TLS certificate verification for outgoing HTTP requests")
+	fs.DurationVar(&cfg.readHeaderTimeout, "read-header-timeout", 10*time.Second, "maximum amount of time to read incoming request headers (0 means no limit)")
+	fs.DurationVar(&cfg.idleTimeout, "idle-timeout", time.Minute, "maximum amount of time to wait for the next incoming request (0 means no limit)")
+	fs.DurationVar(&cfg.fetchTimeout, "fetch-timeout", 10*time.Minute, "maximum amount of time to wait for a fetch to complete (0 means no limit)")
+	fs.DurationVar(&cfg.connectTimeout, "connect-timeout", 30*time.Second, "maximum amount of time to establish an outgoing connection (0 means no limit)")
+	fs.DurationVar(&cfg.shutdownTimeout, "shutdown-timeout", 10*time.Second, "maximum amount of time to shut down the server gracefully (0 means no limit)")
 	fs.StringVar(&cfg.logFormat, "log-format", "text", "log format to use (valid values: text, json)")
 	return cfg
 }
 
+// validate validates the server command configuration.
+func (cfg *serverCmdConfig) validate() error {
+	if (cfg.tlsCertFile == "") != (cfg.tlsKeyFile == "") {
+		return errors.New("invalid TLS configuration: --tls-cert-file and --tls-key-file must be set together")
+	}
+
+	pathPrefix := strings.TrimSuffix(cfg.pathPrefix, "/")
+	if pathPrefix != "" && (!strings.HasPrefix(pathPrefix, "/") || pathPrefix == "/" || path.Clean(pathPrefix) != pathPrefix) {
+		return fmt.Errorf("invalid --path-prefix: %q is not a clean absolute path", cfg.pathPrefix)
+	}
+
+	if cfg.maxConcurrentDirectFetches < 0 {
+		return fmt.Errorf("invalid --max-concurrent-direct-fetches: %d must not be negative", cfg.maxConcurrentDirectFetches)
+	}
+
+	for _, timeout := range []struct {
+		name  string
+		value time.Duration
+	}{
+		{"read-header-timeout", cfg.readHeaderTimeout},
+		{"idle-timeout", cfg.idleTimeout},
+		{"fetch-timeout", cfg.fetchTimeout},
+		{"connect-timeout", cfg.connectTimeout},
+		{"shutdown-timeout", cfg.shutdownTimeout},
+	} {
+		if timeout.value < 0 {
+			return fmt.Errorf("invalid --%s: %v must not be negative", timeout.name, timeout.value)
+		}
+	}
+
+	return nil
+}
+
 // runServerCmd runs the server command.
-func runServerCmd(cmd *cobra.Command, args []string, cfg *serverCmdConfig) error {
+func runServerCmd(cmd *cobra.Command, cfg *serverCmdConfig) error {
+	if err := cfg.validate(); err != nil {
+		return err
+	}
+
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.DialContext = (&net.Dialer{Timeout: cfg.connectTimeout, KeepAlive: 30 * time.Second}).DialContext
 	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: cfg.insecure}
 	transport.RegisterProtocol("file", http.NewFileTransport(httpDirFS{}))
+	defer transport.CloseIdleConnections()
+
 	g := &goproxy.Goproxy{
 		Fetcher: &goproxy.GoFetcher{
 			GoBin:                      cfg.goBin,
@@ -137,25 +182,44 @@ func runServerCmd(cmd *cobra.Command, args []string, cfg *serverCmdConfig) error
 	}
 	g.Logger = slog.New(logHandler)
 
-	handler := newServerHandler(cfg, g)
-
 	server := &http.Server{
-		Addr:              cfg.address,
-		Handler:           handler,
-		ReadHeaderTimeout: cfg.readHeaderTimeout,
-		BaseContext:       func(_ net.Listener) context.Context { return cmd.Context() },
+		Handler:                      newServerHandler(cfg, g),
+		DisableGeneralOptionsHandler: true,
+		ReadHeaderTimeout:            cfg.readHeaderTimeout,
+		IdleTimeout:                  cfg.idleTimeout,
+		ErrorLog:                     slog.NewLogLogger(logHandler, slog.LevelError),
+		BaseContext:                  func(_ net.Listener) context.Context { return cmd.Context() },
 	}
+
 	stopCtx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	address := cfg.address
+	if address == "" {
+		address = ":http"
+		if cfg.tlsCertFile != "" {
+			address = ":https"
+		}
+	}
+	listener, err := (&net.ListenConfig{}).Listen(stopCtx, "tcp", address)
+	if err != nil {
+		if stopCtx.Err() != nil {
+			return nil
+		}
+		return err
+	}
+	defer listener.Close()
+
 	serverErrCh := make(chan error, 1)
 	go func() {
-		if cfg.tlsCertFile != "" && cfg.tlsKeyFile != "" {
-			serverErrCh <- server.ListenAndServeTLS(cfg.tlsCertFile, cfg.tlsKeyFile)
+		if cfg.tlsCertFile != "" {
+			serverErrCh <- server.ServeTLS(listener, cfg.tlsCertFile, cfg.tlsKeyFile)
 		} else {
-			serverErrCh <- server.ListenAndServe()
+			serverErrCh <- server.Serve(listener)
 		}
 		stop()
 	}()
+
 	<-stopCtx.Done()
 	select {
 	case serverErr := <-serverErrCh:
@@ -181,16 +245,18 @@ func runServerCmd(cmd *cobra.Command, args []string, cfg *serverCmdConfig) error
 
 // newServerHandler creates a new [http.Handler] used by the server command.
 func newServerHandler(cfg *serverCmdConfig, base http.Handler) http.Handler {
+	prefix := strings.TrimSuffix(cfg.pathPrefix, "/")
+	patternPrefix := (&url.URL{Path: prefix}).EscapedPath()
+	handler := base
+	if prefix != "" {
+		handler = http.StripPrefix(prefix, handler)
+	}
 	mux := http.NewServeMux()
-	mux.Handle("/", base)
-	mux.HandleFunc("GET /healthz", func(rw http.ResponseWriter, _ *http.Request) {
+	mux.Handle(patternPrefix+"/", handler)
+	mux.HandleFunc("GET "+patternPrefix+"/healthz", func(rw http.ResponseWriter, _ *http.Request) {
 		rw.WriteHeader(http.StatusNoContent)
 	})
-
-	handler := http.Handler(mux)
-	if cfg.pathPrefix != "" {
-		handler = http.StripPrefix(cfg.pathPrefix, handler)
-	}
+	handler = mux
 	if cfg.fetchTimeout > 0 {
 		handler = func(h http.Handler) http.Handler {
 			return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
@@ -202,7 +268,7 @@ func newServerHandler(cfg *serverCmdConfig, base http.Handler) http.Handler {
 	}
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		rw.Header().Set("Cache-Control", "no-store")
-		if req.ContentLength != 0 {
+		if req.Method != http.MethodGet && req.Method != http.MethodHead || req.ContentLength != 0 {
 			base.ServeHTTP(rw, req)
 			return
 		}

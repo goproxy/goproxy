@@ -65,6 +65,9 @@ func newS3Cacher(opts s3CacherOptions) (*s3Cacher, error) {
 	if opts.region == "" {
 		return nil, errors.New("invalid S3 region: region is empty")
 	}
+	if opts.bucket == "" {
+		return nil, errors.New("invalid S3 bucket: bucket is empty")
+	}
 
 	var baseEndpoint *string
 	if !strings.EqualFold(endpoint.Host, defaultS3Endpoint) {
