@@ -29,6 +29,7 @@ func TestNewS3Cacher(t *testing.T) {
 		secretAccessKey string
 		endpoint        string
 		region          string
+		bucket          string
 		partSize        int64
 		wantErr         string
 	}{
@@ -80,10 +81,18 @@ func TestNewS3Cacher(t *testing.T) {
 			wantErr:  "invalid S3 region: region is empty",
 		},
 		{
+			name:     "EmptyBucket",
+			endpoint: defaultS3Endpoint,
+			region:   "us-east-1",
+			partSize: 5 << 20,
+			wantErr:  "invalid S3 bucket: bucket is empty",
+		},
+		{
 			name:            "MissingAccessKeyID",
 			secretAccessKey: "secret-access-key",
 			endpoint:        defaultS3Endpoint,
 			region:          "us-east-1",
+			bucket:          "test-bucket",
 			partSize:        5 << 20,
 			wantErr:         "invalid S3 credentials: access key ID is empty",
 		},
@@ -92,6 +101,7 @@ func TestNewS3Cacher(t *testing.T) {
 			accessKeyID: "access-key-id",
 			endpoint:    defaultS3Endpoint,
 			region:      "us-east-1",
+			bucket:      "test-bucket",
 			partSize:    5 << 20,
 			wantErr:     "invalid S3 credentials: secret access key is empty",
 		},
@@ -114,6 +124,7 @@ func TestNewS3Cacher(t *testing.T) {
 				secretAccessKey: tt.secretAccessKey,
 				endpoint:        tt.endpoint,
 				region:          tt.region,
+				bucket:          tt.bucket,
 				partSize:        tt.partSize,
 			})
 			if err == nil {
