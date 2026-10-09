@@ -31,13 +31,16 @@ func TestNewServerCmdConfig(t *testing.T) {
 		name                  string
 		args                  []string
 		wantReadHeaderTimeout time.Duration
+		wantWriteTimeout      time.Duration
 		wantIdleTimeout       time.Duration
 	}{
-		{"Default", nil, 10 * time.Second, time.Minute},
-		{"ReadHeaderTimeout", []string{"--read-header-timeout=250ms"}, 250 * time.Millisecond, time.Minute},
-		{"DisabledReadHeaderTimeout", []string{"--read-header-timeout=0"}, 0, time.Minute},
-		{"IdleTimeout", []string{"--idle-timeout=250ms"}, 10 * time.Second, 250 * time.Millisecond},
-		{"DisabledIdleTimeout", []string{"--idle-timeout=0"}, 10 * time.Second, 0},
+		{"Default", nil, 10 * time.Second, 20 * time.Minute, time.Minute},
+		{"ReadHeaderTimeout", []string{"--read-header-timeout=250ms"}, 250 * time.Millisecond, 20 * time.Minute, time.Minute},
+		{"DisabledReadHeaderTimeout", []string{"--read-header-timeout=0"}, 0, 20 * time.Minute, time.Minute},
+		{"WriteTimeout", []string{"--write-timeout=250ms"}, 10 * time.Second, 250 * time.Millisecond, time.Minute},
+		{"DisabledWriteTimeout", []string{"--write-timeout=0"}, 10 * time.Second, 0, time.Minute},
+		{"IdleTimeout", []string{"--idle-timeout=250ms"}, 10 * time.Second, 20 * time.Minute, 250 * time.Millisecond},
+		{"DisabledIdleTimeout", []string{"--idle-timeout=0"}, 10 * time.Second, 20 * time.Minute, 0},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := &cobra.Command{}
@@ -47,6 +50,9 @@ func TestNewServerCmdConfig(t *testing.T) {
 			}
 			if got, want := cfg.readHeaderTimeout, tt.wantReadHeaderTimeout; got != want {
 				t.Errorf("got read header timeout %v, want %v", got, want)
+			}
+			if got, want := cfg.writeTimeout, tt.wantWriteTimeout; got != want {
+				t.Errorf("got write timeout %v, want %v", got, want)
 			}
 			if got, want := cfg.idleTimeout, tt.wantIdleTimeout; got != want {
 				t.Errorf("got idle timeout %v, want %v", got, want)
@@ -79,11 +85,12 @@ func TestServerCmdConfigValidate(t *testing.T) {
 		{"ParentSegment", []string{"--path-prefix=/a/../b"}, `invalid --path-prefix: "/a/../b" is not a clean absolute path`},
 		{"NegativeConcurrency", []string{"--max-concurrent-direct-fetches=-1"}, "invalid --max-concurrent-direct-fetches: -1 must not be negative"},
 		{"NegativeReadHeaderTimeout", []string{"--read-header-timeout=-1s"}, "invalid --read-header-timeout: -1s must not be negative"},
+		{"NegativeWriteTimeout", []string{"--write-timeout=-1s"}, "invalid --write-timeout: -1s must not be negative"},
 		{"NegativeIdleTimeout", []string{"--idle-timeout=-1s"}, "invalid --idle-timeout: -1s must not be negative"},
 		{"NegativeFetchTimeout", []string{"--fetch-timeout=-1s"}, "invalid --fetch-timeout: -1s must not be negative"},
 		{"NegativeConnectTimeout", []string{"--connect-timeout=-1s"}, "invalid --connect-timeout: -1s must not be negative"},
 		{"NegativeShutdownTimeout", []string{"--shutdown-timeout=-1s"}, "invalid --shutdown-timeout: -1s must not be negative"},
-		{"ZeroLimits", []string{"--read-header-timeout=0", "--idle-timeout=0", "--fetch-timeout=0", "--connect-timeout=0", "--shutdown-timeout=0", "--max-concurrent-direct-fetches=0"}, ""},
+		{"ZeroLimits", []string{"--read-header-timeout=0", "--write-timeout=0", "--idle-timeout=0", "--fetch-timeout=0", "--connect-timeout=0", "--shutdown-timeout=0", "--max-concurrent-direct-fetches=0"}, ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := &cobra.Command{}
@@ -192,6 +199,298 @@ func TestRunServerCmd(t *testing.T) {
 				if _, err := reader.ReadByte(); !errors.Is(err, io.EOF) {
 					t.Errorf("connection did not close after the header timeout: %v", err)
 				}
+			})
+		}
+	})
+
+	t.Run("WriteTimeout", func(t *testing.T) {
+		t.Run("Configuration", func(t *testing.T) {
+			upstream := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+				time.Sleep(200 * time.Millisecond)
+				io.WriteString(rw, "latest")
+			}))
+			defer upstream.Close()
+			for _, tt := range []struct {
+				name         string
+				writeTimeout string
+				wantError    bool
+			}{
+				{"Enabled", "100ms", true},
+				{"Disabled", "0", false},
+			} {
+				t.Run(tt.name, func(t *testing.T) {
+					address := startTestServerCmd(t,
+						"--write-timeout="+tt.writeTimeout, "--fetch-timeout=2s",
+						"--proxied-sumdbs=sumdb.example.com "+upstream.URL,
+					)
+					client := &http.Client{Timeout: 2 * time.Second}
+					defer client.CloseIdleConnections()
+					resp, err := client.Get("http://" + address + "/sumdb/sumdb.example.com/latest")
+					if tt.wantError {
+						if err == nil {
+							resp.Body.Close()
+							t.Fatal("configured write timeout did not expire")
+						}
+						return
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer resp.Body.Close()
+					content, err := io.ReadAll(resp.Body)
+					if err != nil || resp.StatusCode != http.StatusOK || string(content) != "latest" {
+						t.Errorf("got status %d, content %q, error %v", resp.StatusCode, content, err)
+					}
+				})
+			}
+		})
+		for _, tt := range []struct {
+			name  string
+			http2 bool
+		}{
+			{"HTTP1", false},
+			{"HTTP2", true},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+				startServer := func(t *testing.T, cfg *serverCmdConfig, base http.Handler) *httptest.Server {
+					t.Helper()
+					server := httptest.NewUnstartedServer(newServerHandler(cfg, base))
+					server.Config.WriteTimeout = cfg.writeTimeout
+					server.EnableHTTP2 = tt.http2
+					if tt.http2 {
+						server.StartTLS()
+					} else {
+						server.Start()
+					}
+					t.Cleanup(server.Close)
+					server.Client().Timeout = 3 * time.Second
+					return server
+				}
+				t.Run("CachedModule", func(t *testing.T) {
+					cacher := goproxy.DirCacher(t.TempDir())
+					content := strings.Repeat("content", 10_000)
+					const target = "example.com/@v/v1.0.0.zip"
+					if err := cacher.Put(t.Context(), target, strings.NewReader(content)); err != nil {
+						t.Fatal(err)
+					}
+					server := startServer(t, &serverCmdConfig{writeTimeout: time.Second, fetchTimeout: time.Second}, &goproxy.Goproxy{Cacher: cacher})
+					for _, tt := range []struct {
+						name           string
+						method         string
+						header         http.Header
+						wantStatusCode int
+						wantContent    string
+					}{
+						{"GET", http.MethodGet, nil, http.StatusOK, content},
+						{"HEAD", http.MethodHead, nil, http.StatusOK, ""},
+						{"Range", http.MethodGet, http.Header{"Range": {"bytes=100-66000"}}, http.StatusPartialContent, content[100:66001]},
+						{"HEADRange", http.MethodHead, http.Header{"Range": {"bytes=100-66000"}}, http.StatusOK, ""},
+						{"NotModified", http.MethodGet, http.Header{"If-Modified-Since": {time.Now().Add(time.Hour).UTC().Format(http.TimeFormat)}}, http.StatusNotModified, ""},
+					} {
+						t.Run(tt.name, func(t *testing.T) {
+							req, err := http.NewRequestWithContext(t.Context(), tt.method, server.URL+"/"+target, nil)
+							if err != nil {
+								t.Fatal(err)
+							}
+							if tt.header != nil {
+								req.Header = tt.header
+							}
+							resp, err := server.Client().Do(req)
+							if err != nil {
+								t.Fatal(err)
+							}
+							defer resp.Body.Close()
+							body, err := io.ReadAll(resp.Body)
+							if err != nil || resp.StatusCode != tt.wantStatusCode || string(body) != tt.wantContent {
+								t.Errorf("got status %d, content length %d, error %v", resp.StatusCode, len(body), err)
+							}
+							if got, want := resp.Header.Get("Cache-Control"), "public, max-age=604800"; got != want {
+								t.Errorf("got cache control %q, want %q", got, want)
+							}
+						})
+					}
+				})
+				t.Run("RequestProcessing", func(t *testing.T) {
+					server := startServer(t, &serverCmdConfig{writeTimeout: 100 * time.Millisecond}, http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+						time.Sleep(200 * time.Millisecond)
+						io.WriteString(rw, "content")
+					}))
+					if resp, err := server.Client().Get(server.URL + "/slow"); err == nil {
+						resp.Body.Close()
+						t.Fatal("request processing did not consume the write timeout")
+					}
+				})
+				for _, copyContent := range []bool{false, true} {
+					name := "Write"
+					if copyContent {
+						name = "Copy"
+					}
+					t.Run(name, func(t *testing.T) {
+						t.Run("Stalled", func(t *testing.T) {
+							const contentLength = 32 << 20
+							file, err := os.CreateTemp(t.TempDir(), "content")
+							if err != nil {
+								t.Fatal(err)
+							}
+							defer file.Close()
+							if err := file.Truncate(contentLength); err != nil {
+								t.Fatal(err)
+							}
+							done := make(chan error, 1)
+							server := startServer(t, &serverCmdConfig{writeTimeout: 100 * time.Millisecond}, http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+								rw.Header().Set("Content-Length", fmt.Sprint(contentLength))
+								rw.WriteHeader(http.StatusOK)
+								var err error
+								if copyContent {
+									_, err = io.CopyN(rw, file, contentLength)
+								} else {
+									_, err = rw.Write(make([]byte, contentLength))
+								}
+								done <- err
+							}))
+							resp, err := server.Client().Get(server.URL + "/large")
+							if err != nil {
+								t.Fatal(err)
+							}
+							defer resp.Body.Close()
+							select {
+							case err := <-done:
+								if !errors.Is(err, os.ErrDeadlineExceeded) {
+									t.Errorf("got write error %v, want deadline exceeded", err)
+								}
+							case <-time.After(2 * time.Second):
+								t.Fatal("stalled response write did not time out")
+							}
+							ctx := httptrace.WithClientTrace(t.Context(), &httptrace.ClientTrace{
+								GotConn: func(info httptrace.GotConnInfo) {
+									if tt.http2 && !info.Reused {
+										t.Error("stalled stream closed the HTTP/2 connection")
+									}
+								},
+							})
+							req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/healthz", nil)
+							if err != nil {
+								t.Fatal(err)
+							}
+							health, err := server.Client().Do(req)
+							if err != nil {
+								t.Fatal(err)
+							}
+							health.Body.Close()
+							if health.StatusCode != http.StatusNoContent {
+								t.Errorf("got health status %d, want 204", health.StatusCode)
+							}
+							if n, err := io.Copy(io.Discard, resp.Body); err == nil || n >= contentLength {
+								t.Errorf("incomplete response appeared complete: length %d, error %v", n, err)
+							}
+						})
+						t.Run("FixedDeadline", func(t *testing.T) {
+							done := make(chan error, 1)
+							server := startServer(t, &serverCmdConfig{writeTimeout: 250 * time.Millisecond}, http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+								send := func(w io.Writer) error {
+									for range 24 {
+										time.Sleep(75 * time.Millisecond)
+										if _, err := w.Write(make([]byte, 32<<10)); err != nil {
+											return err
+										}
+									}
+									return nil
+								}
+								rw.WriteHeader(http.StatusOK)
+								var err error
+								if copyContent {
+									reader, writer := io.Pipe()
+									defer reader.Close()
+									go func() { writer.CloseWithError(send(writer)) }()
+									_, err = io.Copy(rw, reader)
+								} else {
+									err = send(rw)
+								}
+								done <- err
+							}))
+							resp, err := server.Client().Get(server.URL + "/large")
+							if err != nil {
+								t.Fatal(err)
+							}
+							defer resp.Body.Close()
+							n, err := io.Copy(io.Discard, resp.Body)
+							if err == nil || n >= 24*(32<<10) {
+								t.Errorf("write deadline was extended by progress: length %d, error %v", n, err)
+							}
+							if err := <-done; !errors.Is(err, os.ErrDeadlineExceeded) {
+								t.Errorf("got write error %v, want deadline exceeded", err)
+							}
+						})
+					})
+				}
+				t.Run("TimeoutResponseAndKeepAlive", func(t *testing.T) {
+					server := startServer(t, &serverCmdConfig{writeTimeout: 100 * time.Millisecond, fetchTimeout: 20 * time.Millisecond}, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+						<-req.Context().Done()
+						rw.WriteHeader(http.StatusGatewayTimeout)
+						io.WriteString(rw, "fetch timed out")
+					}))
+					client := server.Client()
+					resp, err := client.Get(server.URL + "/slow")
+					if err != nil {
+						t.Fatal(err)
+					}
+					content, err := io.ReadAll(resp.Body)
+					resp.Body.Close()
+					if err != nil || resp.StatusCode != http.StatusGatewayTimeout || string(content) != "fetch timed out" {
+						t.Fatalf("got status %d, content %q, error %v", resp.StatusCode, content, err)
+					}
+					time.Sleep(200 * time.Millisecond)
+					ctx := httptrace.WithClientTrace(t.Context(), &httptrace.ClientTrace{
+						GotConn: func(info httptrace.GotConnInfo) {
+							if !info.Reused {
+								t.Error("completed response left a write deadline on the connection")
+							}
+						},
+					})
+					req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/healthz", nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					resp, err = client.Do(req)
+					if err != nil {
+						t.Fatal(err)
+					}
+					resp.Body.Close()
+					if resp.StatusCode != http.StatusNoContent {
+						t.Errorf("got status %d, want 204", resp.StatusCode)
+					}
+				})
+				t.Run("Disabled", func(t *testing.T) {
+					done := make(chan error, 1)
+					server := startServer(t, &serverCmdConfig{fetchTimeout: 20 * time.Millisecond}, http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+						rw.WriteHeader(http.StatusOK)
+						content := make([]byte, 64<<10)
+						for range 512 {
+							if _, err := rw.Write(content); err != nil {
+								done <- err
+								return
+							}
+						}
+						done <- nil
+					}))
+					resp, err := server.Client().Get(server.URL + "/large")
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer resp.Body.Close()
+					select {
+					case err := <-done:
+						t.Fatalf("write timeout was not disabled: %v", err)
+					case <-time.After(200 * time.Millisecond):
+					}
+					resp.Body.Close()
+					select {
+					case <-done:
+					case <-time.After(2 * time.Second):
+						t.Error("handler did not stop after closing the client")
+					}
+				})
 			})
 		}
 	})

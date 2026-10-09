@@ -59,6 +59,7 @@ type serverCmdConfig struct {
 	tempDir                    string
 	insecure                   bool
 	readHeaderTimeout          time.Duration
+	writeTimeout               time.Duration
 	idleTimeout                time.Duration
 	fetchTimeout               time.Duration
 	connectTimeout             time.Duration
@@ -91,6 +92,7 @@ func newServerCmdConfig(cmd *cobra.Command) *serverCmdConfig {
 	fs.StringVar(&cfg.tempDir, "temp-dir", os.TempDir(), "directory for storing temporary files")
 	fs.BoolVar(&cfg.insecure, "insecure", false, "skip TLS certificate verification for outgoing HTTP requests")
 	fs.DurationVar(&cfg.readHeaderTimeout, "read-header-timeout", 10*time.Second, "maximum amount of time to read incoming request headers (0 means no limit)")
+	fs.DurationVar(&cfg.writeTimeout, "write-timeout", 20*time.Minute, "maximum amount of time to write a response, including request processing (0 means no limit)")
 	fs.DurationVar(&cfg.idleTimeout, "idle-timeout", time.Minute, "maximum amount of time to wait for the next incoming request (0 means no limit)")
 	fs.DurationVar(&cfg.fetchTimeout, "fetch-timeout", 10*time.Minute, "maximum amount of time to wait for a fetch to complete (0 means no limit)")
 	fs.DurationVar(&cfg.connectTimeout, "connect-timeout", 30*time.Second, "maximum amount of time to establish an outgoing connection (0 means no limit)")
@@ -119,6 +121,7 @@ func (cfg *serverCmdConfig) validate() error {
 		value time.Duration
 	}{
 		{"read-header-timeout", cfg.readHeaderTimeout},
+		{"write-timeout", cfg.writeTimeout},
 		{"idle-timeout", cfg.idleTimeout},
 		{"fetch-timeout", cfg.fetchTimeout},
 		{"connect-timeout", cfg.connectTimeout},
@@ -186,6 +189,7 @@ func runServerCmd(cmd *cobra.Command, cfg *serverCmdConfig) error {
 		Handler:                      newServerHandler(cfg, g),
 		DisableGeneralOptionsHandler: true,
 		ReadHeaderTimeout:            cfg.readHeaderTimeout,
+		WriteTimeout:                 cfg.writeTimeout,
 		IdleTimeout:                  cfg.idleTimeout,
 		ErrorLog:                     slog.NewLogLogger(logHandler, slog.LevelError),
 		BaseContext:                  func(_ net.Listener) context.Context { return cmd.Context() },
