@@ -238,7 +238,7 @@ func (gf *GoFetcher) proxyQuery(ctx context.Context, path, query string, proxy *
 		u = proxy.JoinPath(escapedPath + "/@v/" + url.PathEscape(escapedQuery) + ".info")
 	}
 	var info bytes.Buffer
-	_, err = httpGet(ctx, gf.httpClient, u.String(), &info)
+	_, err = httpGet(ctx, gf.httpClient, u.String(), &limitedWriter{Writer: &info, maxBytes: maxInfoSize})
 	if err != nil {
 		return
 	}
@@ -493,15 +493,15 @@ func (gf *GoFetcher) proxyDownload(ctx context.Context, path, version string, pr
 		}
 	}()
 
-	infoFile, _, err = httpGetTemp(ctx, gf.httpClient, urlWithoutExt+".info", tempDir)
+	infoFile, _, err = httpGetTemp(ctx, gf.httpClient, urlWithoutExt+".info", tempDir, maxInfoSize)
 	if err != nil {
 		return
 	}
-	modFile, _, err = httpGetTemp(ctx, gf.httpClient, urlWithoutExt+".mod", tempDir)
+	modFile, _, err = httpGetTemp(ctx, gf.httpClient, urlWithoutExt+".mod", tempDir, zip.MaxGoMod)
 	if err != nil {
 		return
 	}
-	zipFile, _, err = httpGetTemp(ctx, gf.httpClient, urlWithoutExt+".zip", tempDir)
+	zipFile, _, err = httpGetTemp(ctx, gf.httpClient, urlWithoutExt+".zip", tempDir, zip.MaxZipFile)
 	if err != nil {
 		return
 	}
@@ -739,6 +739,9 @@ func checkCanonicalVersion(path, version string) error {
 	return nil
 }
 
+// maxInfoSize is the maximum accepted size in bytes of a module info response or file.
+const maxInfoSize = 1 << 20
+
 // marshalInfo marshals the version and t as info.
 func marshalInfo(version string, t time.Time) string {
 	return fmt.Sprintf(`{"Version":%q,"Time":%q}`, version, t.UTC().Format(time.RFC3339Nano))
@@ -762,9 +765,17 @@ func unmarshalInfo(s string) (string, time.Time, error) {
 // unmarshalInfoFile is like [unmarshalInfo] but reads the info from the file
 // targeted by the name.
 func unmarshalInfoFile(name string) (string, time.Time, error) {
-	b, err := os.ReadFile(name)
+	f, err := os.Open(name)
 	if err != nil {
 		return "", time.Time{}, &internalError{err: err}
+	}
+	defer f.Close()
+	b, err := io.ReadAll(io.LimitReader(f, maxInfoSize+1))
+	if err != nil {
+		return "", time.Time{}, &internalError{err: err}
+	}
+	if len(b) > maxInfoSize {
+		return "", time.Time{}, fmt.Errorf("%w: invalid info file: size exceeds %d bytes", errBadUpstream, maxInfoSize)
 	}
 	version, t, err := unmarshalInfo(string(b))
 	if err != nil {
