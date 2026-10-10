@@ -27,6 +27,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/fstest"
 	"testing/iotest"
 	"testing/synctest"
 	"time"
@@ -123,7 +124,42 @@ func TestGoproxyInit(t *testing.T) {
 			want    map[string]string
 		}{
 			{"Empty", nil, nil},
-			{"Invalid", []string{"", " \t", "example.com/v2 ://invalid"}, nil},
+			{
+				"Invalid",
+				[]string{
+					"", " \t", "example.com/v2 ://invalid",
+					"example.com /base", "example.com //upstream.example.com/base", "example.com upstream.example.com/base",
+					"example.com http://", "example.com https://", "example.com https:///base", "example.com https:/base",
+					"example.com https://:443/base", "example.com https:opaque",
+					"example.com file:", "example.com file://", "example.com custom://", "example.com custom:opaque",
+				},
+				nil,
+			},
+			{
+				"Valid",
+				[]string{
+					"example.com/v2",
+					"http.example.com http://upstream.example.com:8080/base",
+					"https.example.com HTTPS://upstream.example.com/base%20path?token=value#fragment",
+					"auth.example.com https://user:pass@upstream.example.com/base",
+					"file.example.com file:///base",
+					"file-root.example.com file:///",
+					"custom.example.com custom://upstream/base",
+					"custom-path.example.com custom:/base",
+					"custom-root.example.com custom:///",
+				},
+				map[string]string{
+					"example.com/v2":          "https://example.com/v2",
+					"http.example.com":        "http://upstream.example.com:8080/base",
+					"https.example.com":       "https://upstream.example.com/base%20path?token=value#fragment",
+					"auth.example.com":        "https://user:pass@upstream.example.com/base",
+					"file.example.com":        "file:///base",
+					"file-root.example.com":   "file:///",
+					"custom.example.com":      "custom://upstream/base",
+					"custom-path.example.com": "custom:/base",
+					"custom-root.example.com": "custom:///",
+				},
+			},
 			{
 				"Duplicate",
 				[]string{"example.com/v2 https://first.example.com", "example.com", "example.com/v2 https://last.example.com/base"},
@@ -131,7 +167,7 @@ func TestGoproxyInit(t *testing.T) {
 			},
 			{
 				"InvalidDuplicate",
-				[]string{"example.com/v2 https://first.example.com", "example.com/v2 ://invalid"},
+				[]string{"example.com/v2 https://first.example.com", "example.com/v2 ://invalid", "example.com/v2 https://", "example.com/v2 custom:opaque"},
 				map[string]string{"example.com/v2": "https://first.example.com"},
 			},
 		} {
@@ -2588,6 +2624,104 @@ func TestGoproxyServeSumDB(t *testing.T) {
 				}
 			})
 		}
+	})
+
+	t.Run("UpstreamURLs", func(t *testing.T) {
+		for _, tt := range []struct {
+			name    string
+			url     string
+			wantURL string
+		}{
+			{"MissingHTTPHost", "http://", ""},
+			{"MissingHTTPSHost", "https://", ""},
+			{"HostlessHTTPPath", "https:///base", ""},
+			{"PortOnlyHTTPHost", "https://:443/base", ""},
+			{"Relative", "/base", ""},
+			{"Opaque", "custom:opaque", ""},
+			{"EmptyFilePath", "file://", ""},
+			{"EmptyCustomPath", "custom://", ""},
+			{"HTTP", "http://upstream.example.com/base", "http://upstream.example.com/base/latest"},
+			{"HTTPS", "https://upstream.example.com/base%20path?token=value#fragment", "https://upstream.example.com/base%20path/latest?token=value#fragment"},
+			{"File", "file:///base", "file:///base/latest"},
+			{"Custom", "custom://upstream/base", "custom://upstream/base/latest"},
+			{"CustomPath", "custom:/base", "custom:/base/latest"},
+			{"CustomRoot", "custom:///", "custom:///latest"},
+		} {
+			for _, resource := range []struct {
+				name string
+				path string
+			}{
+				{"Supported", "/supported"},
+				{"Latest", "/latest"},
+			} {
+				for _, method := range []string{http.MethodGet, http.MethodHead} {
+					t.Run(tt.name+"/"+resource.name+"/"+method, func(t *testing.T) {
+						const content = "signed tree"
+						upstreamCalls := 0
+						g := &Goproxy{
+							ProxiedSumDBs: []string{"sumdb.example.com " + tt.url},
+							Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+								upstreamCalls++
+								if got, want := req.URL.String(), tt.wantURL; got != want {
+									t.Errorf("got upstream URL %q, want %q", got, want)
+									return nil, context.Canceled
+								}
+								return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(content))}, nil
+							}),
+							TempDir: t.TempDir(),
+							Logger:  slog.New(slog.DiscardHandler),
+						}
+						rec := httptest.NewRecorder()
+						g.ServeHTTP(rec, httptest.NewRequest(method, "/sumdb/sumdb.example.com"+resource.path, nil))
+						wantStatusCode, wantContent, wantCalls := http.StatusOK, content, 1
+						wantCacheControl := "public, max-age=60"
+						if tt.wantURL == "" {
+							wantStatusCode, wantContent, wantCalls = http.StatusNotFound, "not found", 0
+						} else if resource.path == "/supported" {
+							wantContent, wantCalls = "", 0
+							wantCacheControl = "public, max-age=86400"
+						}
+						if method == http.MethodHead {
+							wantContent = ""
+						}
+						if got, want := rec.Code, wantStatusCode; got != want {
+							t.Errorf("got status %d, want %d", got, want)
+						}
+						if got, want := rec.Header().Get("Cache-Control"), wantCacheControl; got != want {
+							t.Errorf("got cache control %q, want %q", got, want)
+						}
+						if got, want := rec.Body.String(), wantContent; got != want {
+							t.Errorf("got content %q, want %q", got, want)
+						}
+						if got, want := upstreamCalls, wantCalls; got != want {
+							t.Errorf("got %d upstream requests, want %d", got, want)
+						}
+					})
+				}
+			}
+		}
+
+		t.Run("FileTransport", func(t *testing.T) {
+			const content = "signed tree"
+			transport := &http.Transport{}
+			transport.RegisterProtocol("file", http.NewFileTransportFS(fstest.MapFS{
+				"base/latest": {Data: []byte(content)},
+			}))
+			g := &Goproxy{
+				ProxiedSumDBs: []string{"sumdb.example.com file:///base"},
+				Transport:     transport,
+				TempDir:       t.TempDir(),
+				Logger:        slog.New(slog.DiscardHandler),
+			}
+			rec := httptest.NewRecorder()
+			g.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/sumdb/sumdb.example.com/latest", nil))
+			if got, want := rec.Code, http.StatusOK; got != want {
+				t.Errorf("got status %d, want %d", got, want)
+			}
+			if got, want := rec.Body.String(), content; got != want {
+				t.Errorf("got content %q, want %q", got, want)
+			}
+		})
 	})
 
 	t.Run("NamePaths", func(t *testing.T) {
