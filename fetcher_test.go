@@ -139,6 +139,50 @@ func TestGoFetcherInit(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("InvalidSumDBName", func(t *testing.T) {
+		_, key, err := note.GenerateKey(nil, "example.com%")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, tt := range []struct {
+			name string
+			call func(context.Context, *GoFetcher) error
+		}{
+			{"Query", func(ctx context.Context, gf *GoFetcher) error {
+				_, _, err := gf.Query(ctx, "example.com", "latest")
+				return err
+			}},
+			{"List", func(ctx context.Context, gf *GoFetcher) error {
+				_, err := gf.List(ctx, "example.com")
+				return err
+			}},
+			{"Download", func(ctx context.Context, gf *GoFetcher) error {
+				_, _, _, err := gf.Download(ctx, "example.com", "v1.0.0")
+				return err
+			}},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				gf := &GoFetcher{
+					Env: []string{"GOSUMDB=" + key},
+					Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+						t.Error("unexpected upstream request")
+						return nil, context.Canceled
+					}),
+				}
+				err := tt.call(t.Context(), gf)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				if got, want := err, gf.initErr; got != want {
+					t.Errorf("got %v, want initialization error %v", got, want)
+				}
+				if e, ok := errors.AsType[*url.Error](err); !ok || e.URL != "https://example.com%" {
+					t.Errorf("got error %v, want URL parse error", err)
+				}
+			})
+		}
+	})
 }
 
 func TestGoFetcherSkipProxy(t *testing.T) {
@@ -2932,6 +2976,47 @@ func TestParseEnvGOSUMDB(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("InvalidNames", func(t *testing.T) {
+		for _, tt := range []struct {
+			name      string
+			sumdbName string
+			wantErr   string
+		}{
+			{"InvalidHostEscape", "example.com%", `invalid sumdb name (must be host[/path]): parse "https://example.com%": invalid URL escape "%"`},
+			{"InvalidPathEscape", "example.com/path%zz", `invalid sumdb name (must be host[/path]): parse "https://example.com/path%zz": invalid URL escape "%zz"`},
+			{"InvalidHost", "[example.com", `invalid sumdb name (must be host[/path]): parse "https://[example.com": missing ']' in host`},
+			{"InvalidPort", "example.com:invalid", `invalid sumdb name (must be host[/path]): parse "https://example.com:invalid": invalid port ":invalid" after host`},
+		} {
+			for _, mode := range []struct {
+				name string
+				url  string
+			}{
+				{"DefaultURL", ""},
+				{"ExplicitURL", " https://sumdb.example.com"},
+			} {
+				t.Run(tt.name+"/"+mode.name, func(t *testing.T) {
+					_, verifierKey, err := note.GenerateKey(nil, tt.sumdbName)
+					if err != nil {
+						t.Fatal(err)
+					}
+					name, key, u, isDirectURL, err := parseEnvGOSUMDB(verifierKey + mode.url)
+					if err == nil {
+						t.Fatal("expected error")
+					}
+					if got, want := err.Error(), tt.wantErr; got != want {
+						t.Errorf("got %q, want %q", got, want)
+					}
+					if e, ok := errors.AsType[*url.Error](err); !ok || e.URL != "https://"+tt.sumdbName {
+						t.Errorf("got error %v, want URL parse error", err)
+					}
+					if name != "" || key != "" || u != nil || isDirectURL {
+						t.Errorf("got (%q, %q, %v, %t), want empty result", name, key, u, isDirectURL)
+					}
+				})
+			}
+		}
+	})
 }
 
 func TestCleanCommaSeparatedList(t *testing.T) {

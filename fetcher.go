@@ -693,8 +693,10 @@ func parseEnvGOSUMDB(envGOSUMDB string) (name string, key string, u *url.URL, is
 	key = parts[0]
 
 	u, err = url.Parse("https://" + name)
-	if err != nil ||
-		strings.HasSuffix(name, "/") ||
+	if err != nil {
+		return "", "", nil, false, fmt.Errorf("invalid sumdb name (must be host[/path]): %w", err)
+	}
+	if strings.HasSuffix(name, "/") ||
 		u.Host == "" ||
 		u.RawPath != "" ||
 		*u != (url.URL{Scheme: "https", Host: u.Host, Path: u.Path, RawPath: u.RawPath}) {

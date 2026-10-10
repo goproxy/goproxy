@@ -99,8 +99,12 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 		case http.StatusGatewayTimeout:
 			lastErr = &httpError{err: errFetchTimedOut, statusCode: resp.StatusCode}
 		default:
+			u := req.URL
+			if resp.Request != nil && resp.Request.URL != nil {
+				u = resp.Request.URL
+			}
 			return nil, &httpError{
-				err:        fmt.Errorf("GET %s: %s: %s", resp.Request.URL.Redacted(), resp.Status, respBody),
+				err:        fmt.Errorf("GET %s: %s: %s", u.Redacted(), resp.Status, respBody),
 				statusCode: resp.StatusCode,
 			}
 		}

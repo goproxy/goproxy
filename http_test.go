@@ -221,6 +221,73 @@ func TestHTTPGet(t *testing.T) {
 		}
 	})
 
+	t.Run("ResponseErrorURL", func(t *testing.T) {
+		for _, tt := range []struct {
+			name           string
+			redirect       bool
+			missingRequest bool
+			missingURL     bool
+			wantURL        string
+		}{
+			{"Provided", false, false, false, "https://user:xxxxx@example.com/original"},
+			{"MissingRequest", false, true, false, "https://user:xxxxx@example.com/original"},
+			{"MissingURL", false, false, true, "https://user:xxxxx@example.com/original"},
+			{"Redirect", true, false, false, "https://user:xxxxx@example.com/redirected"},
+			{"RedirectMissingRequest", true, true, false, "https://user:xxxxx@example.com/original"},
+			{"RedirectMissingURL", true, false, true, "https://user:xxxxx@example.com/original"},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				attempts := 0
+				body := &testHTTPResponseBody{Reader: strings.NewReader("upstream details")}
+				client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					attempts++
+					if tt.redirect && attempts == 1 {
+						return &http.Response{
+							StatusCode: http.StatusFound,
+							Header:     http.Header{"Location": {"/redirected"}},
+							Body:       http.NoBody,
+						}, nil
+					}
+					resp := &http.Response{
+						StatusCode: http.StatusBadRequest,
+						Status:     "400 Bad Request",
+						Body:       body,
+						Request:    req,
+					}
+					if tt.missingRequest {
+						resp.Request = nil
+					} else if tt.missingURL {
+						resp.Request = &http.Request{}
+					}
+					return resp, nil
+				})}
+				header, err := httpGet(t.Context(), client, "https://user:secret@example.com/original", nil)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				if got, want := err.Error(), "GET "+tt.wantURL+": 400 Bad Request: upstream details"; got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
+				if e, ok := errors.AsType[*httpError](err); !ok || e.statusCode != http.StatusBadRequest {
+					t.Errorf("got error %v, want HTTP status %d", err, http.StatusBadRequest)
+				}
+				if header != nil {
+					t.Errorf("got header %v, want nil", header)
+				}
+				wantAttempts := 1
+				if tt.redirect {
+					wantAttempts = 2
+				}
+				if got, want := attempts, wantAttempts; got != want {
+					t.Errorf("got attempts %d, want %d", got, want)
+				}
+				if !body.closed {
+					t.Error("response body was not closed")
+				}
+			})
+		}
+	})
+
 	t.Run("TransportRetries", func(t *testing.T) {
 		notFound := &net.DNSError{Err: "no such host", Name: "example.com", IsNotFound: true}
 		temporary := &net.DNSError{Err: "server misbehaving", Name: "example.com", IsTemporary: true}
