@@ -47,8 +47,10 @@ type Goproxy struct {
 	// https://go.dev/design/25530-sumdb#proxying-a-checksum-database). Each
 	// entry is in the form "<sumdb-name>" or "<sumdb-name> <sumdb-URL>".
 	// The <sumdb-name> is in the form "host[/path]". If <sumdb-URL> is
-	// omitted, "https://<sumdb-name>" is used. Invalid entries will be
-	// silently ignored.
+	// omitted, "https://<sumdb-name>" is used. The <sumdb-URL> must be an
+	// absolute, non-opaque URL with a host or path. HTTP and HTTPS URLs
+	// must have a nonempty hostname. Invalid entries will be silently
+	// ignored.
 	//
 	// If ProxiedSumDBs contains duplicate checksum database names, only the
 	// last value in the slice for each duplicate name is used.
@@ -108,7 +110,10 @@ func (g *Goproxy) init() {
 			rawURL = parts[1]
 		}
 		u, err := url.Parse(rawURL)
-		if err != nil {
+		if err != nil || !u.IsAbs() || u.Opaque != "" || u.Host == "" && u.Path == "" {
+			continue
+		}
+		if (u.Scheme == "http" || u.Scheme == "https") && u.Hostname() == "" {
 			continue
 		}
 		g.proxiedSumDBs[name] = u
