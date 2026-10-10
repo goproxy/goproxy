@@ -801,6 +801,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 		}{
 			{"EmptyInfo", ".info", "", true},
 			{"MalformedInfo", ".info", "{", true},
+			{"OversizedInfo", ".info", info + strings.Repeat(" ", maxInfoSize+1-len(info)), true},
 			{"MissingVersion", ".info", "{}", true},
 			{"InvalidVersion", ".info", marshalInfo("main", time.Time{}), true},
 			{"NoncanonicalVersion", ".info", marshalInfo("v1", time.Time{}), true},

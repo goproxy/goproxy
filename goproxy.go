@@ -405,7 +405,7 @@ func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, target s
 	}
 	defer os.RemoveAll(tempDir)
 
-	file, header, err := httpGetTemp(req.Context(), g.httpClient, u.JoinPath(path).String(), tempDir)
+	file, header, err := httpGetTemp(req.Context(), g.httpClient, u.JoinPath(path).String(), tempDir, 0)
 	if err == nil {
 		fi, statErr := os.Stat(file)
 		if statErr != nil {
