@@ -35,7 +35,7 @@ import (
 
 func TestGoFetcherInit(t *testing.T) {
 	for _, tt := range []struct {
-		n                int
+		name             string
 		env              []string
 		wantEnvGOPROXY   string
 		wantEnvGONOPROXY string
@@ -44,18 +44,18 @@ func TestGoFetcherInit(t *testing.T) {
 		wantInitErr      error
 	}{
 		{
-			n:              1,
+			name:           "DefaultEnv",
 			wantEnvGOPROXY: defaultEnvGOPROXY,
 			wantEnvGOSUMDB: defaultEnvGOSUMDB,
 		},
 		{
-			n:              2,
+			name:           "CustomGOPROXY",
 			env:            append(os.Environ(), "GOPROXY=https://example.com"),
 			wantEnvGOPROXY: "https://example.com",
 			wantEnvGOSUMDB: defaultEnvGOSUMDB,
 		},
 		{
-			n:                3,
+			name:             "GOPRIVATE",
 			env:              append(os.Environ(), "GOPRIVATE=example.com"),
 			wantEnvGOPROXY:   defaultEnvGOPROXY,
 			wantEnvGONOPROXY: "example.com",
@@ -63,7 +63,7 @@ func TestGoFetcherInit(t *testing.T) {
 			wantEnvGONOSUMDB: "example.com",
 		},
 		{
-			n: 4,
+			name: "GOPRIVATEWithOverrides",
 			env: append(
 				os.Environ(),
 				"GOPRIVATE=example.com",
@@ -76,17 +76,17 @@ func TestGoFetcherInit(t *testing.T) {
 			wantEnvGONOSUMDB: "alt2.example.com",
 		},
 		{
-			n:           5,
+			name:        "InvalidGOPROXY",
 			env:         append(os.Environ(), "GOPROXY=,"),
 			wantInitErr: errors.New("GOPROXY list is not the empty string, but contains no entries"),
 		},
 		{
-			n:           6,
+			name:        "InvalidGOSUMDB",
 			env:         append(os.Environ(), "GOSUMDB=foobar"),
 			wantInitErr: errors.New("invalid GOSUMDB: malformed verifier id"),
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			gf := &GoFetcher{
 				Env:                        tt.env,
 				MaxConcurrentDirectFetches: 10,
@@ -187,30 +187,30 @@ func TestGoFetcherInit(t *testing.T) {
 
 func TestGoFetcherSkipProxy(t *testing.T) {
 	for _, tt := range []struct {
-		n             int
+		name          string
 		envGONOPROXY  string
 		path          string
 		wantSkipProxy bool
 	}{
 		{
-			n:             1,
+			name:          "NoGONOPROXY",
 			path:          "example.com/foobar",
 			wantSkipProxy: false,
 		},
 		{
-			n:             2,
+			name:          "PrefixMatch",
 			envGONOPROXY:  "example.com",
 			path:          "example.com/foobar",
 			wantSkipProxy: true,
 		},
 		{
-			n:             3,
+			name:          "WildcardMatch",
 			envGONOPROXY:  "*.example.com",
 			path:          "corp.example.com/foobar",
 			wantSkipProxy: true,
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			gf := &GoFetcher{Env: append(os.Environ(), "GONOPROXY="+tt.envGONOPROXY), TempDir: t.TempDir()}
 			gf.initOnce.Do(gf.init)
 			if gf.initErr != nil {
@@ -401,7 +401,7 @@ func TestGoFetcherQuery(t *testing.T) {
 	})
 
 	for _, tt := range []struct {
-		n            int
+		name         string
 		proxyHandler http.HandlerFunc
 		env          func(proxyServerURL string) []string
 		path         string
@@ -410,7 +410,7 @@ func TestGoFetcherQuery(t *testing.T) {
 		wantErr      error
 	}{
 		{
-			n: 1,
+			name: "Proxy",
 			env: func(proxyServerURL string) []string {
 				return append(os.Environ(), "GOPROXY="+proxyServerURL)
 			},
@@ -419,7 +419,7 @@ func TestGoFetcherQuery(t *testing.T) {
 			wantTime:    infoTime,
 		},
 		{
-			n: 2,
+			name: "SkipProxy",
 			env: func(proxyServerURL string) []string {
 				return append(os.Environ(), "GOPROXY="+proxyServerURL, "GONOPROXY=example.com", "GOSUMDB=off")
 			},
@@ -428,7 +428,7 @@ func TestGoFetcherQuery(t *testing.T) {
 			wantTime:    infoTime,
 		},
 		{
-			n: 3,
+			name: "DirectFallback",
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				switch req.URL.Path {
 				case "/direct/example.com/@v/list":
@@ -447,19 +447,19 @@ func TestGoFetcherQuery(t *testing.T) {
 			wantTime:    infoTime,
 		},
 		{
-			n:       4,
+			name:    "InvalidPath",
 			path:    "foobar",
 			wantErr: errors.New(`malformed module path "foobar": missing dot in first path element`),
 		},
 		{
-			n: 5,
+			name: "InvalidGOSUMDB",
 			env: func(_ string) []string {
 				return append(os.Environ(), "GOSUMDB=foobar")
 			},
 			wantErr: errors.New("invalid GOSUMDB: malformed verifier id"),
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			if tt.proxyHandler == nil {
 				tt.proxyHandler = proxyHandler
 			}
@@ -701,7 +701,7 @@ func TestGoFetcherProxyQuery(t *testing.T) {
 		responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
 	}
 	for _, tt := range []struct {
-		n            int
+		name         string
 		proxyHandler http.HandlerFunc
 		path         string
 		query        string
@@ -710,45 +710,45 @@ func TestGoFetcherProxyQuery(t *testing.T) {
 		wantErr      error
 	}{
 		{
-			n:           1,
+			name:        "Latest",
 			path:        "example.com",
 			query:       "latest",
 			wantVersion: infoVersion,
 			wantTime:    infoTime,
 		},
 		{
-			n:           2,
+			name:        "VersionPrefix",
 			path:        "example.com",
 			query:       "v1",
 			wantVersion: infoVersion,
 			wantTime:    infoTime,
 		},
 		{
-			n:            3,
+			name:         "NotFound",
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, -2) },
 			path:         "example.com",
 			query:        "latest",
 			wantErr:      notExistErrorf("not found"),
 		},
 		{
-			n:            4,
+			name:         "EmptyResponse",
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {},
 			path:         "example.com",
 			query:        "latest",
 			wantErr:      fmt.Errorf("%w: invalid info response: unexpected end of JSON input", errBadUpstream),
 		},
 		{
-			n:       5,
+			name:    "InvalidPath",
 			path:    "foobar",
 			wantErr: errors.New(`malformed module path "foobar": missing dot in first path element`),
 		},
 		{
-			n:       6,
+			name:    "EmptyQuery",
 			path:    "example.com",
 			wantErr: errors.New(`version "" invalid: disallowed version string`),
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			if tt.proxyHandler == nil {
 				tt.proxyHandler = proxyHandler
 			}
@@ -804,25 +804,25 @@ func TestGoFetcherDirectQuery(t *testing.T) {
 	}))
 
 	for _, tt := range []struct {
-		n           int
+		name        string
 		path        string
 		wantVersion string
 		wantTime    time.Time
 		wantErr     error
 	}{
 		{
-			n:           1,
+			name:        "Success",
 			path:        "example.com",
 			wantVersion: infoVersion,
 			wantTime:    infoTime,
 		},
 		{
-			n:       2,
+			name:    "InvalidPath",
 			path:    "foobar",
 			wantErr: errors.New(`foobar@latest: malformed module path "foobar": missing dot in first path element`),
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			gf := &GoFetcher{Env: append(os.Environ(), "GOSUMDB=off"), TempDir: t.TempDir()}
 			gf.initOnce.Do(gf.init)
 			if gf.initErr != nil {
@@ -873,7 +873,7 @@ func TestGoFetcherList(t *testing.T) {
 	}
 
 	for _, tt := range []struct {
-		n            int
+		name         string
 		proxyHandler http.HandlerFunc
 		env          func(proxyServerURL string) []string
 		path         string
@@ -881,7 +881,7 @@ func TestGoFetcherList(t *testing.T) {
 		wantErr      error
 	}{
 		{
-			n: 1,
+			name: "Proxy",
 			env: func(proxyServerURL string) []string {
 				return append(os.Environ(), "GOPROXY="+proxyServerURL)
 			},
@@ -889,7 +889,7 @@ func TestGoFetcherList(t *testing.T) {
 			wantVersions: []string{"v1.0.0", "v1.1.0"},
 		},
 		{
-			n: 2,
+			name: "SkipProxy",
 			env: func(proxyServerURL string) []string {
 				return append(os.Environ(), "GOPROXY="+proxyServerURL, "GONOPROXY=example.com", "GOSUMDB=off")
 			},
@@ -897,7 +897,7 @@ func TestGoFetcherList(t *testing.T) {
 			wantVersions: []string{"v1.0.0", "v1.1.0"},
 		},
 		{
-			n: 3,
+			name: "DirectFallback",
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				if !strings.HasPrefix(req.URL.Path, "/direct") {
 					responseNotFound(rw, req, -2)
@@ -912,7 +912,7 @@ func TestGoFetcherList(t *testing.T) {
 			wantVersions: []string{"v1.0.0", "v1.1.0"},
 		},
 		{
-			n: 4,
+			name: "FilteredVersions",
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				responseSuccess(rw, req, strings.NewReader(`
 v1.0.0
@@ -928,19 +928,19 @@ invalid
 			wantVersions: []string{"v1.0.0", "v1.1.0"},
 		},
 		{
-			n:       5,
+			name:    "InvalidPath",
 			path:    "foobar",
 			wantErr: errors.New(`malformed module path "foobar": missing dot in first path element`),
 		},
 		{
-			n: 6,
+			name: "InvalidGOSUMDB",
 			env: func(_ string) []string {
 				return append(os.Environ(), "GOSUMDB=foobar")
 			},
 			wantErr: errors.New("invalid GOSUMDB: malformed verifier id"),
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			if tt.proxyHandler == nil {
 				tt.proxyHandler = proxyHandler
 			}
@@ -981,30 +981,30 @@ func TestGoFetcherProxyList(t *testing.T) {
 		responseSuccess(rw, req, strings.NewReader(list), "text/plain; charset=utf-8", -2)
 	}
 	for _, tt := range []struct {
-		n            int
+		name         string
 		proxyHandler http.HandlerFunc
 		path         string
 		wantVersions []string
 		wantErr      error
 	}{
 		{
-			n:            1,
+			name:         "Success",
 			path:         "example.com",
 			wantVersions: []string{"v1.0.0", "v1.1.0"},
 		},
 		{
-			n:            2,
+			name:         "NotFound",
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, -2) },
 			path:         "example.com",
 			wantErr:      notExistErrorf("not found"),
 		},
 		{
-			n:       3,
+			name:    "InvalidPath",
 			path:    "foobar",
 			wantErr: errors.New(`malformed module path "foobar": missing dot in first path element`),
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			if tt.proxyHandler == nil {
 				tt.proxyHandler = proxyHandler
 			}
@@ -1060,23 +1060,23 @@ func TestGoFetcherDirectList(t *testing.T) {
 	}))
 
 	for _, tt := range []struct {
-		n            int
+		name         string
 		path         string
 		wantVersions []string
 		wantErr      error
 	}{
 		{
-			n:            1,
+			name:         "Success",
 			path:         "example.com",
 			wantVersions: []string{"v1.0.0", "v1.1.0"},
 		},
 		{
-			n:       2,
+			name:    "InvalidPath",
 			path:    "foobar",
 			wantErr: errors.New(`foobar@latest: malformed module path "foobar": missing dot in first path element`),
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			gf := &GoFetcher{Env: append(os.Environ(), "GOSUMDB=off"), TempDir: t.TempDir()}
 			gf.initOnce.Do(gf.init)
 			if gf.initErr != nil {
@@ -1916,7 +1916,7 @@ func TestGoFetcherDownload(t *testing.T) {
 	})
 
 	for _, tt := range []struct {
-		n            int
+		name         string
 		proxyHandler http.HandlerFunc
 		sumdbHandler http.HandlerFunc
 		env          func(proxyServerURL, sumdbServerURL string) []string
@@ -1928,7 +1928,7 @@ func TestGoFetcherDownload(t *testing.T) {
 		wantErr      error
 	}{
 		{
-			n: 1,
+			name: "Proxy",
 			env: func(proxyServerURL, sumdbServerURL string) []string {
 				return append(
 					os.Environ(),
@@ -1943,7 +1943,7 @@ func TestGoFetcherDownload(t *testing.T) {
 			wantZip:  string(zipContent),
 		},
 		{
-			n: 2,
+			name: "SkipProxy",
 			env: func(proxyServerURL, sumdbServerURL string) []string {
 				return append(
 					os.Environ(),
@@ -1959,7 +1959,7 @@ func TestGoFetcherDownload(t *testing.T) {
 			wantZip:  string(zipContent),
 		},
 		{
-			n: 3,
+			name: "DirectFallback",
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				if !strings.HasPrefix(req.URL.Path, "/direct") {
 					responseNotFound(rw, req, -2)
@@ -1981,7 +1981,7 @@ func TestGoFetcherDownload(t *testing.T) {
 			wantZip:  string(zipContent),
 		},
 		{
-			n: 4,
+			name: "EmptyInfo",
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				if req.URL.Path == "/example.com/@v/v1.0.0.info" {
 					responseSuccess(rw, req, strings.NewReader(""), "application/json; charset=utf-8", -2)
@@ -2001,7 +2001,7 @@ func TestGoFetcherDownload(t *testing.T) {
 			wantErr: fmt.Errorf("%w: invalid info file: unexpected end of JSON input", errBadUpstream),
 		},
 		{
-			n: 5,
+			name: "EmptyMod",
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				if req.URL.Path == "/example.com/@v/v1.0.0.mod" {
 					responseSuccess(rw, req, strings.NewReader(""), "text/plain; charset=utf-8", -2)
@@ -2021,7 +2021,7 @@ func TestGoFetcherDownload(t *testing.T) {
 			wantErr: fmt.Errorf("%w: invalid mod file: missing module directive", errBadUpstream),
 		},
 		{
-			n: 6,
+			name: "EmptyZip",
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				if req.URL.Path == "/example.com/@v/v1.0.0.zip" {
 					responseSuccess(rw, req, strings.NewReader(""), "application/json", -2)
@@ -2041,7 +2041,7 @@ func TestGoFetcherDownload(t *testing.T) {
 			wantErr: fmt.Errorf("%w: invalid zip file: zip: not a valid zip file", errBadUpstream),
 		},
 		{
-			n: 7,
+			name: "MissingModChecksum",
 			sumdbHandler: sumdb.NewServer(sumdb.NewTestServer(skey, func(modulePath, moduleVersion string) ([]byte, error) {
 				gosum := fmt.Sprintf("%s %s %s\n", modulePath, moduleVersion, dirHash)
 				gosum += fmt.Sprintf("%s %s/go.mod %s\n", modulePath, "v1.1.0", modHash)
@@ -2059,7 +2059,7 @@ func TestGoFetcherDownload(t *testing.T) {
 			wantErr: fmt.Errorf("%w: example.com@v1.0.0: invalid version: untrusted revision v1.0.0", errBadUpstream),
 		},
 		{
-			n: 8,
+			name: "MissingZipChecksum",
 			sumdbHandler: sumdb.NewServer(sumdb.NewTestServer(skey, func(modulePath, moduleVersion string) ([]byte, error) {
 				gosum := fmt.Sprintf("%s %s %s\n", modulePath, "v1.1.0", dirHash)
 				gosum += fmt.Sprintf("%s %s/go.mod %s\n", modulePath, moduleVersion, modHash)
@@ -2077,44 +2077,44 @@ func TestGoFetcherDownload(t *testing.T) {
 			wantErr: fmt.Errorf("%w: example.com@v1.0.0: invalid version: untrusted revision v1.0.0", errBadUpstream),
 		},
 		{
-			n:       9,
+			name:    "MajorVersionQuery",
 			path:    "example.com",
 			version: "v1",
 			wantErr: errors.New("example.com@v1: invalid version: not a canonical version"),
 		},
 		{
-			n:       10,
+			name:    "MinorVersionQuery",
 			path:    "example.com",
 			version: "v1.0",
 			wantErr: errors.New("example.com@v1.0: invalid version: not a canonical version"),
 		},
 		{
-			n:       11,
+			name:    "BranchQuery",
 			path:    "example.com",
 			version: "master",
 			wantErr: errors.New("example.com@master: invalid version: not a semantic version"),
 		},
 		{
-			n:       12,
+			name:    "WrongMajor",
 			path:    "example.com",
 			version: "v2.0.0",
 			wantErr: errors.New("example.com@v2.0.0: invalid version: should be v0 or v1, not v2"),
 		},
 		{
-			n:       13,
+			name:    "InvalidPath",
 			path:    "foobar",
 			version: infoVersion,
 			wantErr: errors.New(`malformed module path "foobar": missing dot in first path element`),
 		},
 		{
-			n: 14,
+			name: "InvalidGOSUMDB",
 			env: func(_, _ string) []string {
 				return append(os.Environ(), "GOSUMDB=foobar")
 			},
 			wantErr: errors.New("invalid GOSUMDB: malformed verifier id"),
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			if tt.proxyHandler == nil {
 				tt.proxyHandler = proxyHandler
 			}
@@ -2265,7 +2265,7 @@ func TestGoFetcherProxyDownload(t *testing.T) {
 		}
 	}
 	for _, tt := range []struct {
-		n            int
+		name         string
 		proxyHandler http.HandlerFunc
 		tempDir      string
 		path         string
@@ -2276,7 +2276,7 @@ func TestGoFetcherProxyDownload(t *testing.T) {
 		wantErr      error
 	}{
 		{
-			n:        1,
+			name:     "Success",
 			path:     "example.com",
 			version:  infoVersion,
 			wantInfo: info,
@@ -2284,14 +2284,14 @@ func TestGoFetcherProxyDownload(t *testing.T) {
 			wantZip:  string(zipContent),
 		},
 		{
-			n:            2,
+			name:         "InfoNotFound",
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, -2) },
 			path:         "example.com",
 			version:      infoVersion,
 			wantErr:      notExistErrorf("not found"),
 		},
 		{
-			n: 3,
+			name: "ModNotFound",
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				if req.URL.Path == "/example.com/@v/v1.0.0.mod" {
 					responseNotFound(rw, req, -2)
@@ -2304,7 +2304,7 @@ func TestGoFetcherProxyDownload(t *testing.T) {
 			wantErr: notExistErrorf("not found"),
 		},
 		{
-			n: 4,
+			name: "ZipNotFound",
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				if req.URL.Path == "/example.com/@v/v1.0.0.zip" {
 					responseNotFound(rw, req, -2)
@@ -2317,24 +2317,24 @@ func TestGoFetcherProxyDownload(t *testing.T) {
 			wantErr: notExistErrorf("not found"),
 		},
 		{
-			n:       5,
+			name:    "InvalidPath",
 			path:    "foobar",
 			wantErr: errors.New(`malformed module path "foobar": missing dot in first path element`),
 		},
 		{
-			n:       6,
+			name:    "EmptyVersion",
 			path:    "example.com",
 			wantErr: errors.New(`version "" invalid: disallowed version string`),
 		},
 		{
-			n:       7,
+			name:    "MissingTempDir",
 			tempDir: filepath.Join(t.TempDir(), "404"),
 			path:    "example.com",
 			version: infoVersion,
 			wantErr: fs.ErrNotExist,
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			if tt.proxyHandler == nil {
 				tt.proxyHandler = proxyHandler
 			}
@@ -2505,7 +2505,7 @@ func TestGoFetcherDirectDownload(t *testing.T) {
 	}))
 
 	for _, tt := range []struct {
-		n        int
+		name     string
 		path     string
 		wantInfo string
 		wantMod  string
@@ -2513,19 +2513,19 @@ func TestGoFetcherDirectDownload(t *testing.T) {
 		wantErr  error
 	}{
 		{
-			n:        1,
+			name:     "Success",
 			path:     "example.com",
 			wantInfo: info,
 			wantMod:  mod,
 			wantZip:  string(zip),
 		},
 		{
-			n:       2,
+			name:    "InvalidPath",
 			path:    "foobar",
 			wantErr: errors.New(`foobar@v1.0.0: malformed module path "foobar": missing dot in first path element`),
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			gf := &GoFetcher{Env: append(os.Environ(), "GOSUMDB=off"), TempDir: t.TempDir()}
 			gf.initOnce.Do(gf.init)
 			if gf.initErr != nil {
@@ -2572,7 +2572,7 @@ func TestGoFetcherExecGo(t *testing.T) {
 	cancel()
 
 	for _, tt := range []struct {
-		n           int
+		name        string
 		ctx         context.Context
 		env         []string
 		goBin       string
@@ -2583,44 +2583,44 @@ func TestGoFetcherExecGo(t *testing.T) {
 		wantNoStore bool
 	}{
 		{
-			n:          1,
+			name:       "Success",
 			ctx:        t.Context(),
 			args:       []string{"env", "GOPROXY"},
 			wantOutput: "direct\n",
 		},
 		{
-			n:           2,
+			name:        "UnknownCommand",
 			ctx:         t.Context(),
 			args:        []string{"foobar"},
 			wantErr:     errors.New("go foobar: unknown command\nRun 'go help' for usage."),
 			wantNoStore: true,
 		},
 		{
-			n:           3,
+			name:        "InvalidModulePath",
 			ctx:         t.Context(),
 			args:        []string{"mod", "download", "-json", "foobar@latest"},
 			wantErr:     errors.New(`foobar@latest: malformed module path "foobar": missing dot in first path element`),
 			wantNoStore: true,
 		},
 		{
-			n:       4,
+			name:    "Canceled",
 			ctx:     ctxCanceled,
 			wantErr: context.Canceled,
 		},
 		{
-			n:       5,
+			name:    "MissingGoBinary",
 			ctx:     t.Context(),
 			goBin:   filepath.Join(t.TempDir(), "404"),
 			wantErr: fs.ErrNotExist,
 		},
 		{
-			n:       6,
+			name:    "MissingTempDir",
 			ctx:     t.Context(),
 			tempDir: filepath.Join(t.TempDir(), "404"),
 			wantErr: fs.ErrNotExist,
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			if tt.tempDir == "" {
 				tt.tempDir = t.TempDir()
 			}
@@ -2765,72 +2765,72 @@ func TestGoFetcherExecGo(t *testing.T) {
 
 func TestCleanEnvGOPROXY(t *testing.T) {
 	for _, tt := range []struct {
-		n              int
+		name           string
 		envGOPROXY     string
 		wantEnvGOPROXY string
 		wantErr        error
 	}{
 		{
-			n:              1,
+			name:           "Empty",
 			wantEnvGOPROXY: defaultEnvGOPROXY,
 		},
 		{
-			n:              2,
+			name:           "Default",
 			envGOPROXY:     defaultEnvGOPROXY,
 			wantEnvGOPROXY: defaultEnvGOPROXY,
 		},
 		{
-			n:              3,
+			name:           "SingleProxy",
 			envGOPROXY:     "https://example.com",
 			wantEnvGOPROXY: "https://example.com",
 		},
 		{
-			n:              4,
+			name:           "TrailingComma",
 			envGOPROXY:     "https://example.com,",
 			wantEnvGOPROXY: "https://example.com",
 		},
 		{
-			n:              5,
+			name:           "TrailingPipe",
 			envGOPROXY:     "https://example.com|",
 			wantEnvGOPROXY: "https://example.com",
 		},
 		{
-			n:              6,
+			name:           "MixedSeparators",
 			envGOPROXY:     "https://example.com|https://backup.example.com,direct",
 			wantEnvGOPROXY: "https://example.com|https://backup.example.com,direct",
 		},
 		{
-			n:              7,
+			name:           "DirectBeforeProxy",
 			envGOPROXY:     "https://example.com,direct,https://backup.example.com",
 			wantEnvGOPROXY: "https://example.com,direct",
 		},
 		{
-			n:              8,
+			name:           "OffBeforeProxy",
 			envGOPROXY:     "https://example.com,off,https://backup.example.com",
 			wantEnvGOPROXY: "https://example.com,off",
 		},
 		{
-			n:          9,
+			name:       "InvalidURL",
 			envGOPROXY: "://invalid",
 			wantErr:    errors.New(`invalid GOPROXY URL: parse "://invalid": missing protocol scheme`),
 		},
 		{
-			n:          10,
+			name:       "CommaOnly",
 			envGOPROXY: ",",
 			wantErr:    errors.New("GOPROXY list is not the empty string, but contains no entries"),
 		},
 		{
-			n:          11,
+			name:       "PipeOnly",
 			envGOPROXY: "|",
 			wantErr:    errors.New("GOPROXY list is not the empty string, but contains no entries"),
 		},
 		{
-			n:          12,
+			name:       "WhitespaceOnly",
 			envGOPROXY: " ",
 			wantErr:    errors.New("GOPROXY list is not the empty string, but contains no entries"),
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			envGOPROXY, err := cleanEnvGOPROXY(tt.envGOPROXY)
 			if tt.wantErr != nil {
 				if err == nil {
@@ -3046,7 +3046,7 @@ func TestWalkEnvGOPROXY(t *testing.T) {
 	})
 
 	for _, tt := range []struct {
-		n            int
+		name         string
 		envGOPROXY   string
 		onProxy      func(proxy *url.URL) error
 		wantOnProxy  string
@@ -3054,20 +3054,20 @@ func TestWalkEnvGOPROXY(t *testing.T) {
 		wantErr      error
 	}{
 		{
-			n:           1,
+			name:        "ProxySuccess",
 			envGOPROXY:  "https://example.com,direct",
 			onProxy:     func(proxy *url.URL) error { return nil },
 			wantOnProxy: "https://example.com",
 		},
 		{
-			n:            2,
+			name:         "DirectFallback",
 			envGOPROXY:   "https://example.com,direct",
 			onProxy:      func(proxy *url.URL) error { return fs.ErrNotExist },
 			wantOnProxy:  "https://example.com",
 			wantOnDirect: true,
 		},
 		{
-			n:          3,
+			name:       "PipeFallback",
 			envGOPROXY: "https://example.com|https://alt.example.com",
 			onProxy: func(proxy *url.URL) error {
 				if proxy.String() == "https://alt.example.com" {
@@ -3078,48 +3078,48 @@ func TestWalkEnvGOPROXY(t *testing.T) {
 			wantOnProxy: "https://alt.example.com",
 		},
 		{
-			n:          4,
+			name:       "ProxyError",
 			envGOPROXY: "https://example.com,direct",
 			onProxy:    func(proxy *url.URL) error { return errors.New("foobar") },
 			wantErr:    errors.New("foobar"),
 		},
 		{
-			n:          5,
+			name:       "ProxyNotFound",
 			envGOPROXY: "https://example.com",
 			onProxy:    func(proxy *url.URL) error { return fs.ErrNotExist },
 			wantErr:    fs.ErrNotExist,
 		},
 		{
-			n:            6,
+			name:         "Direct",
 			envGOPROXY:   "direct",
 			wantOnDirect: true,
 		},
 		{
-			n:            7,
+			name:         "DirectBeforeOff",
 			envGOPROXY:   "direct,off",
 			wantOnDirect: true,
 		},
 		{
-			n:          8,
+			name:       "OffOnly",
 			envGOPROXY: "off",
 			wantErr:    errors.New("module lookup disabled by GOPROXY=off"),
 		},
 		{
-			n:          9,
+			name:       "OffBeforeDirect",
 			envGOPROXY: "off,direct",
 			wantErr:    errors.New("module lookup disabled by GOPROXY=off"),
 		},
 		{
-			n:       10,
+			name:    "Empty",
 			wantErr: errors.New("missing GOPROXY"),
 		},
 		{
-			n:          11,
+			name:       "InvalidURL",
 			envGOPROXY: "://invalid",
 			wantErr:    errors.New(`parse "://invalid": missing protocol scheme`),
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			var (
 				onProxy  string
 				onDirect bool
@@ -3155,15 +3155,15 @@ func TestWalkEnvGOPROXY(t *testing.T) {
 
 func TestCleanEnvGOSUMDB(t *testing.T) {
 	for _, tt := range []struct {
-		n              int
+		name           string
 		envGOSUMDB     string
 		wantEnvGOSUMDB string
 	}{
-		{1, "", defaultEnvGOSUMDB},
-		{2, defaultEnvGOSUMDB, defaultEnvGOSUMDB},
-		{3, "example.com", "example.com"},
+		{"Empty", "", defaultEnvGOSUMDB},
+		{"Default", defaultEnvGOSUMDB, defaultEnvGOSUMDB},
+		{"Custom", "example.com", "example.com"},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			if got, want := cleanEnvGOSUMDB(tt.envGOSUMDB), tt.wantEnvGOSUMDB; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
@@ -3173,7 +3173,7 @@ func TestCleanEnvGOSUMDB(t *testing.T) {
 
 func TestParseEnvGOSUMDB(t *testing.T) {
 	for _, tt := range []struct {
-		n               int
+		name            string
 		envGOSUMDB      string
 		wantName        string
 		wantKey         string
@@ -3182,7 +3182,7 @@ func TestParseEnvGOSUMDB(t *testing.T) {
 		wantErr         error
 	}{
 		{
-			n:               1,
+			name:            "Default",
 			envGOSUMDB:      defaultEnvGOSUMDB,
 			wantName:        defaultEnvGOSUMDB,
 			wantKey:         sumGolangOrgKey,
@@ -3190,7 +3190,7 @@ func TestParseEnvGOSUMDB(t *testing.T) {
 			wantIsDirectURL: true,
 		},
 		{
-			n:               2,
+			name:            "VerifierKey",
 			envGOSUMDB:      sumGolangOrgKey,
 			wantName:        defaultEnvGOSUMDB,
 			wantKey:         sumGolangOrgKey,
@@ -3198,7 +3198,7 @@ func TestParseEnvGOSUMDB(t *testing.T) {
 			wantIsDirectURL: true,
 		},
 		{
-			n:               3,
+			name:            "VerifierKeyWithURL",
 			envGOSUMDB:      sumGolangOrgKey + " https://" + defaultEnvGOSUMDB,
 			wantName:        defaultEnvGOSUMDB,
 			wantKey:         sumGolangOrgKey,
@@ -3206,7 +3206,7 @@ func TestParseEnvGOSUMDB(t *testing.T) {
 			wantIsDirectURL: false,
 		},
 		{
-			n:               4,
+			name:            "ChinaMirror",
 			envGOSUMDB:      "sum.golang.google.cn",
 			wantName:        defaultEnvGOSUMDB,
 			wantKey:         sumGolangOrgKey,
@@ -3214,7 +3214,7 @@ func TestParseEnvGOSUMDB(t *testing.T) {
 			wantIsDirectURL: false,
 		},
 		{
-			n:               5,
+			name:            "ChinaMirrorWithURL",
 			envGOSUMDB:      "sum.golang.google.cn https://example.com",
 			wantName:        defaultEnvGOSUMDB,
 			wantKey:         sumGolangOrgKey,
@@ -3222,36 +3222,36 @@ func TestParseEnvGOSUMDB(t *testing.T) {
 			wantIsDirectURL: false,
 		},
 		{
-			n:       6,
+			name:    "Empty",
 			wantErr: errors.New("missing GOSUMDB"),
 		},
 		{
-			n:          7,
+			name:       "WhitespaceOnly",
 			envGOSUMDB: " ",
 			wantErr:    errors.New("missing GOSUMDB"),
 		},
 		{
-			n:          8,
+			name:       "TooManyFields",
 			envGOSUMDB: "a b c",
 			wantErr:    errors.New("invalid GOSUMDB: too many fields"),
 		},
 		{
-			n:          9,
+			name:       "InvalidVerifierKey",
 			envGOSUMDB: "example.com",
 			wantErr:    errors.New("invalid GOSUMDB: malformed verifier id"),
 		},
 		{
-			n:          10,
+			name:       "InvalidName",
 			envGOSUMDB: "example.com/+1a6413ba+AW5WXiP8oUq7RI2AuI4Wh14FJrMqJqnAplQ0kcLbnbqK",
 			wantErr:    fmt.Errorf("invalid sumdb name (must be host[/path]): example.com/ %+v", url.URL{Scheme: "https", Host: "example.com", Path: "/"}),
 		},
 		{
-			n:          11,
+			name:       "InvalidURL",
 			envGOSUMDB: defaultEnvGOSUMDB + " ://invalid",
 			wantErr:    errors.New(`invalid GOSUMDB URL: parse "://invalid": missing protocol scheme`),
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			name, key, u, isDirectURL, err := parseEnvGOSUMDB(tt.envGOSUMDB)
 			if tt.wantErr != nil {
 				if err == nil {
@@ -3324,18 +3324,18 @@ func TestParseEnvGOSUMDB(t *testing.T) {
 
 func TestCleanCommaSeparatedList(t *testing.T) {
 	for _, tt := range []struct {
-		n        int
+		name     string
 		list     string
 		wantList string
 	}{
-		{1, "", ""},
-		{2, ",", ""},
-		{3, "a,", "a"},
-		{4, ",a", "a"},
-		{5, " , a", "a"},
-		{6, "a , b", "a,b"},
+		{"Empty", "", ""},
+		{"CommaOnly", ",", ""},
+		{"TrailingComma", "a,", "a"},
+		{"LeadingComma", ",a", "a"},
+		{"WhitespaceAndEmptyEntries", " , a", "a"},
+		{"WhitespaceAroundEntries", "a , b", "a,b"},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			if got, want := cleanCommaSeparatedList(tt.list), tt.wantList; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
@@ -3345,42 +3345,42 @@ func TestCleanCommaSeparatedList(t *testing.T) {
 
 func TestCheckCanonicalVersion(t *testing.T) {
 	for _, tt := range []struct {
-		n       int
+		name    string
 		path    string
 		version string
 		wantErr error
 	}{
 		{
-			n:       1,
+			name:    "Canonical",
 			path:    "example.com",
 			version: "v1.0.0",
 		},
 		{
-			n:       2,
+			name:    "MajorVersionQuery",
 			path:    "example.com",
 			version: "v1",
 			wantErr: errors.New("example.com@v1: invalid version: not a canonical version"),
 		},
 		{
-			n:       3,
+			name:    "MinorVersionQuery",
 			path:    "example.com",
 			version: "v1.0",
 			wantErr: errors.New("example.com@v1.0: invalid version: not a canonical version"),
 		},
 		{
-			n:       4,
+			name:    "BranchQuery",
 			path:    "example.com",
 			version: "master",
 			wantErr: errors.New("example.com@master: invalid version: not a semantic version"),
 		},
 		{
-			n:       5,
+			name:    "WrongMajor",
 			path:    "example.com",
 			version: "v2.0.0",
 			wantErr: errors.New("example.com@v2.0.0: invalid version: should be v0 or v1, not v2"),
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			err := checkCanonicalVersion(tt.path, tt.version)
 			if tt.wantErr != nil {
 				if err == nil {
@@ -3406,41 +3406,41 @@ func TestMarshalInfo(t *testing.T) {
 
 func TestUnmarshalInfo(t *testing.T) {
 	for _, tt := range []struct {
-		n           int
+		name        string
 		info        string
 		wantVersion string
 		wantTime    time.Time
 		wantErr     error
 	}{
 		{
-			n:           1,
+			name:        "UTC",
 			info:        `{"Version":"v1.0.0","Time":"2000-01-01T00:00:00Z"}`,
 			wantVersion: "v1.0.0",
 			wantTime:    time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
 		},
 		{
-			n:           2,
+			name:        "TimeZoneOffset",
 			info:        `{"Version":"v1.0.0","Time":"2000-01-01T01:00:00+01:00"}`,
 			wantVersion: "v1.0.0",
 			wantTime:    time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
 		},
 		{
-			n:           3,
+			name:        "ZeroTime",
 			info:        `{"Version":"v1.0.0","Time":"0001-01-01T00:00:00Z"}`,
 			wantVersion: "v1.0.0",
 			wantTime:    time.Time{},
 		},
 		{
-			n:       4,
+			name:    "MissingVersion",
 			info:    "{}",
 			wantErr: errors.New("invalid version"),
 		},
 		{
-			n:       5,
+			name:    "EmptyInput",
 			wantErr: errors.New("unexpected end of JSON input"),
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			infoVersion, infoTime, err := unmarshalInfo(tt.info)
 			if tt.wantErr != nil {
 				if err == nil {
@@ -3492,30 +3492,30 @@ func TestUnmarshalInfoFile(t *testing.T) {
 		t.Errorf("unexpected error %v", err)
 	}
 	for _, tt := range []struct {
-		n           int
+		name        string
 		infoFile    string
 		wantVersion string
 		wantTime    time.Time
 		wantErr     error
 	}{
 		{
-			n:           1,
+			name:        "Valid",
 			infoFile:    infoFile,
 			wantVersion: infoVersion,
 			wantTime:    infoTime,
 		},
 		{
-			n:        2,
+			name:     "EmptyFile",
 			infoFile: infoFileInvalid,
 			wantErr:  fmt.Errorf("%w: invalid info file: unexpected end of JSON input", errBadUpstream),
 		},
 		{
-			n:        3,
+			name:     "MissingFile",
 			infoFile: filepath.Join(t.TempDir(), "404"),
 			wantErr:  fs.ErrNotExist,
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			infoVersion, infoTime, err := unmarshalInfoFile(tt.infoFile)
 			if tt.wantErr != nil {
 				if err == nil {
@@ -3696,7 +3696,7 @@ func TestVerifyModFile(t *testing.T) {
 		return nil, errors.New("unknown module version")
 	})))
 	for _, tt := range []struct {
-		n             int
+		name          string
 		env           []string
 		modFile       string
 		modulePath    string
@@ -3704,14 +3704,14 @@ func TestVerifyModFile(t *testing.T) {
 		wantErr       error
 	}{
 		{
-			n:             1,
+			name:          "Valid",
 			env:           []string{"GOPROXY=off", "GOSUMDB=" + vkey + " " + sumdbServer.URL},
 			modFile:       modFile,
 			modulePath:    "example.com",
 			moduleVersion: "v1.0.0",
 		},
 		{
-			n: 2,
+			name: "SkipSumDB",
 			env: []string{
 				"GOPROXY=off",
 				"GOSUMDB=" + vkey + " " + sumdbServer.URL,
@@ -3722,7 +3722,7 @@ func TestVerifyModFile(t *testing.T) {
 			moduleVersion: "v1.0.0",
 		},
 		{
-			n:             3,
+			name:          "ChecksumMismatch",
 			env:           []string{"GOPROXY=off", "GOSUMDB=" + vkey + " " + sumdbServer.URL},
 			modFile:       modFileInvalid,
 			modulePath:    "example.com",
@@ -3730,7 +3730,7 @@ func TestVerifyModFile(t *testing.T) {
 			wantErr:       fmt.Errorf("%w: example.com@v1.0.0: invalid version: untrusted revision v1.0.0", errBadUpstream),
 		},
 		{
-			n:             4,
+			name:          "LookupError",
 			env:           []string{"GOPROXY=off", "GOSUMDB=" + vkey + " " + sumdbServer.URL},
 			modFile:       modFile,
 			modulePath:    "example.com",
@@ -3738,7 +3738,7 @@ func TestVerifyModFile(t *testing.T) {
 			wantErr:       fmt.Errorf("%w: example.com@v1.1.0/go.mod: bad upstream", errBadUpstream),
 		},
 		{
-			n:             5,
+			name:          "MissingFile",
 			env:           []string{"GOPROXY=off", "GOSUMDB=" + vkey + " " + sumdbServer.URL},
 			modFile:       filepath.Join(t.TempDir(), "404"),
 			modulePath:    "example.com",
@@ -3746,7 +3746,7 @@ func TestVerifyModFile(t *testing.T) {
 			wantErr:       fs.ErrNotExist,
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			gf := &GoFetcher{Env: tt.env, TempDir: t.TempDir()}
 			gf.initOnce.Do(gf.init)
 			if gf.initErr != nil {
@@ -3898,7 +3898,7 @@ func TestVerifyZipFile(t *testing.T) {
 		return nil, errors.New("unknown module version")
 	})))
 	for _, tt := range []struct {
-		n             int
+		name          string
 		env           []string
 		zipFile       string
 		modulePath    string
@@ -3906,14 +3906,14 @@ func TestVerifyZipFile(t *testing.T) {
 		wantErr       error
 	}{
 		{
-			n:             1,
+			name:          "Valid",
 			env:           []string{"GOPROXY=off", "GOSUMDB=" + vkey + " " + sumdbServer.URL},
 			zipFile:       zipFile,
 			modulePath:    "example.com",
 			moduleVersion: "v1.0.0",
 		},
 		{
-			n: 2,
+			name: "SkipSumDB",
 			env: []string{
 				"GOPROXY=off",
 				"GOSUMDB=" + vkey + " " + sumdbServer.URL,
@@ -3924,7 +3924,7 @@ func TestVerifyZipFile(t *testing.T) {
 			moduleVersion: "v1.0.0",
 		},
 		{
-			n:             3,
+			name:          "ChecksumMismatch",
 			env:           []string{"GOPROXY=off", "GOSUMDB=" + vkey + " " + sumdbServer.URL},
 			zipFile:       zipFileInvalid,
 			modulePath:    "example.com",
@@ -3932,7 +3932,7 @@ func TestVerifyZipFile(t *testing.T) {
 			wantErr:       fmt.Errorf("%w: example.com@v1.0.0: invalid version: untrusted revision v1.0.0", errBadUpstream),
 		},
 		{
-			n:             4,
+			name:          "LookupError",
 			env:           []string{"GOPROXY=off", "GOSUMDB=" + vkey + " " + sumdbServer.URL},
 			zipFile:       zipFile,
 			modulePath:    "example.com",
@@ -3940,7 +3940,7 @@ func TestVerifyZipFile(t *testing.T) {
 			wantErr:       fmt.Errorf("%w: example.com@v1.1.0: bad upstream", errBadUpstream),
 		},
 		{
-			n:             5,
+			name:          "MissingFile",
 			env:           []string{"GOPROXY=off", "GOSUMDB=" + vkey + " " + sumdbServer.URL},
 			zipFile:       filepath.Join(t.TempDir(), "404"),
 			modulePath:    "example.com",
@@ -3948,7 +3948,7 @@ func TestVerifyZipFile(t *testing.T) {
 			wantErr:       fs.ErrNotExist,
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			gf := &GoFetcher{Env: tt.env, TempDir: t.TempDir()}
 			gf.initOnce.Do(gf.init)
 			if gf.initErr != nil {

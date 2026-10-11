@@ -817,7 +817,7 @@ func TestHTTPGet(t *testing.T) {
 
 	t.Run("Normal", func(t *testing.T) {
 		for _, tt := range []struct {
-			n             int
+			name          string
 			ctxTimeout    time.Duration
 			clientTimeout time.Duration
 			handler       http.HandlerFunc
@@ -826,12 +826,12 @@ func TestHTTPGet(t *testing.T) {
 			wantErr       func(serverURL string) error
 		}{
 			{
-				n:           1,
+				name:        "Success",
 				handler:     func(rw http.ResponseWriter, req *http.Request) { fmt.Fprint(rw, "foobar") },
 				wantContent: "foobar",
 			},
 			{
-				n: 2,
+				name: "NotFound",
 				handler: func(rw http.ResponseWriter, req *http.Request) {
 					rw.WriteHeader(http.StatusNotFound)
 					fmt.Fprint(rw, "not found")
@@ -839,7 +839,7 @@ func TestHTTPGet(t *testing.T) {
 				wantErr: func(_ string) error { return fs.ErrNotExist },
 			},
 			{
-				n: 3,
+				name: "InternalServerError",
 				handler: func(rw http.ResponseWriter, req *http.Request) {
 					rw.WriteHeader(http.StatusInternalServerError)
 					fmt.Fprint(rw, "internal server error")
@@ -847,7 +847,7 @@ func TestHTTPGet(t *testing.T) {
 				wantErr: func(_ string) error { return errBadUpstream },
 			},
 			{
-				n: 4,
+				name: "GatewayTimeout",
 				handler: func(rw http.ResponseWriter, req *http.Request) {
 					rw.WriteHeader(http.StatusGatewayTimeout)
 					fmt.Fprint(rw, "gateway timeout")
@@ -855,7 +855,7 @@ func TestHTTPGet(t *testing.T) {
 				wantErr: func(_ string) error { return errFetchTimedOut },
 			},
 			{
-				n: 5,
+				name: "NotImplemented",
 				handler: func(rw http.ResponseWriter, req *http.Request) {
 					rw.WriteHeader(http.StatusNotImplemented)
 					fmt.Fprint(rw, "not implemented")
@@ -865,7 +865,7 @@ func TestHTTPGet(t *testing.T) {
 				},
 			},
 			{
-				n:          6,
+				name:       "ContextDeadline",
 				ctxTimeout: 450 * time.Millisecond,
 				handler: func(rw http.ResponseWriter, req *http.Request) {
 					<-req.Context().Done()
@@ -873,7 +873,7 @@ func TestHTTPGet(t *testing.T) {
 				wantErr: func(_ string) error { return context.DeadlineExceeded },
 			},
 			{
-				n:          7,
+				name:       "ContextCanceled",
 				ctxTimeout: -1,
 				handler: func(rw http.ResponseWriter, req *http.Request) {
 					rw.WriteHeader(http.StatusInternalServerError)
@@ -882,7 +882,7 @@ func TestHTTPGet(t *testing.T) {
 				wantErr: func(_ string) error { return context.Canceled },
 			},
 			{
-				n: 8,
+				name: "TruncatedErrorBody",
 				handler: func(rw http.ResponseWriter, req *http.Request) {
 					rw.WriteHeader(http.StatusInternalServerError)
 					rw.(http.Flusher).Flush()
@@ -897,7 +897,7 @@ func TestHTTPGet(t *testing.T) {
 				wantErr: func(_ string) error { return io.ErrUnexpectedEOF },
 			},
 			{
-				n:             9,
+				name:          "ClientTimeout",
 				clientTimeout: 50 * time.Millisecond,
 				handler: func(rw http.ResponseWriter, req *http.Request) {
 					time.Sleep(50 * time.Millisecond)
@@ -909,12 +909,12 @@ func TestHTTPGet(t *testing.T) {
 				},
 			},
 			{
-				n:           10,
+				name:        "LargeResponse",
 				handler:     func(rw http.ResponseWriter, req *http.Request) { io.WriteString(rw, strings.Repeat("x", 8<<10)) },
 				wantContent: strings.Repeat("x", 8<<10),
 			},
 		} {
-			t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+			t.Run(tt.name, func(t *testing.T) {
 				ctx := t.Context()
 				switch tt.ctxTimeout {
 				case 0:
@@ -1325,18 +1325,18 @@ func TestHTTPGetTemp(t *testing.T) {
 	})
 
 	for _, tt := range []struct {
-		n           int
+		name        string
 		handler     http.HandlerFunc
 		wantContent string
 		wantErr     error
 	}{
 		{
-			n:           1,
+			name:        "Success",
 			handler:     func(rw http.ResponseWriter, req *http.Request) { fmt.Fprint(rw, "foobar") },
 			wantContent: "foobar",
 		},
 		{
-			n: 2,
+			name: "NotFound",
 			handler: func(rw http.ResponseWriter, req *http.Request) {
 				rw.WriteHeader(http.StatusNotFound)
 				fmt.Fprint(rw, "not found")
@@ -1344,7 +1344,7 @@ func TestHTTPGetTemp(t *testing.T) {
 			wantErr: fs.ErrNotExist,
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			server := newHTTPTestServer(t, tt.handler)
 
 			tempFile, _, err := httpGetTemp(t.Context(), http.DefaultClient, server.URL, t.TempDir(), 0)
