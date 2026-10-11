@@ -239,369 +239,6 @@ func TestNewSumDBClientState(t *testing.T) {
 }
 
 func TestSumDBClientStateURL(t *testing.T) {
-	t.Run("ConcurrentCancellation", func(t *testing.T) {
-		for _, tt := range []struct {
-			name  string
-			owner bool
-		}{
-			{"Owner", true},
-			{"Waiter", false},
-		} {
-			t.Run(tt.name, func(t *testing.T) {
-				for _, mode := range []struct {
-					name    string
-					wantErr error
-				}{
-					{"Canceled", context.Canceled},
-					{"DeadlineExceeded", context.DeadlineExceeded},
-				} {
-					t.Run(mode.name, func(t *testing.T) {
-						synctest.Test(t, func(t *testing.T) {
-							startedAt := time.Now()
-							var ctx context.Context
-							var cancel context.CancelFunc
-							if mode.wantErr == context.DeadlineExceeded {
-								ctx, cancel = context.WithTimeout(t.Context(), time.Second)
-							} else {
-								ctx, cancel = context.WithCancel(t.Context())
-							}
-							defer cancel()
-							started, release := make(chan struct{}), make(chan struct{})
-							var attempts atomic.Int32
-							client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-								if attempts.Add(1) == 1 {
-									close(started)
-									select {
-									case <-req.Context().Done():
-										return nil, req.Context().Err()
-									case <-release:
-									}
-								}
-								return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
-							})}
-							scs, err := newSumdbClientState("https://example.com", defaultEnvGOSUMDB, client)
-							if err != nil {
-								t.Fatal(err)
-							}
-							ownerCtx, waiterCtx := t.Context(), ctx
-							if tt.owner {
-								ownerCtx, waiterCtx = ctx, t.Context()
-							}
-							ownerDone, waiterDone := make(chan error, 1), make(chan error, 1)
-							lookup := func(ctx context.Context, done chan<- error) {
-								u, err := scs.url(ctx)
-								if err == nil && u.String() != "https://example.com/sumdb/"+defaultEnvGOSUMDB {
-									t.Errorf("unexpected URL %v", u)
-								}
-								done <- err
-							}
-							go lookup(ownerCtx, ownerDone)
-							<-started
-							go lookup(waiterCtx, waiterDone)
-							synctest.Wait()
-							time.Sleep(time.Second)
-							if mode.wantErr == context.Canceled {
-								cancel()
-							}
-							canceledDone, activeDone := waiterDone, ownerDone
-							if tt.owner {
-								canceledDone, activeDone = ownerDone, waiterDone
-							}
-							if err := <-canceledDone; !errors.Is(err, mode.wantErr) {
-								t.Errorf("got error %v, want %v", err, mode.wantErr)
-							}
-							close(release)
-							if err := <-activeDone; err != nil {
-								t.Errorf("unexpected error from active caller %v", err)
-							}
-							lookup(t.Context(), activeDone)
-							if err := <-activeDone; err != nil {
-								t.Errorf("unexpected error from later caller %v", err)
-							}
-							wantAttempts := int32(1)
-							if tt.owner {
-								wantAttempts = 2
-							}
-							if got := attempts.Load(); got != wantAttempts {
-								t.Errorf("got attempts %d, want %d", got, wantAttempts)
-							}
-							if got, want := time.Since(startedAt), time.Second; got != want {
-								t.Errorf("got duration %v, want %v", got, want)
-							}
-						})
-					})
-				}
-			})
-		}
-	})
-
-	t.Run("AlreadyCanceled", func(t *testing.T) {
-		for _, tt := range []struct {
-			name string
-			warm bool
-		}{
-			{"Cold", false},
-			{"Warm", true},
-		} {
-			t.Run(tt.name, func(t *testing.T) {
-				attempts := 0
-				client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-					attempts++
-					return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
-				})}
-				scs, err := newSumdbClientState("https://example.com", defaultEnvGOSUMDB, client)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if tt.warm {
-					if _, err := scs.url(t.Context()); err != nil {
-						t.Fatal(err)
-					}
-				}
-				ctx, cancel := context.WithCancel(t.Context())
-				cancel()
-				before := attempts
-				if u, err := scs.url(ctx); u != nil || !errors.Is(err, context.Canceled) {
-					t.Errorf("got (%v, %v), want no URL and cancellation", u, err)
-				}
-				if attempts != before {
-					t.Errorf("got attempts %d, want %d", attempts, before)
-				}
-			})
-		}
-	})
-
-	t.Run("ConcurrentDiscovery", func(t *testing.T) {
-		for _, tt := range []struct {
-			name        string
-			firstStatus int
-			nextStatus  int
-			wantURL     string
-		}{
-			{"Proxy", http.StatusOK, http.StatusOK, "https://example.com/sumdb/" + defaultEnvGOSUMDB},
-			{"ProxyThenError", http.StatusOK, http.StatusBadRequest, "https://example.com/sumdb/" + defaultEnvGOSUMDB},
-			{"ProxyThenNotFound", http.StatusOK, http.StatusNotFound, "https://example.com/sumdb/" + defaultEnvGOSUMDB},
-			{"DirectThenProxy", http.StatusNotFound, http.StatusOK, "https://" + defaultEnvGOSUMDB},
-			{"DirectThenError", http.StatusNotFound, http.StatusBadRequest, "https://" + defaultEnvGOSUMDB},
-		} {
-			t.Run(tt.name, func(t *testing.T) {
-				const callers = 16
-				var started, finished sync.WaitGroup
-				started.Add(callers)
-				var attempts atomic.Int32
-				client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-					code := tt.nextStatus
-					if attempts.Add(1) == 1 {
-						started.Wait()
-						code = tt.firstStatus
-					}
-					return &http.Response{
-						StatusCode: code,
-						Status:     strconv.Itoa(code) + " " + http.StatusText(code),
-						Body:       http.NoBody,
-						Request:    req,
-					}, nil
-				})}
-				scs, err := newSumdbClientState("https://example.com", defaultEnvGOSUMDB, client)
-				if err != nil {
-					t.Fatal(err)
-				}
-				lookup := func() {
-					u, err := scs.url(t.Context())
-					if err != nil {
-						t.Errorf("unexpected error %v", err)
-						return
-					}
-					if got := u.String(); got != tt.wantURL {
-						t.Errorf("got URL %q, want %q", got, tt.wantURL)
-					}
-				}
-				for range callers {
-					finished.Go(func() {
-						started.Done()
-						lookup()
-					})
-				}
-				finished.Wait()
-				lookup()
-				if got, want := attempts.Load(), int32(1); got != want {
-					t.Errorf("got attempts %d, want %d", got, want)
-				}
-			})
-		}
-	})
-
-	t.Run("FailureCacheExpiry", func(t *testing.T) {
-		synctest.Test(t, func(t *testing.T) {
-			attempts := 0
-			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-				attempts++
-				code := http.StatusOK
-				if attempts == 1 {
-					code = http.StatusBadRequest
-				}
-				return &http.Response{
-					StatusCode: code,
-					Status:     strconv.Itoa(code) + " " + http.StatusText(code),
-					Body:       http.NoBody,
-					Request:    req,
-				}, nil
-			})}
-			scs, err := newSumdbClientState("https://example.com", defaultEnvGOSUMDB, client)
-			if err != nil {
-				t.Fatal(err)
-			}
-			u, err := scs.url(t.Context())
-			if err == nil || u != nil {
-				t.Fatalf("got (%v, %v), want an error and no URL", u, err)
-			}
-			time.Sleep(10*time.Second - time.Nanosecond)
-			if nextURL, nextErr := scs.url(t.Context()); nextURL != u || nextErr != err {
-				t.Errorf("got (%v, %v), want (%v, %v)", nextURL, nextErr, u, err)
-			}
-			if got, want := attempts, 1; got != want {
-				t.Errorf("got attempts %d, want %d", got, want)
-			}
-			time.Sleep(time.Nanosecond)
-			u, err = scs.url(t.Context())
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got, want := u.String(), "https://example.com/sumdb/"+defaultEnvGOSUMDB; got != want {
-				t.Errorf("got URL %q, want %q", got, want)
-			}
-			if nextURL, nextErr := scs.url(t.Context()); nextURL != u || nextErr != nil {
-				t.Errorf("got (%v, %v), want (%v, nil)", nextURL, nextErr, u)
-			}
-			if got, want := attempts, 2; got != want {
-				t.Errorf("got attempts %d, want %d", got, want)
-			}
-		})
-	})
-
-	t.Run("TimeoutFallback", func(t *testing.T) {
-		for _, tt := range []struct {
-			name      string
-			suffix    string
-			wantHosts []string
-			wantURL   string
-		}{
-			{"SingleProxy", "", []string{"example.com"}, ""},
-			{"CommaProxy", ",https://alt.example.com", []string{"example.com"}, ""},
-			{"PipeProxy", "|https://alt.example.com", []string{"example.com", "alt.example.com"}, "https://alt.example.com/sumdb/" + defaultEnvGOSUMDB},
-			{"CommaDirect", ",direct", []string{"example.com"}, ""},
-			{"PipeDirect", "|direct", []string{"example.com"}, "https://" + defaultEnvGOSUMDB},
-		} {
-			t.Run(tt.name, func(t *testing.T) {
-				synctest.Test(t, func(t *testing.T) {
-					var hosts []string
-					client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-						hosts = append(hosts, req.URL.Host)
-						if _, ok := req.Context().Deadline(); !ok {
-							t.Error("request has no deadline")
-							return nil, context.DeadlineExceeded
-						}
-						if req.URL.Host == "example.com" {
-							<-req.Context().Done()
-							return nil, req.Context().Err()
-						}
-						return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
-					})}
-					scs, err := newSumdbClientState("https://example.com"+tt.suffix, defaultEnvGOSUMDB, client)
-					if err != nil {
-						t.Fatal(err)
-					}
-					started := time.Now()
-					u, err := scs.url(t.Context())
-					if tt.wantURL == "" {
-						if !errors.Is(err, context.DeadlineExceeded) || u != nil {
-							t.Errorf("got (%v, %v), want a timeout and no URL", u, err)
-						}
-					} else if err != nil {
-						t.Fatalf("unexpected error %v", err)
-					} else if got := u.String(); got != tt.wantURL {
-						t.Errorf("got URL %q, want %q", got, tt.wantURL)
-					}
-					if nextURL, nextErr := scs.url(t.Context()); nextURL != u || nextErr != err {
-						t.Errorf("got (%v, %v), want (%v, %v)", nextURL, nextErr, u, err)
-					}
-					if !slices.Equal(hosts, tt.wantHosts) {
-						t.Errorf("got hosts %q, want %q", hosts, tt.wantHosts)
-					}
-					if got, want := time.Since(started), time.Minute; got != want {
-						t.Errorf("got duration %v, want %v", got, want)
-					}
-				})
-			})
-		}
-	})
-
-	t.Run("HTTPStatusFallback", func(t *testing.T) {
-		for _, statusCode := range []int{http.StatusBadRequest, http.StatusNotFound, http.StatusGone} {
-			for _, tt := range []struct {
-				name    string
-				suffix  string
-				wantURL string
-			}{
-				{"SingleProxy", "", "https://" + defaultEnvGOSUMDB},
-				{"CommaProxy", ",https://alt.example.com", "https://alt.example.com/sumdb/" + defaultEnvGOSUMDB},
-				{"PipeProxy", "|https://alt.example.com", "https://alt.example.com/sumdb/" + defaultEnvGOSUMDB},
-				{"CommaDirect", ",direct", "https://" + defaultEnvGOSUMDB},
-				{"PipeDirect", "|direct", "https://" + defaultEnvGOSUMDB},
-			} {
-				t.Run(strconv.Itoa(statusCode)+"/"+tt.name, func(t *testing.T) {
-					attempts := 0
-					client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-						attempts++
-						if got, want := req.URL.Path, "/sumdb/"+defaultEnvGOSUMDB+"/supported"; got != want {
-							t.Errorf("got path %q, want %q", got, want)
-						}
-						code := statusCode
-						if req.URL.Host == "alt.example.com" {
-							code = http.StatusOK
-						}
-						return &http.Response{
-							StatusCode: code,
-							Status:     strconv.Itoa(code) + " " + http.StatusText(code),
-							Body:       http.NoBody,
-							Request:    req,
-						}, nil
-					})}
-					scs, err := newSumdbClientState("https://example.com"+tt.suffix, defaultEnvGOSUMDB, client)
-					if err != nil {
-						t.Fatal(err)
-					}
-					u, err := scs.url(t.Context())
-					wantAttempts := 1
-					if statusCode == http.StatusBadRequest && !strings.HasPrefix(tt.suffix, "|") {
-						if err == nil || errors.Is(err, fs.ErrNotExist) {
-							t.Errorf("got %v, want a non-absence error", err)
-						}
-						if u != nil {
-							t.Errorf("got URL %v, want nil", u)
-						}
-					} else {
-						if err != nil {
-							t.Fatalf("unexpected error %v", err)
-						}
-						if got, want := u.String(), tt.wantURL; got != want {
-							t.Errorf("got URL %q, want %q", got, want)
-						}
-						if strings.Contains(tt.suffix, "alt.example.com") {
-							wantAttempts = 2
-						}
-					}
-					if nextURL, nextErr := scs.url(t.Context()); nextURL != u || nextErr != err {
-						t.Errorf("got (%v, %v), want (%v, %v)", nextURL, nextErr, u, err)
-					}
-					if got, want := attempts, wantAttempts; got != want {
-						t.Errorf("got attempts %d, want %d", got, want)
-					}
-				})
-			}
-		}
-	})
-
 	for _, tt := range []struct {
 		name         string
 		proxyHandler http.HandlerFunc
@@ -697,9 +334,464 @@ func TestSumDBClientStateURL(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("HTTPStatusFallback", func(t *testing.T) {
+		for _, statusCode := range []int{http.StatusBadRequest, http.StatusNotFound, http.StatusGone} {
+			for _, tt := range []struct {
+				name    string
+				suffix  string
+				wantURL string
+			}{
+				{"SingleProxy", "", "https://" + defaultEnvGOSUMDB},
+				{"CommaProxy", ",https://alt.example.com", "https://alt.example.com/sumdb/" + defaultEnvGOSUMDB},
+				{"PipeProxy", "|https://alt.example.com", "https://alt.example.com/sumdb/" + defaultEnvGOSUMDB},
+				{"CommaDirect", ",direct", "https://" + defaultEnvGOSUMDB},
+				{"PipeDirect", "|direct", "https://" + defaultEnvGOSUMDB},
+			} {
+				t.Run(strconv.Itoa(statusCode)+"/"+tt.name, func(t *testing.T) {
+					attempts := 0
+					client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						attempts++
+						if got, want := req.URL.Path, "/sumdb/"+defaultEnvGOSUMDB+"/supported"; got != want {
+							t.Errorf("got path %q, want %q", got, want)
+						}
+						code := statusCode
+						if req.URL.Host == "alt.example.com" {
+							code = http.StatusOK
+						}
+						return &http.Response{
+							StatusCode: code,
+							Status:     strconv.Itoa(code) + " " + http.StatusText(code),
+							Body:       http.NoBody,
+							Request:    req,
+						}, nil
+					})}
+					scs, err := newSumdbClientState("https://example.com"+tt.suffix, defaultEnvGOSUMDB, client)
+					if err != nil {
+						t.Fatal(err)
+					}
+					u, err := scs.url(t.Context())
+					wantAttempts := 1
+					if statusCode == http.StatusBadRequest && !strings.HasPrefix(tt.suffix, "|") {
+						if err == nil || errors.Is(err, fs.ErrNotExist) {
+							t.Errorf("got %v, want a non-absence error", err)
+						}
+						if u != nil {
+							t.Errorf("got URL %v, want nil", u)
+						}
+					} else {
+						if err != nil {
+							t.Fatalf("unexpected error %v", err)
+						}
+						if got, want := u.String(), tt.wantURL; got != want {
+							t.Errorf("got URL %q, want %q", got, want)
+						}
+						if strings.Contains(tt.suffix, "alt.example.com") {
+							wantAttempts = 2
+						}
+					}
+					if nextURL, nextErr := scs.url(t.Context()); nextURL != u || nextErr != err {
+						t.Errorf("got (%v, %v), want (%v, %v)", nextURL, nextErr, u, err)
+					}
+					if got, want := attempts, wantAttempts; got != want {
+						t.Errorf("got attempts %d, want %d", got, want)
+					}
+				})
+			}
+		}
+	})
+
+	t.Run("TimeoutFallback", func(t *testing.T) {
+		for _, tt := range []struct {
+			name      string
+			suffix    string
+			wantHosts []string
+			wantURL   string
+		}{
+			{"SingleProxy", "", []string{"example.com"}, ""},
+			{"CommaProxy", ",https://alt.example.com", []string{"example.com"}, ""},
+			{"PipeProxy", "|https://alt.example.com", []string{"example.com", "alt.example.com"}, "https://alt.example.com/sumdb/" + defaultEnvGOSUMDB},
+			{"CommaDirect", ",direct", []string{"example.com"}, ""},
+			{"PipeDirect", "|direct", []string{"example.com"}, "https://" + defaultEnvGOSUMDB},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					var hosts []string
+					client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						hosts = append(hosts, req.URL.Host)
+						if _, ok := req.Context().Deadline(); !ok {
+							t.Error("request has no deadline")
+							return nil, context.DeadlineExceeded
+						}
+						if req.URL.Host == "example.com" {
+							<-req.Context().Done()
+							return nil, req.Context().Err()
+						}
+						return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+					})}
+					scs, err := newSumdbClientState("https://example.com"+tt.suffix, defaultEnvGOSUMDB, client)
+					if err != nil {
+						t.Fatal(err)
+					}
+					started := time.Now()
+					u, err := scs.url(t.Context())
+					if tt.wantURL == "" {
+						if !errors.Is(err, context.DeadlineExceeded) || u != nil {
+							t.Errorf("got (%v, %v), want a timeout and no URL", u, err)
+						}
+					} else if err != nil {
+						t.Fatalf("unexpected error %v", err)
+					} else if got := u.String(); got != tt.wantURL {
+						t.Errorf("got URL %q, want %q", got, tt.wantURL)
+					}
+					if nextURL, nextErr := scs.url(t.Context()); nextURL != u || nextErr != err {
+						t.Errorf("got (%v, %v), want (%v, %v)", nextURL, nextErr, u, err)
+					}
+					if !slices.Equal(hosts, tt.wantHosts) {
+						t.Errorf("got hosts %q, want %q", hosts, tt.wantHosts)
+					}
+					if got, want := time.Since(started), time.Minute; got != want {
+						t.Errorf("got duration %v, want %v", got, want)
+					}
+				})
+			})
+		}
+	})
+
+	t.Run("FailureCacheExpiry", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			attempts := 0
+			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				attempts++
+				code := http.StatusOK
+				if attempts == 1 {
+					code = http.StatusBadRequest
+				}
+				return &http.Response{
+					StatusCode: code,
+					Status:     strconv.Itoa(code) + " " + http.StatusText(code),
+					Body:       http.NoBody,
+					Request:    req,
+				}, nil
+			})}
+			scs, err := newSumdbClientState("https://example.com", defaultEnvGOSUMDB, client)
+			if err != nil {
+				t.Fatal(err)
+			}
+			u, err := scs.url(t.Context())
+			if err == nil || u != nil {
+				t.Fatalf("got (%v, %v), want an error and no URL", u, err)
+			}
+			time.Sleep(10*time.Second - time.Nanosecond)
+			if nextURL, nextErr := scs.url(t.Context()); nextURL != u || nextErr != err {
+				t.Errorf("got (%v, %v), want (%v, %v)", nextURL, nextErr, u, err)
+			}
+			if got, want := attempts, 1; got != want {
+				t.Errorf("got attempts %d, want %d", got, want)
+			}
+			time.Sleep(time.Nanosecond)
+			u, err = scs.url(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, want := u.String(), "https://example.com/sumdb/"+defaultEnvGOSUMDB; got != want {
+				t.Errorf("got URL %q, want %q", got, want)
+			}
+			if nextURL, nextErr := scs.url(t.Context()); nextURL != u || nextErr != nil {
+				t.Errorf("got (%v, %v), want (%v, nil)", nextURL, nextErr, u)
+			}
+			if got, want := attempts, 2; got != want {
+				t.Errorf("got attempts %d, want %d", got, want)
+			}
+		})
+	})
+
+	t.Run("ConcurrentDiscovery", func(t *testing.T) {
+		for _, tt := range []struct {
+			name        string
+			firstStatus int
+			nextStatus  int
+			wantURL     string
+		}{
+			{"Proxy", http.StatusOK, http.StatusOK, "https://example.com/sumdb/" + defaultEnvGOSUMDB},
+			{"ProxyThenError", http.StatusOK, http.StatusBadRequest, "https://example.com/sumdb/" + defaultEnvGOSUMDB},
+			{"ProxyThenNotFound", http.StatusOK, http.StatusNotFound, "https://example.com/sumdb/" + defaultEnvGOSUMDB},
+			{"DirectThenProxy", http.StatusNotFound, http.StatusOK, "https://" + defaultEnvGOSUMDB},
+			{"DirectThenError", http.StatusNotFound, http.StatusBadRequest, "https://" + defaultEnvGOSUMDB},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				const callers = 16
+				var started, finished sync.WaitGroup
+				started.Add(callers)
+				var attempts atomic.Int32
+				client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					code := tt.nextStatus
+					if attempts.Add(1) == 1 {
+						started.Wait()
+						code = tt.firstStatus
+					}
+					return &http.Response{
+						StatusCode: code,
+						Status:     strconv.Itoa(code) + " " + http.StatusText(code),
+						Body:       http.NoBody,
+						Request:    req,
+					}, nil
+				})}
+				scs, err := newSumdbClientState("https://example.com", defaultEnvGOSUMDB, client)
+				if err != nil {
+					t.Fatal(err)
+				}
+				lookup := func() {
+					u, err := scs.url(t.Context())
+					if err != nil {
+						t.Errorf("unexpected error %v", err)
+						return
+					}
+					if got := u.String(); got != tt.wantURL {
+						t.Errorf("got URL %q, want %q", got, tt.wantURL)
+					}
+				}
+				for range callers {
+					finished.Go(func() {
+						started.Done()
+						lookup()
+					})
+				}
+				finished.Wait()
+				lookup()
+				if got, want := attempts.Load(), int32(1); got != want {
+					t.Errorf("got attempts %d, want %d", got, want)
+				}
+			})
+		}
+	})
+
+	t.Run("AlreadyCanceled", func(t *testing.T) {
+		for _, tt := range []struct {
+			name string
+			warm bool
+		}{
+			{"Cold", false},
+			{"Warm", true},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				attempts := 0
+				client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					attempts++
+					return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+				})}
+				scs, err := newSumdbClientState("https://example.com", defaultEnvGOSUMDB, client)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if tt.warm {
+					if _, err := scs.url(t.Context()); err != nil {
+						t.Fatal(err)
+					}
+				}
+				ctx, cancel := context.WithCancel(t.Context())
+				cancel()
+				before := attempts
+				if u, err := scs.url(ctx); u != nil || !errors.Is(err, context.Canceled) {
+					t.Errorf("got (%v, %v), want no URL and cancellation", u, err)
+				}
+				if attempts != before {
+					t.Errorf("got attempts %d, want %d", attempts, before)
+				}
+			})
+		}
+	})
+
+	t.Run("CanceledAfterLock", func(t *testing.T) {
+		for _, tt := range []struct {
+			name string
+			warm bool
+		}{
+			{"Cold", false},
+			{"Warm", true},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				attempts := 0
+				client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					attempts++
+					return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+				})}
+				scs, err := newSumdbClientState("https://example.com", defaultEnvGOSUMDB, client)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if tt.warm {
+					if _, err := scs.url(t.Context()); err != nil {
+						t.Fatal(err)
+					}
+				}
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				before := attempts
+				if u, err := scs.url(testCancelOnErrContext{ctx, cancel}); u != nil || !errors.Is(err, context.Canceled) {
+					t.Errorf("got (%v, %v), want no URL and cancellation", u, err)
+				}
+				if attempts != before {
+					t.Errorf("got attempts %d, want %d", attempts, before)
+				}
+				if _, err := scs.url(t.Context()); err != nil {
+					t.Errorf("unexpected error from later caller %v", err)
+				}
+			})
+		}
+	})
+
+	t.Run("ConcurrentCancellation", func(t *testing.T) {
+		for _, tt := range []struct {
+			name  string
+			owner bool
+		}{
+			{"Owner", true},
+			{"Waiter", false},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				for _, mode := range []struct {
+					name    string
+					wantErr error
+				}{
+					{"Canceled", context.Canceled},
+					{"DeadlineExceeded", context.DeadlineExceeded},
+				} {
+					t.Run(mode.name, func(t *testing.T) {
+						synctest.Test(t, func(t *testing.T) {
+							startedAt := time.Now()
+							var ctx context.Context
+							var cancel context.CancelFunc
+							if mode.wantErr == context.DeadlineExceeded {
+								ctx, cancel = context.WithTimeout(t.Context(), time.Second)
+							} else {
+								ctx, cancel = context.WithCancel(t.Context())
+							}
+							defer cancel()
+							started, release := make(chan struct{}), make(chan struct{})
+							var attempts atomic.Int32
+							client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+								if attempts.Add(1) == 1 {
+									close(started)
+									select {
+									case <-req.Context().Done():
+										return nil, req.Context().Err()
+									case <-release:
+									}
+								}
+								return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+							})}
+							scs, err := newSumdbClientState("https://example.com", defaultEnvGOSUMDB, client)
+							if err != nil {
+								t.Fatal(err)
+							}
+							ownerCtx, waiterCtx := t.Context(), ctx
+							if tt.owner {
+								ownerCtx, waiterCtx = ctx, t.Context()
+							}
+							ownerDone, waiterDone := make(chan error, 1), make(chan error, 1)
+							lookup := func(ctx context.Context, done chan<- error) {
+								u, err := scs.url(ctx)
+								if err == nil && u.String() != "https://example.com/sumdb/"+defaultEnvGOSUMDB {
+									t.Errorf("unexpected URL %v", u)
+								}
+								done <- err
+							}
+							go lookup(ownerCtx, ownerDone)
+							<-started
+							go lookup(waiterCtx, waiterDone)
+							synctest.Wait()
+							time.Sleep(time.Second)
+							if mode.wantErr == context.Canceled {
+								cancel()
+							}
+							canceledDone, activeDone := waiterDone, ownerDone
+							if tt.owner {
+								canceledDone, activeDone = ownerDone, waiterDone
+							}
+							if err := <-canceledDone; !errors.Is(err, mode.wantErr) {
+								t.Errorf("got error %v, want %v", err, mode.wantErr)
+							}
+							close(release)
+							if err := <-activeDone; err != nil {
+								t.Errorf("unexpected error from active caller %v", err)
+							}
+							lookup(t.Context(), activeDone)
+							if err := <-activeDone; err != nil {
+								t.Errorf("unexpected error from later caller %v", err)
+							}
+							wantAttempts := int32(1)
+							if tt.owner {
+								wantAttempts = 2
+							}
+							if got := attempts.Load(); got != wantAttempts {
+								t.Errorf("got attempts %d, want %d", got, wantAttempts)
+							}
+							if got, want := time.Since(startedAt), time.Second; got != want {
+								t.Errorf("got duration %v, want %v", got, want)
+							}
+						})
+					})
+				}
+			})
+		}
+	})
 }
 
 func TestSumDBClientStateReadRemote(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		proxyHandler http.HandlerFunc
+		wantContent  string
+		wantErr      error
+	}{
+		{
+			name:         "Success",
+			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { fmt.Fprint(rw, "foobar") },
+			wantContent:  "foobar",
+		},
+		{
+			name: "FetchError",
+			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
+				if !strings.HasSuffix(req.URL.Path, "/supported") {
+					responseInternalServerError(rw, req)
+				}
+			},
+			wantErr: errBadUpstream,
+		},
+		{
+			name:         "DiscoveryError",
+			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseInternalServerError(rw, req) },
+			wantErr:      errBadUpstream,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			proxyServer := newHTTPTestServer(t, tt.proxyHandler)
+
+			scs, err := newSumdbClientState(proxyServer.URL, defaultEnvGOSUMDB, http.DefaultClient)
+			if err != nil {
+				t.Fatalf("unexpected error %v", err)
+			}
+
+			b, err := scs.ReadRemote(t.Context(), "file")
+			if tt.wantErr != nil {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				if got, want := err, tt.wantErr; !compareErrors(got, want) {
+					t.Errorf("got %v, want %v", got, want)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error %v", err)
+				}
+				if got, want := string(b), tt.wantContent; got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
+			}
+		})
+	}
+
 	t.Run("Timeout", func(t *testing.T) {
 		for _, tt := range []struct {
 			name           string
@@ -818,42 +910,37 @@ func TestSumDBClientStateReadRemote(t *testing.T) {
 			}
 		})
 	})
+}
 
+func TestSumDBClientStateReadConfig(t *testing.T) {
 	for _, tt := range []struct {
-		name         string
-		proxyHandler http.HandlerFunc
-		wantContent  string
-		wantErr      error
+		name        string
+		file        string
+		wantContent string
+		wantErr     error
 	}{
 		{
-			name:         "Success",
-			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { fmt.Fprint(rw, "foobar") },
-			wantContent:  "foobar",
+			name:        "Key",
+			file:        "key",
+			wantContent: sumGolangOrgKey,
 		},
 		{
-			name: "FetchError",
-			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				if !strings.HasSuffix(req.URL.Path, "/supported") {
-					responseInternalServerError(rw, req)
-				}
-			},
-			wantErr: errBadUpstream,
+			name: "Latest",
+			file: "/latest",
 		},
 		{
-			name:         "DiscoveryError",
-			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseInternalServerError(rw, req) },
-			wantErr:      errBadUpstream,
+			name:    "UnknownFile",
+			file:    "file",
+			wantErr: errors.New("unknown config file"),
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			proxyServer := newHTTPTestServer(t, tt.proxyHandler)
-
-			scs, err := newSumdbClientState(proxyServer.URL, defaultEnvGOSUMDB, http.DefaultClient)
+			scs, err := newSumdbClientState("direct", defaultEnvGOSUMDB, http.DefaultClient)
 			if err != nil {
 				t.Fatalf("unexpected error %v", err)
 			}
 
-			b, err := scs.ReadRemote(t.Context(), "file")
+			b, err := scs.ReadConfig(tt.file)
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatal("expected error")
@@ -871,9 +958,7 @@ func TestSumDBClientStateReadRemote(t *testing.T) {
 			}
 		})
 	}
-}
 
-func TestSumDBClientStateReadConfig(t *testing.T) {
 	t.Run("ClientContinuity", func(t *testing.T) {
 		skey, vkey, err := note.GenerateKey(nil, "sumdb.example.com")
 		if err != nil {
@@ -935,52 +1020,6 @@ func TestSumDBClientStateReadConfig(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-
-	for _, tt := range []struct {
-		name        string
-		file        string
-		wantContent string
-		wantErr     error
-	}{
-		{
-			name:        "Key",
-			file:        "key",
-			wantContent: sumGolangOrgKey,
-		},
-		{
-			name: "Latest",
-			file: "/latest",
-		},
-		{
-			name:    "UnknownFile",
-			file:    "file",
-			wantErr: errors.New("unknown config file"),
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			scs, err := newSumdbClientState("direct", defaultEnvGOSUMDB, http.DefaultClient)
-			if err != nil {
-				t.Fatalf("unexpected error %v", err)
-			}
-
-			b, err := scs.ReadConfig(tt.file)
-			if tt.wantErr != nil {
-				if err == nil {
-					t.Fatal("expected error")
-				}
-				if got, want := err, tt.wantErr; !compareErrors(got, want) {
-					t.Errorf("got %v, want %v", got, want)
-				}
-			} else {
-				if err != nil {
-					t.Fatalf("unexpected error %v", err)
-				}
-				if got, want := string(b), tt.wantContent; got != want {
-					t.Errorf("got %q, want %q", got, want)
-				}
-			}
-		})
-	}
 }
 
 func TestSumDBClientStateWriteConfig(t *testing.T) {
@@ -1111,4 +1150,15 @@ func TestSumDBClientStateLog(t *testing.T) {
 func TestSumDBClientStateSecurityError(t *testing.T) {
 	scs := &sumdbClientState{}
 	scs.SecurityError("")
+}
+
+type testCancelOnErrContext struct {
+	context.Context
+	cancel context.CancelFunc
+}
+
+func (ctx testCancelOnErrContext) Err() error {
+	// Cancel between observing Done and checking Err.
+	ctx.cancel()
+	return ctx.Context.Err()
 }
