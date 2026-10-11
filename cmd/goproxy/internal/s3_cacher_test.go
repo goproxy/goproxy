@@ -258,7 +258,7 @@ func TestS3CacherGet(t *testing.T) {
 		}))
 		defer server.Close()
 
-		cacher := newTestS3Cacher(t, server, "test-bucket")
+		cacher := newTestS3Cacher(t, server, "test-bucket", "")
 		_, err := cacher.Get(t.Context(), "missing")
 		if !errors.Is(err, fs.ErrNotExist) {
 			t.Fatalf("got %v, want %v", err, fs.ErrNotExist)
@@ -273,7 +273,7 @@ func TestS3CacherGet(t *testing.T) {
 		}))
 		defer server.Close()
 
-		cacher := newTestS3Cacher(t, server, "test-bucket")
+		cacher := newTestS3Cacher(t, server, "test-bucket", "")
 		_, err := cacher.Get(t.Context(), "forbidden")
 		if err == nil || errors.Is(err, fs.ErrNotExist) {
 			t.Fatalf("got %v, want a non-not-found error", err)
@@ -297,7 +297,7 @@ func TestS3CacherGet(t *testing.T) {
 		}))
 		defer server.Close()
 
-		cache, err := newTestS3Cacher(t, server, "test-bucket").Get(t.Context(), "missing")
+		cache, err := newTestS3Cacher(t, server, "test-bucket", "").Get(t.Context(), "missing")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -317,6 +317,7 @@ func TestS3CacherGet(t *testing.T) {
 
 	for _, tt := range []struct {
 		name             string
+		prefix           string
 		method           string
 		requestRange     string
 		wantStatusCode   int
@@ -335,7 +336,19 @@ func TestS3CacherGet(t *testing.T) {
 			},
 		},
 		{
+			name:           "FullResponseWithPrefix",
+			prefix:         "goproxy/prod/",
+			method:         http.MethodGet,
+			wantStatusCode: http.StatusOK,
+			wantContent:    content,
+			wantRequests: []string{
+				`HEAD range="" if-match=""`,
+				`GET range="" if-match="\"test-etag\""`,
+			},
+		},
+		{
 			name:             "RangeResponse",
+			prefix:           "goproxy/prod/",
 			method:           http.MethodGet,
 			requestRange:     "bytes=7-",
 			wantStatusCode:   http.StatusPartialContent,
@@ -348,6 +361,7 @@ func TestS3CacherGet(t *testing.T) {
 		},
 		{
 			name:           "HeadResponse",
+			prefix:         "goproxy-",
 			method:         http.MethodHead,
 			wantStatusCode: http.StatusOK,
 			wantRequests: []string{
@@ -361,6 +375,9 @@ func TestS3CacherGet(t *testing.T) {
 				requests []string
 			)
 			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+				if got, want := req.URL.Path, "/"+bucket+"/"+tt.prefix+key; got != want {
+					t.Errorf("got path %q, want %q", got, want)
+				}
 				mu.Lock()
 				requests = append(requests, req.Method+
 					" range="+strconv.Quote(req.Header.Get("Range"))+
@@ -399,7 +416,7 @@ func TestS3CacherGet(t *testing.T) {
 			}))
 			defer server.Close()
 
-			proxy := &goproxy.Goproxy{Cacher: newTestS3Cacher(t, server, bucket)}
+			proxy := &goproxy.Goproxy{Cacher: newTestS3Cacher(t, server, bucket, tt.prefix)}
 			req := httptest.NewRequest(tt.method, "https://goproxy.test/"+key, nil)
 			req.Header.Set("Range", tt.requestRange)
 			rec := httptest.NewRecorder()
@@ -442,6 +459,7 @@ func TestS3CacherPut(t *testing.T) {
 
 	for _, tt := range []struct {
 		name            string
+		prefix          string
 		key             string
 		wantContentType string
 	}{
@@ -463,6 +481,30 @@ func TestS3CacherPut(t *testing.T) {
 		{
 			name:            "Unknown",
 			key:             "other",
+			wantContentType: "application/octet-stream",
+		},
+		{
+			name:            "PrefixWithTrailingSlash",
+			prefix:          "goproxy/prod/",
+			key:             "example.com/@v/v1.0.0.mod",
+			wantContentType: "text/plain; charset=utf-8",
+		},
+		{
+			name:            "PrefixWithoutTrailingSlash",
+			prefix:          "goproxy-",
+			key:             "example.com/@v/v1.0.0.mod",
+			wantContentType: "text/plain; charset=utf-8",
+		},
+		{
+			name:            "LiteralPrefix",
+			prefix:          "/goproxy//./../space %?#/",
+			key:             "example.com/@v/v1.0.0.mod",
+			wantContentType: "text/plain; charset=utf-8",
+		},
+		{
+			name:            "SumDBWithPrefix",
+			prefix:          "goproxy/prod/",
+			key:             "sumdb/sum.golang.org/latest",
 			wantContentType: "application/octet-stream",
 		},
 	} {
@@ -491,14 +533,14 @@ func TestS3CacherPut(t *testing.T) {
 			}))
 			defer server.Close()
 
-			cacher := newTestS3Cacher(t, server, "test-bucket")
+			cacher := newTestS3Cacher(t, server, "test-bucket", tt.prefix)
 			if err := cacher.Put(t.Context(), tt.key, strings.NewReader(content)); err != nil {
 				t.Fatal(err)
 			}
 			if got, want := gotMethod, http.MethodPut; got != want {
 				t.Errorf("got method %q, want %q", got, want)
 			}
-			if got, want := gotPath, "/test-bucket/"+tt.key; got != want {
+			if got, want := gotPath, "/test-bucket/"+tt.prefix+tt.key; got != want {
 				t.Errorf("got path %q, want %q", got, want)
 			}
 			if got, want := gotContentType, tt.wantContentType; got != want {
@@ -537,7 +579,7 @@ func TestS3CacherPut(t *testing.T) {
 				}))
 				defer server.Close()
 
-				cacher := newTestS3Cacher(t, server, "test-bucket")
+				cacher := newTestS3Cacher(t, server, "test-bucket", "")
 				if err := cacher.Put(t.Context(), "test", strings.NewReader(content)); err == nil {
 					t.Fatal("expected error, got nil")
 				}
@@ -584,6 +626,7 @@ func TestS3CacherPut(t *testing.T) {
 	t.Run("Multipart", func(t *testing.T) {
 		const (
 			bucket   = "test-bucket"
+			prefix   = "goproxy/prod/"
 			key      = "example.com/@v/v1.0.0.zip"
 			partSize = 5 << 20
 			uploadID = "test-upload-id"
@@ -600,6 +643,9 @@ func TestS3CacherPut(t *testing.T) {
 			gotCompletedParts []completedPart
 		)
 		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			if got, want := req.URL.Path, "/"+bucket+"/"+prefix+key; got != want {
+				t.Errorf("got path %q, want %q", got, want)
+			}
 			query := req.URL.Query()
 			switch {
 			case req.Method == http.MethodPost && query.Has("uploads"):
@@ -610,7 +656,7 @@ func TestS3CacherPut(t *testing.T) {
 				rw.Write([]byte(
 					`<InitiateMultipartUploadResult>` +
 						`<Bucket>` + bucket + `</Bucket>` +
-						`<Key>` + key + `</Key>` +
+						`<Key>` + prefix + key + `</Key>` +
 						`<UploadId>` + uploadID + `</UploadId>` +
 						`</InitiateMultipartUploadResult>`,
 				))
@@ -653,7 +699,7 @@ func TestS3CacherPut(t *testing.T) {
 				rw.Write([]byte(
 					`<CompleteMultipartUploadResult>` +
 						`<Bucket>` + bucket + `</Bucket>` +
-						`<Key>` + key + `</Key>` +
+						`<Key>` + prefix + key + `</Key>` +
 						`<ETag>"test-etag"</ETag>` +
 						`</CompleteMultipartUploadResult>`,
 				))
@@ -664,7 +710,7 @@ func TestS3CacherPut(t *testing.T) {
 		}))
 		defer server.Close()
 
-		cacher := newTestS3Cacher(t, server, bucket)
+		cacher := newTestS3Cacher(t, server, bucket, prefix)
 		if err := cacher.Put(t.Context(), key, bytes.NewReader(content)); err != nil {
 			t.Fatal(err)
 		}
@@ -698,6 +744,7 @@ func TestS3CacherPut(t *testing.T) {
 	t.Run("MultipartFailure", func(t *testing.T) {
 		const (
 			bucket   = "test-bucket"
+			prefix   = "goproxy/prod/"
 			key      = "example.com/@v/v1.0.0.zip"
 			partSize = 5 << 20
 			uploadID = "test-upload-id"
@@ -709,6 +756,9 @@ func TestS3CacherPut(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
 		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			if got, want := req.URL.Path, "/"+bucket+"/"+prefix+key; got != want {
+				t.Errorf("got path %q, want %q", got, want)
+			}
 			query := req.URL.Query()
 			switch {
 			case req.Method == http.MethodPost && query.Has("uploads"):
@@ -719,7 +769,7 @@ func TestS3CacherPut(t *testing.T) {
 				rw.Write([]byte(
 					`<InitiateMultipartUploadResult>` +
 						`<Bucket>` + bucket + `</Bucket>` +
-						`<Key>` + key + `</Key>` +
+						`<Key>` + prefix + key + `</Key>` +
 						`<UploadId>` + uploadID + `</UploadId>` +
 						`</InitiateMultipartUploadResult>`,
 				))
@@ -748,7 +798,7 @@ func TestS3CacherPut(t *testing.T) {
 		}))
 		defer server.Close()
 
-		cacher := newTestS3Cacher(t, server, bucket)
+		cacher := newTestS3Cacher(t, server, bucket, prefix)
 		content := bytes.NewReader(bytes.Repeat([]byte("a"), partSize+1))
 		if err := cacher.Put(ctx, key, content); err == nil {
 			t.Fatal("expected error, got nil")
@@ -879,7 +929,7 @@ func checkNoSDKChecksumHeaders(t *testing.T, req *http.Request) {
 	}
 }
 
-func newTestS3Cacher(t *testing.T, server *httptest.Server, bucket string) *s3Cacher {
+func newTestS3Cacher(t *testing.T, server *httptest.Server, bucket string, prefix string) *s3Cacher {
 	t.Helper()
 
 	cacher, err := newS3Cacher(s3CacherOptions{
@@ -890,6 +940,7 @@ func newTestS3Cacher(t *testing.T, server *httptest.Server, bucket string) *s3Ca
 		transport:       server.Client().Transport,
 		region:          "us-east-1",
 		bucket:          bucket,
+		prefix:          prefix,
 		forcePathStyle:  true,
 		partSize:        5 << 20,
 	})

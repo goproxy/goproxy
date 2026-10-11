@@ -111,6 +111,62 @@ func TestServerCmdConfigValidate(t *testing.T) {
 }
 
 func TestRunServerCmd(t *testing.T) {
+	t.Run("S3Prefix", func(t *testing.T) {
+		const (
+			key     = "example.com/@v/v1.0.0.mod"
+			content = "module example.com\n"
+		)
+		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			if got, want := req.URL.Path, "/test-bucket/goproxy/prod/"+key; got != want {
+				t.Errorf("got path %q, want %q", got, want)
+				rw.WriteHeader(http.StatusNotFound)
+				return
+			}
+			rw.Header().Set("Content-Length", fmt.Sprint(len(content)))
+			switch req.Method {
+			case http.MethodHead:
+				rw.WriteHeader(http.StatusOK)
+			case http.MethodGet:
+				io.WriteString(rw, content)
+			default:
+				t.Errorf("unexpected method %q", req.Method)
+				rw.WriteHeader(http.StatusMethodNotAllowed)
+			}
+		}))
+		defer server.Close()
+
+		address := startTestServerCmd(t,
+			"--cacher=s3",
+			"--cacher-s3-endpoint="+server.Listener.Addr().String(),
+			"--cacher-s3-disable-tls",
+			"--cacher-s3-bucket=test-bucket",
+			"--cacher-s3-prefix=goproxy/prod/",
+			"--cacher-s3-force-path-style",
+			"--path-prefix=/proxy",
+		)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+address+"/proxy/"+key, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Disable-Module-Fetch", "true")
+		client := &http.Client{Timeout: 3 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if got, want := resp.StatusCode, http.StatusOK; got != want {
+			t.Errorf("got status code %d, want %d", got, want)
+		}
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := string(body), content; got != want {
+			t.Errorf("got content %q, want %q", got, want)
+		}
+	})
+
 	t.Run("InvalidConfiguration", func(t *testing.T) {
 		for _, tt := range []struct {
 			name    string
