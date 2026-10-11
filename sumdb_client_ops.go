@@ -93,10 +93,10 @@ func newSumdbClientState(envGOPROXY, envGOSUMDB string, httpClient *http.Client)
 // url returns the URL for connecting to the checksum database.
 func (scs *sumdbClientState) url(ctx context.Context) (*url.URL, error) {
 	select {
-	case scs.urlLock <- struct{}{}:
-		defer func() { <-scs.urlLock }()
 	case <-ctx.Done():
 		return nil, ctx.Err()
+	case scs.urlLock <- struct{}{}:
+		defer func() { <-scs.urlLock }()
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err

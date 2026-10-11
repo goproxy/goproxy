@@ -590,10 +590,10 @@ func TestRunServerCmd(t *testing.T) {
 			Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
 				once.Do(func() { close(started) })
 				select {
-				case <-release:
-					return nil, errors.New("DNS lookup released")
 				case <-ctx.Done():
 					return nil, ctx.Err()
+				case <-release:
+					return nil, errors.New("DNS lookup released")
 				}
 			},
 		}
