@@ -4,7 +4,6 @@ import (
 	archivezip "archive/zip"
 	"bufio"
 	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -337,7 +336,6 @@ func TestGoFetcherQuery(t *testing.T) {
 		}{
 			{"Empty", ""},
 			{"MalformedJSON", "{"},
-			{"Oversized", info + strings.Repeat(" ", maxInfoSize+1-len(info))},
 			{"NoncanonicalVersion", marshalInfo("v1", infoTime)},
 			{"BuildMetadata", marshalInfo("v1.0.0+build", infoTime)},
 			{"WrongMajor", marshalInfo("v2.0.0", infoTime)},
@@ -504,8 +502,9 @@ func TestGoFetcherProxyQuery(t *testing.T) {
 	infoTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 	info := marshalInfo(infoVersion, infoTime)
 
-	t.Run("BodyLimit", func(t *testing.T) {
-		for _, query := range []struct {
+	t.Run("LargeResponse", func(t *testing.T) {
+		content := strings.TrimSuffix(info, "}") + `,"Extra":"` + strings.Repeat("x", 2<<20) + `"}`
+		for _, tt := range []struct {
 			name  string
 			query string
 		}{
@@ -514,119 +513,33 @@ func TestGoFetcherProxyQuery(t *testing.T) {
 			{"Branch", "main"},
 			{"Latest", "latest"},
 		} {
-			t.Run(query.name, func(t *testing.T) {
-				for _, tt := range []struct {
-					name          string
-					size          int
-					contentLength int64
-					wantErr       bool
-					wantEarlyStop bool
-				}{
-					{"BelowLimit", maxInfoSize - 1, -1, false, false},
-					{"AtLimit", maxInfoSize, -1, false, false},
-					{"AboveLimit", maxInfoSize + 1, -1, true, false},
-					{"MisleadingContentLength", maxInfoSize + 1, 1, true, false},
-					{"LargeResponse", 2 * maxInfoSize, -1, true, true},
-				} {
-					t.Run(tt.name, func(t *testing.T) {
-						prefix := strings.TrimSuffix(info, "}") + `,"Extra":"`
-						content := prefix + strings.Repeat("x", tt.size-len(prefix)-2) + `"}`
-						body := &testHTTPResponseBody{Reader: strings.NewReader(content)}
-						gf := &GoFetcher{
-							Env: []string{"GOSUMDB=off"},
-							Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-								return &http.Response{
-									StatusCode:    http.StatusOK,
-									ContentLength: tt.contentLength,
-									Body:          body,
-									Request:       req,
-								}, nil
-							}),
-						}
-						gf.initOnce.Do(gf.init)
-						if gf.initErr != nil {
-							t.Fatal(gf.initErr)
-						}
-						proxy, err := url.Parse("https://proxy.example.com")
-						if err != nil {
-							t.Fatal(err)
-						}
-						version, timestamp, err := gf.proxyQuery(t.Context(), "example.com", query.query, proxy)
-						if tt.wantErr {
-							if !errors.Is(err, errBadUpstream) || errors.Is(err, fs.ErrNotExist) {
-								t.Fatalf("got error %v, want a bad upstream error", err)
-							}
-							if _, ok := errors.AsType[*internalError](err); ok {
-								t.Errorf("unexpected internal error %v", err)
-							}
-							if got, want := err.Error(), fmt.Sprintf("bad upstream: response body exceeds %d bytes", maxInfoSize); got != want {
-								t.Errorf("got error %q, want %q", got, want)
-							}
-						} else {
-							if err != nil {
-								t.Fatal(err)
-							}
-							if version != infoVersion || !timestamp.Equal(infoTime) {
-								t.Errorf("got version %q at %v, want %q at %v", version, timestamp, infoVersion, infoTime)
-							}
-						}
-						if tt.wantEarlyStop && (body.bytesRead <= maxInfoSize || body.bytesRead >= tt.size) {
-							t.Errorf("read %d of %d bytes, want an early stop", body.bytesRead, tt.size)
-						}
-						if !body.closed {
-							t.Error("response body was not closed")
-						}
-					})
+			t.Run(tt.name, func(t *testing.T) {
+				body := &testHTTPResponseBody{Reader: strings.NewReader(content)}
+				gf := &GoFetcher{
+					Env: []string{"GOSUMDB=off"},
+					Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						return &http.Response{StatusCode: http.StatusOK, ContentLength: -1, Body: body}, nil
+					}),
+				}
+				gf.initOnce.Do(gf.init)
+				if gf.initErr != nil {
+					t.Fatal(gf.initErr)
+				}
+				proxy := &url.URL{Scheme: "https", Host: "proxy.example.com"}
+				version, timestamp, err := gf.proxyQuery(t.Context(), "example.com", tt.query, proxy)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if version != infoVersion || !timestamp.Equal(infoTime) {
+					t.Errorf("got version %q at %v, want %q at %v", version, timestamp, infoVersion, infoTime)
+				}
+				if got, want := body.bytesRead, len(content); got != want {
+					t.Errorf("read %d bytes, want %d", got, want)
+				}
+				if !body.closed {
+					t.Error("response body was not closed")
 				}
 			})
-		}
-	})
-
-	t.Run("GzipBodyLimit", func(t *testing.T) {
-		for _, query := range []struct {
-			name  string
-			query string
-		}{
-			{"Version", infoVersion},
-			{"Latest", "latest"},
-		} {
-			for _, tt := range []struct {
-				name    string
-				size    int
-				wantErr bool
-			}{
-				{"AtLimit", maxInfoSize, false},
-				{"AboveLimit", maxInfoSize + 1, true},
-			} {
-				t.Run(query.name+"/"+tt.name, func(t *testing.T) {
-					var buf bytes.Buffer
-					zw := gzip.NewWriter(&buf)
-					if _, err := io.WriteString(zw, info+strings.Repeat(" ", tt.size-len(info))); err != nil {
-						t.Fatal(err)
-					}
-					if err := zw.Close(); err != nil {
-						t.Fatal(err)
-					}
-					server := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-						rw.Header().Set("Content-Encoding", "gzip")
-						rw.Write(buf.Bytes())
-					}))
-					gf := &GoFetcher{Env: []string{"GOPROXY=" + server.URL, "GOSUMDB=off"}}
-					version, timestamp, err := gf.Query(t.Context(), "example.com", query.query)
-					if tt.wantErr {
-						if !errors.Is(err, errBadUpstream) || errors.Is(err, fs.ErrNotExist) {
-							t.Errorf("got error %v, want a bad upstream error", err)
-						}
-					} else {
-						if err != nil {
-							t.Fatal(err)
-						}
-						if version != infoVersion || !timestamp.Equal(infoTime) {
-							t.Errorf("got version %q at %v, want %q at %v", version, timestamp, infoVersion, infoTime)
-						}
-					}
-				})
-			}
 		}
 	})
 
@@ -1215,64 +1128,53 @@ func TestGoFetcherDownload(t *testing.T) {
 		}
 	}
 
-	t.Run("InfoSizeLimit", func(t *testing.T) {
+	t.Run("LargeInfo", func(t *testing.T) {
+		content := info + strings.Repeat(" ", 2<<20)
+		body := &testHTTPResponseBody{Reader: strings.NewReader(content)}
+		gf := &GoFetcher{
+			Env:     []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=off"},
+			TempDir: t.TempDir(),
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if strings.HasSuffix(req.URL.Path, ".info") {
+					return &http.Response{StatusCode: http.StatusOK, ContentLength: -1, Body: body}, nil
+				}
+				rec := httptest.NewRecorder()
+				proxyHandler(rec, req)
+				return rec.Result(), nil
+			}),
+		}
+		infoContent, modContent, zipFileContent, err := gf.Download(t.Context(), "example.com", infoVersion)
+		if err != nil {
+			t.Fatal(err)
+		}
 		for _, tt := range []struct {
-			name    string
-			size    int
-			wantErr bool
+			content io.ReadSeekCloser
+			want    string
 		}{
-			{"BelowLimit", maxInfoSize - 1, false},
-			{"AtLimit", maxInfoSize, false},
-			{"AboveLimit", maxInfoSize + 1, true},
+			{infoContent, info},
+			{modContent, mod},
+			{zipFileContent, string(zipContent)},
 		} {
-			t.Run(tt.name, func(t *testing.T) {
-				body := &testHTTPResponseBody{Reader: strings.NewReader(info + strings.Repeat(" ", tt.size-len(info)))}
-				gf := &GoFetcher{
-					Env:     []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=off"},
-					TempDir: t.TempDir(),
-					Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-						if strings.HasSuffix(req.URL.Path, ".info") {
-							return &http.Response{StatusCode: http.StatusOK, ContentLength: -1, Body: body}, nil
-						}
-						rec := httptest.NewRecorder()
-						proxyHandler(rec, req)
-						return rec.Result(), nil
-					}),
-				}
-				infoContent, modContent, zipContent, err := gf.Download(t.Context(), "example.com", infoVersion)
-				if tt.wantErr {
-					if !errors.Is(err, errBadUpstream) || errors.Is(err, fs.ErrNotExist) {
-						t.Errorf("got error %v, want a bad upstream error", err)
-					}
-				} else {
-					if err != nil {
-						t.Fatal(err)
-					}
-					if content, err := io.ReadAll(infoContent); err != nil {
-						t.Error(err)
-					} else if got, want := string(content), info; got != want {
-						t.Errorf("got content %q, want %q", got, want)
-					}
-				}
-				for _, content := range []io.ReadSeekCloser{infoContent, modContent, zipContent} {
-					if content != nil {
-						content.Close()
-						if tt.wantErr {
-							t.Error("unexpected module content")
-						}
-					} else if !tt.wantErr {
-						t.Error("missing module content")
-					}
-				}
-				if !body.closed {
-					t.Error("response body was not closed")
-				}
-				if entries, err := os.ReadDir(gf.TempDir); err != nil {
-					t.Fatal(err)
-				} else if len(entries) != 0 {
-					t.Errorf("unexpected temporary files %v", entries)
-				}
-			})
+			content, err := io.ReadAll(tt.content)
+			if err != nil {
+				t.Error(err)
+			} else if got, want := string(content), tt.want; got != want {
+				t.Errorf("got content %q, want %q", got, want)
+			}
+			if err := tt.content.Close(); err != nil {
+				t.Error(err)
+			}
+		}
+		if got, want := body.bytesRead, len(content); got != want {
+			t.Errorf("read %d bytes, want %d", got, want)
+		}
+		if !body.closed {
+			t.Error("response body was not closed")
+		}
+		if entries, err := os.ReadDir(gf.TempDir); err != nil {
+			t.Fatal(err)
+		} else if len(entries) != 0 {
+			t.Errorf("unexpected temporary files %v", entries)
 		}
 	})
 
@@ -1967,7 +1869,7 @@ func TestGoFetcherDownload(t *testing.T) {
 							io.ReadCloser
 							io.WriterTo
 						}{body, writerToFunc(func(w io.Writer) (int64, error) {
-							missing = w.(*limitedWriter).Writer.(httpGetTempWriter).Writer.(*os.File).Name()
+							missing = w.(*httpGetTempWriter).Writer.(*os.File).Name()
 							return io.Copy(w, body)
 						})}
 					}
@@ -2283,21 +2185,16 @@ func TestGoFetcherDownload(t *testing.T) {
 	t.Run("BodyLimitFallback", func(t *testing.T) {
 		for _, tt := range []struct {
 			name         string
-			ext          string
-			maxBytes     int64
 			proxies      string
 			wantErr      bool
 			wantRequests []string
 		}{
-			{"InfoSingleProxy", ".info", maxInfoSize, "", true, []string{"proxy.example.com.info"}},
-			{"InfoCommaSeparated", ".info", maxInfoSize, ",https://next.example.com", true, []string{"proxy.example.com.info"}},
-			{"InfoPipeSeparated", ".info", maxInfoSize, "|https://next.example.com", false, []string{"proxy.example.com.info", "next.example.com.info", "next.example.com.mod", "next.example.com.zip"}},
-			{"ModSingleProxy", ".mod", zip.MaxGoMod, "", true, []string{"proxy.example.com.info", "proxy.example.com.mod"}},
-			{"ModCommaSeparated", ".mod", zip.MaxGoMod, ",https://next.example.com", true, []string{"proxy.example.com.info", "proxy.example.com.mod"}},
-			{"ModPipeSeparated", ".mod", zip.MaxGoMod, "|https://next.example.com", false, []string{"proxy.example.com.info", "proxy.example.com.mod", "next.example.com.info", "next.example.com.mod", "next.example.com.zip"}},
+			{"SingleProxy", "", true, []string{"proxy.example.com.info", "proxy.example.com.mod"}},
+			{"CommaSeparated", ",https://next.example.com", true, []string{"proxy.example.com.info", "proxy.example.com.mod"}},
+			{"PipeSeparated", "|https://next.example.com", false, []string{"proxy.example.com.info", "proxy.example.com.mod", "next.example.com.info", "next.example.com.mod", "next.example.com.zip"}},
 		} {
 			t.Run(tt.name, func(t *testing.T) {
-				body := &testHTTPResponseBody{Reader: io.LimitReader(zeroReader{}, tt.maxBytes+64<<10)}
+				body := &testHTTPResponseBody{Reader: io.LimitReader(zeroReader{}, zip.MaxGoMod+64<<10)}
 				var requests []string
 				gf := &GoFetcher{
 					Env:     []string{"GOPROXY=https://proxy.example.com" + tt.proxies, "GOSUMDB=off"},
@@ -2305,7 +2202,7 @@ func TestGoFetcherDownload(t *testing.T) {
 					Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 						ext := filepath.Ext(req.URL.Path)
 						requests = append(requests, req.URL.Host+ext)
-						if req.URL.Host == "proxy.example.com" && ext == tt.ext {
+						if req.URL.Host == "proxy.example.com" && ext == ".mod" {
 							return &http.Response{StatusCode: http.StatusOK, ContentLength: -1, Body: body, Request: req}, nil
 						}
 						rec := httptest.NewRecorder()
@@ -2518,7 +2415,6 @@ func TestGoFetcherProxyDownload(t *testing.T) {
 			maxBytes     int64
 			wantRequests []string
 		}{
-			{"Info", ".info", maxInfoSize, []string{".info"}},
 			{"Mod", ".mod", zip.MaxGoMod, []string{".info", ".mod"}},
 			{"Zip", ".zip", zip.MaxZipFile, []string{".info", ".mod", ".zip"}},
 		} {
@@ -3493,54 +3389,17 @@ func TestUnmarshalInfoFile(t *testing.T) {
 	infoTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 	info := marshalInfo(infoVersion, infoTime)
 
-	t.Run("SizeLimit", func(t *testing.T) {
-		for _, tt := range []struct {
-			name    string
-			size    int
-			wantErr bool
-		}{
-			{"BelowLimit", maxInfoSize - 1, false},
-			{"AtLimit", maxInfoSize, false},
-			{"AboveLimit", maxInfoSize + 1, true},
-		} {
-			t.Run(tt.name, func(t *testing.T) {
-				file, err := makeTempFile(t, []byte(info+strings.Repeat(" ", tt.size-len(info))))
-				if err != nil {
-					t.Fatal(err)
-				}
-				version, timestamp, err := unmarshalInfoFile(file)
-				if tt.wantErr {
-					if !errors.Is(err, errBadUpstream) || errors.Is(err, fs.ErrNotExist) {
-						t.Fatalf("got error %v, want a bad upstream error", err)
-					}
-					if _, ok := errors.AsType[*internalError](err); ok {
-						t.Errorf("unexpected internal error %v", err)
-					}
-					if got, want := err.Error(), fmt.Sprintf("bad upstream: invalid info file: size exceeds %d bytes", maxInfoSize); got != want {
-						t.Errorf("got error %q, want %q", got, want)
-					}
-				} else {
-					if err != nil {
-						t.Fatal(err)
-					}
-					if version != infoVersion || !timestamp.Equal(infoTime) {
-						t.Errorf("got version %q at %v, want %q at %v", version, timestamp, infoVersion, infoTime)
-					}
-				}
-			})
+	t.Run("LargeInfo", func(t *testing.T) {
+		file, err := makeTempFile(t, []byte(info+strings.Repeat(" ", 2<<20)))
+		if err != nil {
+			t.Fatal(err)
 		}
-	})
-
-	t.Run("Directory", func(t *testing.T) {
-		_, _, err := unmarshalInfoFile(t.TempDir())
-		if _, ok := errors.AsType[*internalError](err); !ok {
-			t.Errorf("got error %v, want an internal error", err)
+		version, timestamp, err := unmarshalInfoFile(file)
+		if err != nil {
+			t.Fatal(err)
 		}
-		if _, ok := errors.AsType[*fs.PathError](err); !ok {
-			t.Errorf("got error %v, want a file error", err)
-		}
-		if errors.Is(err, errBadUpstream) {
-			t.Errorf("unexpected error matching %v", errBadUpstream)
+		if version != infoVersion || !timestamp.Equal(infoTime) {
+			t.Errorf("got version %q at %v, want %q at %v", version, timestamp, infoVersion, infoTime)
 		}
 	})
 

@@ -1198,7 +1198,7 @@ func TestHTTPGetTemp(t *testing.T) {
 						io.ReadCloser
 						io.WriterTo
 					}{body, writerToFunc(func(w io.Writer) (int64, error) {
-						tempFile = w.(*limitedWriter).Writer.(httpGetTempWriter).Writer.(*os.File)
+						tempFile = w.(*httpGetTempWriter).Writer.(*os.File)
 						if tt.closeBeforeCopy {
 							if err := tempFile.Close(); err != nil {
 								return 0, err
