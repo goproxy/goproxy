@@ -37,6 +37,7 @@ const (
 type s3Cacher struct {
 	client   *s3.Client
 	bucket   *string
+	prefix   string
 	partSize int64
 }
 
@@ -49,6 +50,7 @@ type s3CacherOptions struct {
 	transport       http.RoundTripper
 	region          string
 	bucket          string
+	prefix          string
 	forcePathStyle  bool
 	partSize        int64
 }
@@ -102,6 +104,7 @@ func newS3Cacher(opts s3CacherOptions) (*s3Cacher, error) {
 	return &s3Cacher{
 		client:   client,
 		bucket:   new(opts.bucket),
+		prefix:   opts.prefix,
 		partSize: opts.partSize,
 	}, nil
 }
@@ -136,10 +139,10 @@ func parseS3Endpoint(endpoint string, disableTLS bool) (*url.URL, error) {
 
 // Get implements [goproxy.Cacher].
 func (s3c *s3Cacher) Get(ctx context.Context, name string) (io.ReadCloser, error) {
-	key := new(name)
+	name = s3c.prefix + name
 	headOutput, err := s3c.client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: s3c.bucket,
-		Key:    key,
+		Key:    new(name),
 	})
 	if err != nil {
 		return nil, translateS3NotFoundError(err)
@@ -147,7 +150,7 @@ func (s3c *s3Cacher) Get(ctx context.Context, name string) (io.ReadCloser, error
 	getObjectInput := s3.GetObjectInput{
 		Bucket:  s3c.bucket,
 		IfMatch: headOutput.ETag,
-		Key:     key,
+		Key:     new(name),
 	}
 	return &s3Cache{
 		openAt: func(pos int64) (io.ReadCloser, error) {
@@ -187,6 +190,7 @@ func (s3c *s3Cacher) Put(ctx context.Context, name string, content io.ReadSeeker
 		contentType = "application/zip"
 	}
 
+	name = s3c.prefix + name
 	if size <= s3c.partSize {
 		return s3c.putObject(ctx, name, contentType, content, size)
 	}
