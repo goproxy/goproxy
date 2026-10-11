@@ -227,42 +227,118 @@ func TestResponseInternalServerError(t *testing.T) {
 	}
 }
 
-type successResponseBody_Size struct {
-	io.Reader
-	size int64
-}
-
-func (srb successResponseBody_Size) Size() int64 { return srb.size }
-
-type successResponseBody_LastModified struct {
-	io.Reader
-	lastModified time.Time
-}
-
-func (srb successResponseBody_LastModified) LastModified() time.Time { return srb.lastModified }
-
-type successResponseBody_ModTime struct {
-	io.Reader
-	modTime time.Time
-}
-
-func (srb successResponseBody_ModTime) ModTime() time.Time { return srb.modTime }
-
-type successResponseBody_ETag struct {
-	io.Reader
-	etag string
-}
-
-func (srb successResponseBody_ETag) ETag() string { return srb.etag }
-
-type testResponseWriter struct {
-	http.ResponseWriter
-	write func([]byte) (int, error)
-}
-
-func (rw testResponseWriter) Write(p []byte) (int, error) { return rw.write(p) }
-
 func TestResponseSuccess(t *testing.T) {
+	for _, tt := range []struct {
+		name              string
+		method            string
+		content           io.Reader
+		wantContentLength int64
+		wantLastModified  string
+		wantETag          string
+		wantContent       string
+	}{
+		{
+			name:              "ReadSeeker",
+			content:           strings.NewReader("foobar"),
+			wantContentLength: 6,
+			wantContent:       "foobar",
+		},
+		{
+			name:              "ReadSeekerHead",
+			method:            http.MethodHead,
+			wantContentLength: 6,
+			content:           strings.NewReader("foobar"),
+		},
+		{
+			name: "Size",
+			content: testSizedReader{
+				Reader: strings.NewReader("foobar"),
+				size:   6,
+			},
+			wantContentLength: 6,
+			wantContent:       "foobar",
+		},
+		{
+			name: "LastModified",
+			content: testLastModifiedReader{
+				Reader:       strings.NewReader("foobar"),
+				lastModified: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
+			},
+			wantContentLength: -1,
+			wantLastModified:  "Sat, 01 Jan 2000 00:00:00 GMT",
+			wantContent:       "foobar",
+		},
+		{
+			name: "ModTime",
+			content: testModTimeReader{
+				Reader:  strings.NewReader("foobar"),
+				modTime: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
+			},
+			wantContentLength: -1,
+			wantLastModified:  "Sat, 01 Jan 2000 00:00:00 GMT",
+			wantContent:       "foobar",
+		},
+		{
+			name: "ETag",
+			content: testETagReader{
+				Reader: strings.NewReader("foobar"),
+				etag:   `"foobar"`,
+			},
+			wantContentLength: -1,
+			wantETag:          `"foobar"`,
+			wantContent:       "foobar",
+		},
+		{
+			name: "AllMetadata",
+			content: struct {
+				io.Reader
+				testSizedReader
+				testLastModifiedReader
+				testModTimeReader
+				testETagReader
+			}{
+				strings.NewReader("foobar"),
+				testSizedReader{size: 6},
+				testLastModifiedReader{lastModified: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)},
+				testModTimeReader{modTime: time.Date(2000, 1, 2, 0, 0, 0, 0, time.UTC)},
+				testETagReader{etag: `"foobar"`},
+			},
+			wantContentLength: 6,
+			wantLastModified:  "Sat, 01 Jan 2000 00:00:00 GMT",
+			wantETag:          `"foobar"`,
+			wantContent:       "foobar",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			responseSuccess(rec, httptest.NewRequest(tt.method, "/", nil), tt.content, "text/plain; charset=utf-8", 60)
+			recr := rec.Result()
+			if got, want := recr.StatusCode, http.StatusOK; got != want {
+				t.Errorf("got %d, want %d", got, want)
+			}
+			if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+			if got, want := recr.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+			if got, want := recr.ContentLength, tt.wantContentLength; got != want {
+				t.Errorf("got %d, want %d", got, want)
+			}
+			if got, want := recr.Header.Get("Last-Modified"), tt.wantLastModified; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+			if got, want := recr.Header.Get("ETag"), tt.wantETag; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+			if b, err := io.ReadAll(recr.Body); err != nil {
+				t.Errorf("unexpected error %v", err)
+			} else if got, want := string(b), tt.wantContent; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+		})
+	}
+
 	t.Run("CopyError", func(t *testing.T) {
 		for _, method := range []string{http.MethodGet, http.MethodHead} {
 			t.Run(method, func(t *testing.T) {
@@ -469,12 +545,12 @@ func TestResponseSuccess(t *testing.T) {
 						server := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 							content := struct {
 								io.ReadSeeker
-								successResponseBody_ModTime
-								successResponseBody_ETag
+								testModTimeReader
+								testETagReader
 							}{
 								strings.NewReader("foobar"),
-								successResponseBody_ModTime{modTime: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)},
-								successResponseBody_ETag{etag: `"foobar"`},
+								testModTimeReader{modTime: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)},
+								testETagReader{etag: `"foobar"`},
 							}
 							if tt.seekError {
 								content.ReadSeeker = &testReadSeeker{
@@ -559,12 +635,12 @@ func TestResponseSuccess(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				content := struct {
 					io.ReadSeeker
-					successResponseBody_ModTime
-					successResponseBody_ETag
+					testModTimeReader
+					testETagReader
 				}{
 					strings.NewReader("foobar"),
-					successResponseBody_ModTime{modTime: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)},
-					successResponseBody_ETag{etag: `"foobar"`},
+					testModTimeReader{modTime: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)},
+					testETagReader{etag: `"foobar"`},
 				}
 				req := httptest.NewRequest(http.MethodHead, "/", nil)
 				req.Header = tt.header.Clone()
@@ -630,108 +706,98 @@ func TestResponseSuccess(t *testing.T) {
 			t.Errorf("got cache control %q, want %q", got, want)
 		}
 	})
+}
 
+func TestResponseError(t *testing.T) {
 	for _, tt := range []struct {
-		name              string
-		method            string
-		content           io.Reader
-		wantContentLength int64
-		wantLastModified  string
-		wantETag          string
-		wantContent       string
+		name             string
+		err              error
+		wantStatusCode   int
+		wantCacheControl string
+		wantContent      string
 	}{
 		{
-			name:              "ReadSeeker",
-			content:           strings.NewReader("foobar"),
-			wantContentLength: 6,
-			wantContent:       "foobar",
+			name:             "NotExist",
+			err:              fs.ErrNotExist,
+			wantStatusCode:   http.StatusNotFound,
+			wantCacheControl: "public, max-age=60",
+			wantContent:      "not found",
 		},
 		{
-			name:              "ReadSeekerHead",
-			method:            http.MethodHead,
-			wantContentLength: 6,
-			content:           strings.NewReader("foobar"),
+			name:             "BadUpstream",
+			err:              errBadUpstream,
+			wantStatusCode:   http.StatusNotFound,
+			wantCacheControl: "no-store",
+			wantContent:      "not found: bad upstream",
 		},
 		{
-			name: "Size",
-			content: successResponseBody_Size{
-				Reader: strings.NewReader("foobar"),
-				size:   6,
-			},
-			wantContentLength: 6,
-			wantContent:       "foobar",
+			name:             "FetchTimedOut",
+			err:              errFetchTimedOut,
+			wantStatusCode:   http.StatusNotFound,
+			wantCacheControl: "no-store",
+			wantContent:      "not found: fetch timed out",
 		},
 		{
-			name: "LastModified",
-			content: successResponseBody_LastModified{
-				Reader:       strings.NewReader("foobar"),
-				lastModified: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
-			},
-			wantContentLength: -1,
-			wantLastModified:  "Sat, 01 Jan 2000 00:00:00 GMT",
-			wantContent:       "foobar",
+			name:             "NotExistMessage",
+			err:              notExistErrorf("module unavailable"),
+			wantStatusCode:   http.StatusNotFound,
+			wantCacheControl: "public, max-age=60",
+			wantContent:      "not found: module unavailable",
 		},
 		{
-			name: "ModTime",
-			content: successResponseBody_ModTime{
-				Reader:  strings.NewReader("foobar"),
-				modTime: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
-			},
-			wantContentLength: -1,
-			wantLastModified:  "Sat, 01 Jan 2000 00:00:00 GMT",
-			wantContent:       "foobar",
+			name:             "BadUpstreamMessage",
+			err:              notExistErrorf("not found: bad upstream"),
+			wantStatusCode:   http.StatusNotFound,
+			wantCacheControl: "public, max-age=60",
+			wantContent:      "not found: bad upstream",
 		},
 		{
-			name: "ETag",
-			content: successResponseBody_ETag{
-				Reader: strings.NewReader("foobar"),
-				etag:   `"foobar"`,
-			},
-			wantContentLength: -1,
-			wantETag:          `"foobar"`,
-			wantContent:       "foobar",
+			name:             "FetchTimedOutMessage",
+			err:              notExistErrorf("not found: fetch timed out"),
+			wantStatusCode:   http.StatusNotFound,
+			wantCacheControl: "public, max-age=60",
+			wantContent:      "not found: fetch timed out",
 		},
 		{
-			name: "AllMetadata",
-			content: struct {
-				io.Reader
-				successResponseBody_Size
-				successResponseBody_LastModified
-				successResponseBody_ModTime
-				successResponseBody_ETag
-			}{
-				strings.NewReader("foobar"),
-				successResponseBody_Size{size: 6},
-				successResponseBody_LastModified{lastModified: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)},
-				successResponseBody_ModTime{modTime: time.Date(2000, 1, 2, 0, 0, 0, 0, time.UTC)},
-				successResponseBody_ETag{etag: `"foobar"`},
-			},
-			wantContentLength: 6,
-			wantLastModified:  "Sat, 01 Jan 2000 00:00:00 GMT",
-			wantETag:          `"foobar"`,
-			wantContent:       "foobar",
+			name:             "InternalServerError",
+			err:              errors.New("internal server error"),
+			wantStatusCode:   http.StatusInternalServerError,
+			wantCacheControl: "no-store",
+			wantContent:      "internal server error",
+		},
+		{
+			name:             "NotExistTimeout",
+			err:              &notExistError{err: testTimeoutError{errors.New("operation timed out"), true}},
+			wantStatusCode:   http.StatusNotFound,
+			wantCacheControl: "no-store",
+			wantContent:      "not found: operation timed out",
+		},
+		{
+			name:             "FetchTimedOutRevision",
+			err:              notExistErrorf("unknown revision %q", "fetch timed out"),
+			wantStatusCode:   http.StatusNotFound,
+			wantCacheControl: "public, max-age=60",
+			wantContent:      `not found: unknown revision "fetch timed out"`,
+		},
+		{
+			name:             "BadUpstreamRevision",
+			err:              notExistErrorf("unknown revision %q", "bad upstream"),
+			wantStatusCode:   http.StatusNotFound,
+			wantCacheControl: "public, max-age=60",
+			wantContent:      `not found: unknown revision "bad upstream"`,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			responseSuccess(rec, httptest.NewRequest(tt.method, "/", nil), tt.content, "text/plain; charset=utf-8", 60)
+			responseError(rec, httptest.NewRequest("", "/", nil), tt.err)
 			recr := rec.Result()
-			if got, want := recr.StatusCode, http.StatusOK; got != want {
+			if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
 				t.Errorf("got %d, want %d", got, want)
 			}
 			if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
-			if got, want := recr.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
-				t.Errorf("got %q, want %q", got, want)
-			}
-			if got, want := recr.ContentLength, tt.wantContentLength; got != want {
-				t.Errorf("got %d, want %d", got, want)
-			}
-			if got, want := recr.Header.Get("Last-Modified"), tt.wantLastModified; got != want {
-				t.Errorf("got %q, want %q", got, want)
-			}
-			if got, want := recr.Header.Get("ETag"), tt.wantETag; got != want {
+			if got, want := recr.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
 			if b, err := io.ReadAll(recr.Body); err != nil {
@@ -741,9 +807,7 @@ func TestResponseSuccess(t *testing.T) {
 			}
 		})
 	}
-}
 
-func TestResponseError(t *testing.T) {
 	t.Run("Internal", func(t *testing.T) {
 		cause := &fs.PathError{Op: "open", Path: "file", Err: fs.ErrNotExist}
 		localErr := &internalError{err: cause}
@@ -889,105 +953,6 @@ func TestResponseError(t *testing.T) {
 			})
 		}
 	})
-
-	for _, tt := range []struct {
-		name             string
-		err              error
-		wantStatusCode   int
-		wantCacheControl string
-		wantContent      string
-	}{
-		{
-			name:             "NotExist",
-			err:              fs.ErrNotExist,
-			wantStatusCode:   http.StatusNotFound,
-			wantCacheControl: "public, max-age=60",
-			wantContent:      "not found",
-		},
-		{
-			name:             "BadUpstream",
-			err:              errBadUpstream,
-			wantStatusCode:   http.StatusNotFound,
-			wantCacheControl: "no-store",
-			wantContent:      "not found: bad upstream",
-		},
-		{
-			name:             "FetchTimedOut",
-			err:              errFetchTimedOut,
-			wantStatusCode:   http.StatusNotFound,
-			wantCacheControl: "no-store",
-			wantContent:      "not found: fetch timed out",
-		},
-		{
-			name:             "NotExistMessage",
-			err:              notExistErrorf("module unavailable"),
-			wantStatusCode:   http.StatusNotFound,
-			wantCacheControl: "public, max-age=60",
-			wantContent:      "not found: module unavailable",
-		},
-		{
-			name:             "BadUpstreamMessage",
-			err:              notExistErrorf("not found: bad upstream"),
-			wantStatusCode:   http.StatusNotFound,
-			wantCacheControl: "public, max-age=60",
-			wantContent:      "not found: bad upstream",
-		},
-		{
-			name:             "FetchTimedOutMessage",
-			err:              notExistErrorf("not found: fetch timed out"),
-			wantStatusCode:   http.StatusNotFound,
-			wantCacheControl: "public, max-age=60",
-			wantContent:      "not found: fetch timed out",
-		},
-		{
-			name:             "InternalServerError",
-			err:              errors.New("internal server error"),
-			wantStatusCode:   http.StatusInternalServerError,
-			wantCacheControl: "no-store",
-			wantContent:      "internal server error",
-		},
-		{
-			name:             "NotExistTimeout",
-			err:              &notExistError{err: testTimeoutError{errors.New("operation timed out"), true}},
-			wantStatusCode:   http.StatusNotFound,
-			wantCacheControl: "no-store",
-			wantContent:      "not found: operation timed out",
-		},
-		{
-			name:             "FetchTimedOutRevision",
-			err:              notExistErrorf("unknown revision %q", "fetch timed out"),
-			wantStatusCode:   http.StatusNotFound,
-			wantCacheControl: "public, max-age=60",
-			wantContent:      `not found: unknown revision "fetch timed out"`,
-		},
-		{
-			name:             "BadUpstreamRevision",
-			err:              notExistErrorf("unknown revision %q", "bad upstream"),
-			wantStatusCode:   http.StatusNotFound,
-			wantCacheControl: "public, max-age=60",
-			wantContent:      `not found: unknown revision "bad upstream"`,
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			rec := httptest.NewRecorder()
-			responseError(rec, httptest.NewRequest("", "/", nil), tt.err)
-			recr := rec.Result()
-			if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
-				t.Errorf("got %d, want %d", got, want)
-			}
-			if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
-				t.Errorf("got %q, want %q", got, want)
-			}
-			if got, want := recr.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
-				t.Errorf("got %q, want %q", got, want)
-			}
-			if b, err := io.ReadAll(recr.Body); err != nil {
-				t.Errorf("unexpected error %v", err)
-			} else if got, want := string(b), tt.wantContent; got != want {
-				t.Errorf("got %q, want %q", got, want)
-			}
-		})
-	}
 }
 
 func TestResponseUpstreamError(t *testing.T) {
@@ -1042,3 +1007,152 @@ func TestResponseUpstreamError(t *testing.T) {
 		})
 	}
 }
+
+func TestServeContentResponseWriterWriteHeader(t *testing.T) {
+	for _, tt := range []struct {
+		name             string
+		statusCode       int
+		cacheControl     string
+		wantCacheControl string
+	}{
+		{"OK", http.StatusOK, "public, max-age=60", "public, max-age=60"},
+		{"PartialContent", http.StatusPartialContent, "public, max-age=60", "public, max-age=60"},
+		{"NotModified", http.StatusNotModified, "public, max-age=60", "public, max-age=60"},
+		{"NoCacheControl", http.StatusOK, "", ""},
+		{"NoStore", http.StatusOK, "no-store", "no-store"},
+		{"BadRequest", http.StatusBadRequest, "public, max-age=60", "no-store"},
+		{"PreconditionFailed", http.StatusPreconditionFailed, "public, max-age=60", "no-store"},
+		{"UnsatisfiableRange", http.StatusRequestedRangeNotSatisfiable, "public, max-age=60", "no-store"},
+		{"InternalServerError", http.StatusInternalServerError, "public, max-age=60", "no-store"},
+		{"ErrorWithoutCacheControl", http.StatusBadRequest, "", "no-store"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			if tt.cacheControl != "" {
+				rec.Header().Set("Cache-Control", tt.cacheControl)
+			}
+			rw := serveContentResponseWriter{rec}
+			rw.WriteHeader(tt.statusCode)
+			resp := rec.Result()
+			defer resp.Body.Close()
+			if got, want := resp.StatusCode, tt.statusCode; got != want {
+				t.Errorf("got status %d, want %d", got, want)
+			}
+			if got, want := resp.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
+				t.Errorf("got cache control %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestServeContentResponseWriterReadFrom(t *testing.T) {
+	readErr := errors.New("read failed")
+	writeErr := errors.New("write failed")
+	for _, tt := range []struct {
+		name        string
+		content     string
+		readErr     error
+		write       func(http.ResponseWriter, []byte) (int, error)
+		wantN       int64
+		wantErr     error
+		wantContent string
+	}{
+		{"FullContent", "foobar", nil, nil, 6, nil, "foobar"},
+		{"EmptyContent", "", nil, nil, 0, nil, ""},
+		{"ReadError", "", readErr, nil, 0, readErr, ""},
+		{"PartialReadError", "foo", readErr, nil, 3, readErr, "foo"},
+		{"WriteError", "foobar", nil, func(http.ResponseWriter, []byte) (int, error) { return 0, writeErr }, 0, writeErr, ""},
+		{"PartialWriteError", "foobar", nil, func(rw http.ResponseWriter, p []byte) (int, error) {
+			n, _ := rw.Write(p[:3])
+			return n, writeErr
+		}, 3, writeErr, "foo"},
+		{"ShortWrite", "foobar", nil, func(rw http.ResponseWriter, p []byte) (int, error) { return rw.Write(p[:3]) }, 3, io.ErrShortWrite, "foo"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, readerFrom := range []bool{false, true} {
+				name := "Writer"
+				if readerFrom {
+					name = "ReaderFrom"
+				}
+				t.Run(name, func(t *testing.T) {
+					var content io.Reader = strings.NewReader(tt.content)
+					if tt.readErr != nil {
+						content = io.MultiReader(content, iotest.ErrReader(tt.readErr))
+					}
+					rec := httptest.NewRecorder()
+					var rw http.ResponseWriter = rec
+					if tt.write != nil {
+						rw = testResponseWriter{rec, func(p []byte) (int, error) { return tt.write(rec, p) }}
+					}
+					calls := 0
+					if readerFrom {
+						writer := rw
+						rw = struct {
+							http.ResponseWriter
+							io.ReaderFrom
+						}{writer, readerFromFunc(func(r io.Reader) (int64, error) {
+							calls++
+							return io.Copy(writer, r)
+						})}
+					}
+					n, err := (serveContentResponseWriter{rw}).ReadFrom(struct{ io.Reader }{content})
+					if got, want := n, tt.wantN; got != want {
+						t.Errorf("got bytes copied %d, want %d", got, want)
+					}
+					if !errors.Is(err, tt.wantErr) {
+						t.Errorf("got error %v, want %v", err, tt.wantErr)
+					}
+					if got, want := rec.Body.String(), tt.wantContent; got != want {
+						t.Errorf("got content %q, want %q", got, want)
+					}
+					wantCalls := 0
+					if readerFrom {
+						wantCalls = 1
+					}
+					if got, want := calls, wantCalls; got != want {
+						t.Errorf("got ReadFrom calls %d, want %d", got, want)
+					}
+				})
+			}
+		})
+	}
+}
+
+type testSizedReader struct {
+	io.Reader
+	size int64
+}
+
+func (r testSizedReader) Size() int64 { return r.size }
+
+type testLastModifiedReader struct {
+	io.Reader
+	lastModified time.Time
+}
+
+func (r testLastModifiedReader) LastModified() time.Time { return r.lastModified }
+
+type testModTimeReader struct {
+	io.Reader
+	modTime time.Time
+}
+
+func (r testModTimeReader) ModTime() time.Time { return r.modTime }
+
+type testETagReader struct {
+	io.Reader
+	etag string
+}
+
+func (r testETagReader) ETag() string { return r.etag }
+
+type testResponseWriter struct {
+	http.ResponseWriter
+	write func([]byte) (int, error)
+}
+
+func (rw testResponseWriter) Write(p []byte) (int, error) { return rw.write(p) }
+
+type readerFromFunc func(io.Reader) (int64, error)
+
+func (f readerFromFunc) ReadFrom(r io.Reader) (int64, error) { return f(r) }

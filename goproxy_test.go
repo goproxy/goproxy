@@ -190,6 +190,127 @@ func TestGoproxyInit(t *testing.T) {
 }
 
 func TestGoproxyServeHTTP(t *testing.T) {
+	info := marshalInfo("v1.0.0", time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC))
+	proxyServer := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
+	}))
+	for _, tt := range []struct {
+		name             string
+		method           string
+		path             string
+		wantStatusCode   int
+		wantAllow        string
+		wantContentType  string
+		wantCacheControl string
+		wantVary         string
+		wantContent      string
+	}{
+		{
+			name:             "GET",
+			path:             "/example.com/@latest",
+			wantStatusCode:   http.StatusOK,
+			wantContentType:  "application/json; charset=utf-8",
+			wantCacheControl: "public, max-age=60",
+			wantVary:         "Disable-Module-Fetch",
+			wantContent:      info,
+		},
+		{
+			name:             "HEAD",
+			method:           http.MethodHead,
+			path:             "/example.com/@latest",
+			wantStatusCode:   http.StatusOK,
+			wantContentType:  "application/json; charset=utf-8",
+			wantCacheControl: "public, max-age=60",
+			wantVary:         "Disable-Module-Fetch",
+		},
+		{
+			name:             "POST",
+			method:           http.MethodPost,
+			path:             "/example.com/@latest",
+			wantStatusCode:   http.StatusMethodNotAllowed,
+			wantAllow:        "GET, HEAD",
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "no-store",
+			wantContent:      "method not allowed",
+		},
+		{
+			name:             "RootPath",
+			path:             "/",
+			wantStatusCode:   http.StatusNotFound,
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "public, max-age=86400",
+			wantContent:      "not found",
+		},
+		{
+			name:             "DotPath",
+			path:             "/.",
+			wantStatusCode:   http.StatusNotFound,
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "public, max-age=86400",
+			wantContent:      "not found",
+		},
+		{
+			name:             "ParentPath",
+			path:             "/../example.com/@latest",
+			wantStatusCode:   http.StatusNotFound,
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "public, max-age=86400",
+			wantContent:      "not found",
+		},
+		{
+			name:             "TrailingSlash",
+			path:             "/example.com/@latest/",
+			wantStatusCode:   http.StatusNotFound,
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "public, max-age=86400",
+			wantContent:      "not found",
+		},
+		{
+			name:             "UnknownSumDB",
+			path:             "/sumdb/sumdb.example.com/supported",
+			wantStatusCode:   http.StatusNotFound,
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "public, max-age=60",
+			wantContent:      "not found",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			g := &Goproxy{
+				Fetcher: &GoFetcher{
+					Env:     []string{"GOPROXY=" + proxyServer.URL, "GOSUMDB=off"},
+					TempDir: t.TempDir(),
+				},
+				Cacher:  DirCacher(t.TempDir()),
+				TempDir: t.TempDir(),
+				Logger:  slog.New(slog.DiscardHandler),
+			}
+
+			rec := httptest.NewRecorder()
+			g.ServeHTTP(rec, httptest.NewRequest(tt.method, tt.path, nil))
+			recr := rec.Result()
+			if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
+				t.Errorf("got %d, want %d", got, want)
+			}
+			if got, want := recr.Header.Get("Allow"), tt.wantAllow; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+			if got, want := recr.Header.Get("Content-Type"), tt.wantContentType; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+			if got, want := recr.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+			if got, want := recr.Header.Get("Vary"), tt.wantVary; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+			if b, err := io.ReadAll(recr.Body); err != nil {
+				t.Errorf("unexpected error %v", err)
+			} else if got, want := string(b), tt.wantContent; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+		})
+	}
+
 	t.Run("RequestBodies", func(t *testing.T) {
 		t.Run("Validation", func(t *testing.T) {
 			for _, tt := range []struct {
@@ -309,6 +430,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 					{"POSTChunked", http.MethodPost, "Transfer-Encoding: chunked\r\n", "", http.StatusMethodNotAllowed},
 				} {
 					t.Run(wrapper.name+"/"+tt.name, func(t *testing.T) {
+						t.Parallel()
 						g := &Goproxy{ProxiedSumDBs: []string{"sum.golang.org"}}
 						server := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 							if wrapper.wrapped {
@@ -580,13 +702,13 @@ func TestGoproxyServeHTTP(t *testing.T) {
 											return struct {
 												io.ReadSeeker
 												io.Closer
-												successResponseBody_ModTime
-												successResponseBody_ETag
+												testModTimeReader
+												testETagReader
 											}{
 												strings.NewReader("old result"),
 												closerFunc(func() error { return nil }),
-												successResponseBody_ModTime{modTime: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)},
-												successResponseBody_ETag{etag: `"old"`},
+												testModTimeReader{modTime: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)},
+												testETagReader{etag: `"old"`},
 											}, nil
 										},
 										put: func(context.Context, Cacher, string, io.ReadSeeker) error {
@@ -1119,127 +1241,6 @@ func TestGoproxyServeHTTP(t *testing.T) {
 			}
 		}
 	})
-
-	info := marshalInfo("v1.0.0", time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC))
-	proxyServer := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
-	}))
-	for _, tt := range []struct {
-		name             string
-		method           string
-		path             string
-		wantStatusCode   int
-		wantAllow        string
-		wantContentType  string
-		wantCacheControl string
-		wantVary         string
-		wantContent      string
-	}{
-		{
-			name:             "GET",
-			path:             "/example.com/@latest",
-			wantStatusCode:   http.StatusOK,
-			wantContentType:  "application/json; charset=utf-8",
-			wantCacheControl: "public, max-age=60",
-			wantVary:         "Disable-Module-Fetch",
-			wantContent:      info,
-		},
-		{
-			name:             "HEAD",
-			method:           http.MethodHead,
-			path:             "/example.com/@latest",
-			wantStatusCode:   http.StatusOK,
-			wantContentType:  "application/json; charset=utf-8",
-			wantCacheControl: "public, max-age=60",
-			wantVary:         "Disable-Module-Fetch",
-		},
-		{
-			name:             "POST",
-			method:           http.MethodPost,
-			path:             "/example.com/@latest",
-			wantStatusCode:   http.StatusMethodNotAllowed,
-			wantAllow:        "GET, HEAD",
-			wantContentType:  "text/plain; charset=utf-8",
-			wantCacheControl: "no-store",
-			wantContent:      "method not allowed",
-		},
-		{
-			name:             "RootPath",
-			path:             "/",
-			wantStatusCode:   http.StatusNotFound,
-			wantContentType:  "text/plain; charset=utf-8",
-			wantCacheControl: "public, max-age=86400",
-			wantContent:      "not found",
-		},
-		{
-			name:             "DotPath",
-			path:             "/.",
-			wantStatusCode:   http.StatusNotFound,
-			wantContentType:  "text/plain; charset=utf-8",
-			wantCacheControl: "public, max-age=86400",
-			wantContent:      "not found",
-		},
-		{
-			name:             "ParentPath",
-			path:             "/../example.com/@latest",
-			wantStatusCode:   http.StatusNotFound,
-			wantContentType:  "text/plain; charset=utf-8",
-			wantCacheControl: "public, max-age=86400",
-			wantContent:      "not found",
-		},
-		{
-			name:             "TrailingSlash",
-			path:             "/example.com/@latest/",
-			wantStatusCode:   http.StatusNotFound,
-			wantContentType:  "text/plain; charset=utf-8",
-			wantCacheControl: "public, max-age=86400",
-			wantContent:      "not found",
-		},
-		{
-			name:             "UnknownSumDB",
-			path:             "/sumdb/sumdb.example.com/supported",
-			wantStatusCode:   http.StatusNotFound,
-			wantContentType:  "text/plain; charset=utf-8",
-			wantCacheControl: "public, max-age=60",
-			wantContent:      "not found",
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			g := &Goproxy{
-				Fetcher: &GoFetcher{
-					Env:     []string{"GOPROXY=" + proxyServer.URL, "GOSUMDB=off"},
-					TempDir: t.TempDir(),
-				},
-				Cacher:  DirCacher(t.TempDir()),
-				TempDir: t.TempDir(),
-				Logger:  slog.New(slog.DiscardHandler),
-			}
-
-			rec := httptest.NewRecorder()
-			g.ServeHTTP(rec, httptest.NewRequest(tt.method, tt.path, nil))
-			recr := rec.Result()
-			if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
-				t.Errorf("got %d, want %d", got, want)
-			}
-			if got, want := recr.Header.Get("Allow"), tt.wantAllow; got != want {
-				t.Errorf("got %q, want %q", got, want)
-			}
-			if got, want := recr.Header.Get("Content-Type"), tt.wantContentType; got != want {
-				t.Errorf("got %q, want %q", got, want)
-			}
-			if got, want := recr.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
-				t.Errorf("got %q, want %q", got, want)
-			}
-			if got, want := recr.Header.Get("Vary"), tt.wantVary; got != want {
-				t.Errorf("got %q, want %q", got, want)
-			}
-			if b, err := io.ReadAll(recr.Body); err != nil {
-				t.Errorf("unexpected error %v", err)
-			} else if got, want := string(b), tt.wantContent; got != want {
-				t.Errorf("got %q, want %q", got, want)
-			}
-		})
-	}
 }
 
 func TestGoproxyServeFetch(t *testing.T) {
@@ -1272,174 +1273,6 @@ func TestGoproxyServeFetch(t *testing.T) {
 			}
 		}
 	}))
-
-	t.Run("CacheControl", func(t *testing.T) {
-		for _, tt := range []struct {
-			name         string
-			target       string
-			content      string
-			cacheControl string
-			dynamic      bool
-		}{
-			{"Latest", "example.com/@latest", info, "public, max-age=60", true},
-			{"List", "example.com/@v/list", list, "public, max-age=60", true},
-			{"Query", "example.com/@v/master.info", info, "public, max-age=60", true},
-			{"Info", "example.com/@v/v1.0.0.info", info, "public, max-age=604800", false},
-			{"Mod", "example.com/@v/v1.0.0.mod", mod, "public, max-age=604800", false},
-			{"Zip", "example.com/@v/v1.0.0.zip", string(zip), "public, max-age=604800", false},
-		} {
-			t.Run(tt.name, func(t *testing.T) {
-				for _, method := range []string{http.MethodGet, http.MethodHead} {
-					t.Run(method, func(t *testing.T) {
-						for _, mode := range []struct {
-							name             string
-							noCache          bool
-							cached           bool
-							noFetch          bool
-							header           http.Header
-							wantStatusCode   int
-							wantCacheControl string
-							wantContent      string
-						}{
-							{
-								name:             "Fetch",
-								header:           http.Header{"Disable-Module-Fetch": {"false"}},
-								wantStatusCode:   http.StatusOK,
-								wantCacheControl: tt.cacheControl,
-								wantContent:      tt.content,
-							},
-							{
-								name:             "CacheMiss",
-								noFetch:          true,
-								wantStatusCode:   http.StatusNotFound,
-								wantCacheControl: "no-store",
-								wantContent:      "not found: temporarily unavailable",
-							},
-							{
-								name:             "CacheDisabled",
-								noCache:          true,
-								noFetch:          true,
-								wantStatusCode:   http.StatusNotFound,
-								wantCacheControl: "no-store",
-								wantContent:      "not found: temporarily unavailable",
-							},
-							{
-								name:             "CacheHit",
-								cached:           true,
-								noFetch:          true,
-								wantStatusCode:   http.StatusOK,
-								wantCacheControl: tt.cacheControl,
-								wantContent:      tt.content,
-							},
-							{
-								name:             "NotModified",
-								cached:           true,
-								noFetch:          true,
-								header:           http.Header{"If-None-Match": {"*"}},
-								wantStatusCode:   http.StatusNotModified,
-								wantCacheControl: tt.cacheControl,
-							},
-							{
-								name:             "PartialContent",
-								cached:           true,
-								noFetch:          true,
-								header:           http.Header{"Range": {"bytes=0-0"}},
-								wantStatusCode:   http.StatusPartialContent,
-								wantCacheControl: tt.cacheControl,
-								wantContent:      tt.content[:1],
-							},
-							{
-								name:             "InvalidRange",
-								cached:           true,
-								noFetch:          true,
-								header:           http.Header{"Range": {"bytes=invalid"}},
-								wantStatusCode:   http.StatusRequestedRangeNotSatisfiable,
-								wantCacheControl: "no-store",
-								wantContent:      "invalid range\n",
-							},
-						} {
-							t.Run(mode.name, func(t *testing.T) {
-								g := &Goproxy{
-									Fetcher: &GoFetcher{
-										Env:     []string{"GOPROXY=" + proxyServer.URL, "GOSUMDB=off"},
-										TempDir: t.TempDir(),
-									},
-									TempDir: t.TempDir(),
-								}
-								if !mode.noCache {
-									g.Cacher = DirCacher(t.TempDir())
-								}
-								if mode.cached {
-									if err := g.Cacher.Put(t.Context(), tt.target, strings.NewReader(tt.content)); err != nil {
-										t.Fatal(err)
-									}
-								}
-								server := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-									rw.Header().Add("Vary", "Accept-Encoding")
-									rw.Header().Add("Vary", "Accept-Language")
-									g.ServeHTTP(rw, req)
-								}))
-								req, err := http.NewRequest(method, server.URL+"/"+tt.target, nil)
-								if err != nil {
-									t.Fatal(err)
-								}
-								maps.Copy(req.Header, mode.header)
-								if mode.noFetch {
-									req.Header.Set("Disable-Module-Fetch", "true")
-								}
-								requestsBefore := upstreamRequests.Load()
-								resp, err := server.Client().Do(req)
-								if err != nil {
-									t.Fatal(err)
-								}
-								defer resp.Body.Close()
-								wantStatusCode, wantCacheControl := mode.wantStatusCode, mode.wantCacheControl
-								wantContent := mode.wantContent
-								if mode.noFetch && tt.dynamic {
-									wantStatusCode = http.StatusNotFound
-									wantCacheControl = "no-store"
-									wantContent = "not found: temporarily unavailable"
-								}
-								if method == http.MethodHead && (wantStatusCode == http.StatusPartialContent || wantStatusCode == http.StatusRequestedRangeNotSatisfiable) {
-									wantStatusCode, wantCacheControl = http.StatusOK, tt.cacheControl
-								}
-								if got, want := resp.StatusCode, wantStatusCode; got != want {
-									t.Errorf("got status %d, want %d", got, want)
-								}
-								if got, want := resp.Header.Get("Cache-Control"), wantCacheControl; got != want {
-									t.Errorf("got cache control %q, want %q", got, want)
-								}
-								if method == http.MethodHead && wantStatusCode == http.StatusOK {
-									if got, want := resp.Header.Get("Content-Length"), strconv.Itoa(len(tt.content)); got != want {
-										t.Errorf("got content length %q, want %q", got, want)
-									}
-									if got, want := resp.Header.Get("Content-Range"), ""; got != want {
-										t.Errorf("got content range %q, want %q", got, want)
-									}
-								}
-								if got, want := resp.Header.Values("Vary"), []string{"Accept-Encoding", "Accept-Language", "Disable-Module-Fetch"}; !slices.Equal(got, want) {
-									t.Errorf("got vary %q, want %q", got, want)
-								}
-								if method == http.MethodHead {
-									wantContent = ""
-								}
-								if b, err := io.ReadAll(resp.Body); err != nil {
-									t.Errorf("unexpected error %v", err)
-								} else if got, want := string(b), wantContent; got != want {
-									t.Errorf("got content %q, want %q", got, want)
-								}
-								if mode.noFetch {
-									if got, want := upstreamRequests.Load(), requestsBefore; got != want {
-										t.Errorf("got upstream requests %d, want %d", got, want)
-									}
-								}
-							})
-						}
-					})
-				}
-			})
-		}
-	})
 
 	for _, tt := range []struct {
 		name               string
@@ -1701,6 +1534,174 @@ func TestGoproxyServeFetch(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("CacheControl", func(t *testing.T) {
+		for _, tt := range []struct {
+			name         string
+			target       string
+			content      string
+			cacheControl string
+			dynamic      bool
+		}{
+			{"Latest", "example.com/@latest", info, "public, max-age=60", true},
+			{"List", "example.com/@v/list", list, "public, max-age=60", true},
+			{"Query", "example.com/@v/master.info", info, "public, max-age=60", true},
+			{"Info", "example.com/@v/v1.0.0.info", info, "public, max-age=604800", false},
+			{"Mod", "example.com/@v/v1.0.0.mod", mod, "public, max-age=604800", false},
+			{"Zip", "example.com/@v/v1.0.0.zip", string(zip), "public, max-age=604800", false},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				for _, method := range []string{http.MethodGet, http.MethodHead} {
+					t.Run(method, func(t *testing.T) {
+						for _, mode := range []struct {
+							name             string
+							noCache          bool
+							cached           bool
+							noFetch          bool
+							header           http.Header
+							wantStatusCode   int
+							wantCacheControl string
+							wantContent      string
+						}{
+							{
+								name:             "Fetch",
+								header:           http.Header{"Disable-Module-Fetch": {"false"}},
+								wantStatusCode:   http.StatusOK,
+								wantCacheControl: tt.cacheControl,
+								wantContent:      tt.content,
+							},
+							{
+								name:             "CacheMiss",
+								noFetch:          true,
+								wantStatusCode:   http.StatusNotFound,
+								wantCacheControl: "no-store",
+								wantContent:      "not found: temporarily unavailable",
+							},
+							{
+								name:             "CacheDisabled",
+								noCache:          true,
+								noFetch:          true,
+								wantStatusCode:   http.StatusNotFound,
+								wantCacheControl: "no-store",
+								wantContent:      "not found: temporarily unavailable",
+							},
+							{
+								name:             "CacheHit",
+								cached:           true,
+								noFetch:          true,
+								wantStatusCode:   http.StatusOK,
+								wantCacheControl: tt.cacheControl,
+								wantContent:      tt.content,
+							},
+							{
+								name:             "NotModified",
+								cached:           true,
+								noFetch:          true,
+								header:           http.Header{"If-None-Match": {"*"}},
+								wantStatusCode:   http.StatusNotModified,
+								wantCacheControl: tt.cacheControl,
+							},
+							{
+								name:             "PartialContent",
+								cached:           true,
+								noFetch:          true,
+								header:           http.Header{"Range": {"bytes=0-0"}},
+								wantStatusCode:   http.StatusPartialContent,
+								wantCacheControl: tt.cacheControl,
+								wantContent:      tt.content[:1],
+							},
+							{
+								name:             "InvalidRange",
+								cached:           true,
+								noFetch:          true,
+								header:           http.Header{"Range": {"bytes=invalid"}},
+								wantStatusCode:   http.StatusRequestedRangeNotSatisfiable,
+								wantCacheControl: "no-store",
+								wantContent:      "invalid range\n",
+							},
+						} {
+							t.Run(mode.name, func(t *testing.T) {
+								g := &Goproxy{
+									Fetcher: &GoFetcher{
+										Env:     []string{"GOPROXY=" + proxyServer.URL, "GOSUMDB=off"},
+										TempDir: t.TempDir(),
+									},
+									TempDir: t.TempDir(),
+								}
+								if !mode.noCache {
+									g.Cacher = DirCacher(t.TempDir())
+								}
+								if mode.cached {
+									if err := g.Cacher.Put(t.Context(), tt.target, strings.NewReader(tt.content)); err != nil {
+										t.Fatal(err)
+									}
+								}
+								server := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+									rw.Header().Add("Vary", "Accept-Encoding")
+									rw.Header().Add("Vary", "Accept-Language")
+									g.ServeHTTP(rw, req)
+								}))
+								req, err := http.NewRequest(method, server.URL+"/"+tt.target, nil)
+								if err != nil {
+									t.Fatal(err)
+								}
+								maps.Copy(req.Header, mode.header)
+								if mode.noFetch {
+									req.Header.Set("Disable-Module-Fetch", "true")
+								}
+								requestsBefore := upstreamRequests.Load()
+								resp, err := server.Client().Do(req)
+								if err != nil {
+									t.Fatal(err)
+								}
+								defer resp.Body.Close()
+								wantStatusCode, wantCacheControl := mode.wantStatusCode, mode.wantCacheControl
+								wantContent := mode.wantContent
+								if mode.noFetch && tt.dynamic {
+									wantStatusCode = http.StatusNotFound
+									wantCacheControl = "no-store"
+									wantContent = "not found: temporarily unavailable"
+								}
+								if method == http.MethodHead && (wantStatusCode == http.StatusPartialContent || wantStatusCode == http.StatusRequestedRangeNotSatisfiable) {
+									wantStatusCode, wantCacheControl = http.StatusOK, tt.cacheControl
+								}
+								if got, want := resp.StatusCode, wantStatusCode; got != want {
+									t.Errorf("got status %d, want %d", got, want)
+								}
+								if got, want := resp.Header.Get("Cache-Control"), wantCacheControl; got != want {
+									t.Errorf("got cache control %q, want %q", got, want)
+								}
+								if method == http.MethodHead && wantStatusCode == http.StatusOK {
+									if got, want := resp.Header.Get("Content-Length"), strconv.Itoa(len(tt.content)); got != want {
+										t.Errorf("got content length %q, want %q", got, want)
+									}
+									if got, want := resp.Header.Get("Content-Range"), ""; got != want {
+										t.Errorf("got content range %q, want %q", got, want)
+									}
+								}
+								if got, want := resp.Header.Values("Vary"), []string{"Accept-Encoding", "Accept-Language", "Disable-Module-Fetch"}; !slices.Equal(got, want) {
+									t.Errorf("got vary %q, want %q", got, want)
+								}
+								if method == http.MethodHead {
+									wantContent = ""
+								}
+								if b, err := io.ReadAll(resp.Body); err != nil {
+									t.Errorf("unexpected error %v", err)
+								} else if got, want := string(b), wantContent; got != want {
+									t.Errorf("got content %q, want %q", got, want)
+								}
+								if mode.noFetch {
+									if got, want := upstreamRequests.Load(), requestsBefore; got != want {
+										t.Errorf("got upstream requests %d, want %d", got, want)
+									}
+								}
+							})
+						}
+					})
+				}
+			})
+		}
+	})
 }
 
 func TestGoproxyServeFetchQuery(t *testing.T) {
@@ -1851,134 +1852,6 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			responseNotFound(rw, req, -2)
 		}
 	}
-
-	t.Run("SumDBVerificationFailure", func(t *testing.T) {
-		for _, tt := range []struct {
-			name         string
-			statusCode   int
-			body         string
-			transportErr error
-			readError    bool
-		}{
-			{name: "NotFound", statusCode: http.StatusNotFound, body: "module not found"},
-			{name: "Gone", statusCode: http.StatusGone, body: "module removed"},
-			{name: "BadRequest", statusCode: http.StatusBadRequest, body: "fetch timed out"},
-			{name: "BadGateway", statusCode: http.StatusBadGateway},
-			{name: "GatewayTimeout", statusCode: http.StatusGatewayTimeout},
-			{name: "TransportFailure", transportErr: &net.DNSError{Err: "no such host", Name: "sumdb.example.com", IsNotFound: true}},
-			{name: "TransportTimeout", transportErr: context.DeadlineExceeded},
-			{name: "ReadFailure", statusCode: http.StatusOK, readError: true},
-			{name: "MalformedLookup", statusCode: http.StatusOK, body: "bad upstream"},
-		} {
-			t.Run(tt.name, func(t *testing.T) {
-				gf := &GoFetcher{
-					Env:     []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=sum.golang.org https://sumdb.example.com"},
-					TempDir: t.TempDir(),
-					Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-						rec := httptest.NewRecorder()
-						if req.URL.Host == "sumdb.example.com" {
-							if tt.transportErr != nil {
-								return nil, tt.transportErr
-							}
-							rec.Header().Set("Retry-After", "2")
-							rec.WriteHeader(tt.statusCode)
-							fmt.Fprint(rec, tt.body)
-						} else {
-							proxyHandler(rec, req)
-						}
-						resp := rec.Result()
-						resp.Request = req
-						if req.URL.Host == "sumdb.example.com" && tt.readError {
-							resp.Body = io.NopCloser(iotest.ErrReader(io.ErrUnexpectedEOF))
-						}
-						return resp, nil
-					}),
-				}
-				g := &Goproxy{
-					Fetcher: gf,
-					Cacher: &testCacher{
-						Cacher: DirCacher(t.TempDir()),
-						put: func(context.Context, Cacher, string, io.ReadSeeker) error {
-							t.Error("unexpected cache write")
-							return nil
-						},
-					},
-					Logger: slog.New(slog.DiscardHandler),
-				}
-				for _, resource := range []struct {
-					name string
-					ext  string
-				}{
-					{"Info", ".info"},
-					{"Mod", ".mod"},
-					{"Zip", ".zip"},
-				} {
-					t.Run(resource.name, func(t *testing.T) {
-						for _, method := range []string{http.MethodGet, http.MethodHead} {
-							t.Run(method, func(t *testing.T) {
-								rec := httptest.NewRecorder()
-								g.ServeHTTP(rec, httptest.NewRequest(method, "/example.com/@v/v1.0.0"+resource.ext, nil))
-								if got, want := rec.Code, http.StatusNotFound; got != want {
-									t.Errorf("got status %d, want %d", got, want)
-								}
-								if got, want := rec.Header().Get("Cache-Control"), "no-store"; got != want {
-									t.Errorf("got cache control %q, want %q", got, want)
-								}
-								if got, want := rec.Header().Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
-									t.Errorf("got content type %q, want %q", got, want)
-								}
-								wantContent := "not found: bad upstream"
-								if method == http.MethodHead {
-									wantContent = ""
-								}
-								if got, want := rec.Body.String(), wantContent; got != want {
-									t.Errorf("got content %q, want %q", got, want)
-								}
-							})
-						}
-					})
-				}
-				t.Run("ProxyFallback", func(t *testing.T) {
-					var fallbackCalled bool
-					fetcher := &GoFetcher{
-						Env:     []string{"GOPROXY=https://first.example.com,https://second.example.com", "GOSUMDB=off"},
-						TempDir: t.TempDir(),
-						Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-							rec := httptest.NewRecorder()
-							if req.URL.Host == "first.example.com" {
-								g.ServeHTTP(rec, req)
-							} else {
-								fallbackCalled = true
-								proxyHandler(rec, req)
-							}
-							resp := rec.Result()
-							resp.Request = req
-							return resp, nil
-						}),
-					}
-					info, mod, zip, err := fetcher.Download(t.Context(), "example.com", "v1.0.0")
-					for _, content := range []io.ReadSeekCloser{info, mod, zip} {
-						if content != nil {
-							content.Close()
-						} else {
-							t.Error("missing module content")
-						}
-					}
-					if err != nil {
-						t.Errorf("unexpected error %v", err)
-					}
-					if !fallbackCalled {
-						t.Error("next proxy was not contacted")
-					}
-				})
-				if entries, err := os.ReadDir(gf.TempDir); err != nil {
-					t.Fatal(err)
-				} else if len(entries) != 0 {
-					t.Errorf("unexpected temporary files %v", entries)
-				}
-			})
-		}
-	})
 
 	for _, tt := range []struct {
 		name             string
@@ -2160,6 +2033,134 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 		})
 	}
 
+	t.Run("SumDBVerificationFailure", func(t *testing.T) {
+		for _, tt := range []struct {
+			name         string
+			statusCode   int
+			body         string
+			transportErr error
+			readError    bool
+		}{
+			{name: "NotFound", statusCode: http.StatusNotFound, body: "module not found"},
+			{name: "Gone", statusCode: http.StatusGone, body: "module removed"},
+			{name: "BadRequest", statusCode: http.StatusBadRequest, body: "fetch timed out"},
+			{name: "BadGateway", statusCode: http.StatusBadGateway},
+			{name: "GatewayTimeout", statusCode: http.StatusGatewayTimeout},
+			{name: "TransportFailure", transportErr: &net.DNSError{Err: "no such host", Name: "sumdb.example.com", IsNotFound: true}},
+			{name: "TransportTimeout", transportErr: context.DeadlineExceeded},
+			{name: "ReadFailure", statusCode: http.StatusOK, readError: true},
+			{name: "MalformedLookup", statusCode: http.StatusOK, body: "bad upstream"},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				gf := &GoFetcher{
+					Env:     []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=sum.golang.org https://sumdb.example.com"},
+					TempDir: t.TempDir(),
+					Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						rec := httptest.NewRecorder()
+						if req.URL.Host == "sumdb.example.com" {
+							if tt.transportErr != nil {
+								return nil, tt.transportErr
+							}
+							rec.Header().Set("Retry-After", "2")
+							rec.WriteHeader(tt.statusCode)
+							fmt.Fprint(rec, tt.body)
+						} else {
+							proxyHandler(rec, req)
+						}
+						resp := rec.Result()
+						resp.Request = req
+						if req.URL.Host == "sumdb.example.com" && tt.readError {
+							resp.Body = io.NopCloser(iotest.ErrReader(io.ErrUnexpectedEOF))
+						}
+						return resp, nil
+					}),
+				}
+				g := &Goproxy{
+					Fetcher: gf,
+					Cacher: &testCacher{
+						Cacher: DirCacher(t.TempDir()),
+						put: func(context.Context, Cacher, string, io.ReadSeeker) error {
+							t.Error("unexpected cache write")
+							return nil
+						},
+					},
+					Logger: slog.New(slog.DiscardHandler),
+				}
+				for _, resource := range []struct {
+					name string
+					ext  string
+				}{
+					{"Info", ".info"},
+					{"Mod", ".mod"},
+					{"Zip", ".zip"},
+				} {
+					t.Run(resource.name, func(t *testing.T) {
+						for _, method := range []string{http.MethodGet, http.MethodHead} {
+							t.Run(method, func(t *testing.T) {
+								rec := httptest.NewRecorder()
+								g.ServeHTTP(rec, httptest.NewRequest(method, "/example.com/@v/v1.0.0"+resource.ext, nil))
+								if got, want := rec.Code, http.StatusNotFound; got != want {
+									t.Errorf("got status %d, want %d", got, want)
+								}
+								if got, want := rec.Header().Get("Cache-Control"), "no-store"; got != want {
+									t.Errorf("got cache control %q, want %q", got, want)
+								}
+								if got, want := rec.Header().Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+									t.Errorf("got content type %q, want %q", got, want)
+								}
+								wantContent := "not found: bad upstream"
+								if method == http.MethodHead {
+									wantContent = ""
+								}
+								if got, want := rec.Body.String(), wantContent; got != want {
+									t.Errorf("got content %q, want %q", got, want)
+								}
+							})
+						}
+					})
+				}
+				t.Run("ProxyFallback", func(t *testing.T) {
+					var fallbackCalled bool
+					fetcher := &GoFetcher{
+						Env:     []string{"GOPROXY=https://first.example.com,https://second.example.com", "GOSUMDB=off"},
+						TempDir: t.TempDir(),
+						Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+							rec := httptest.NewRecorder()
+							if req.URL.Host == "first.example.com" {
+								g.ServeHTTP(rec, req)
+							} else {
+								fallbackCalled = true
+								proxyHandler(rec, req)
+							}
+							resp := rec.Result()
+							resp.Request = req
+							return resp, nil
+						}),
+					}
+					info, mod, zip, err := fetcher.Download(t.Context(), "example.com", "v1.0.0")
+					for _, content := range []io.ReadSeekCloser{info, mod, zip} {
+						if content != nil {
+							content.Close()
+						} else {
+							t.Error("missing module content")
+						}
+					}
+					if err != nil {
+						t.Errorf("unexpected error %v", err)
+					}
+					if !fallbackCalled {
+						t.Error("next proxy was not contacted")
+					}
+				})
+				if entries, err := os.ReadDir(gf.TempDir); err != nil {
+					t.Fatal(err)
+				} else if len(entries) != 0 {
+					t.Errorf("unexpected temporary files %v", entries)
+				}
+			})
+		}
+	})
+
 	t.Run("CachedContentClosed", func(t *testing.T) {
 		// Track whether Close was called on the cached content
 		var closeCalled bool
@@ -2208,6 +2209,134 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 }
 
 func TestGoproxyServeSumDB(t *testing.T) {
+	for _, tt := range []struct {
+		name             string
+		sumdbHandler     http.HandlerFunc
+		tempDir          string
+		target           string
+		wantStatusCode   int
+		wantContentType  string
+		wantCacheControl string
+		wantContent      string
+	}{
+		{
+			name:             "Supported",
+			target:           "sumdb/sumdb.example.com/supported",
+			wantStatusCode:   http.StatusOK,
+			wantCacheControl: "public, max-age=86400",
+		},
+		{
+			name:             "Latest",
+			target:           "sumdb/sumdb.example.com/latest",
+			wantStatusCode:   http.StatusOK,
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "public, max-age=60",
+			wantContent:      "/latest",
+		},
+		{
+			name:             "Lookup",
+			target:           "sumdb/sumdb.example.com/lookup/example.com@v1.0.0",
+			wantStatusCode:   http.StatusOK,
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "public, max-age=86400",
+			wantContent:      "/lookup/example.com@v1.0.0",
+		},
+		{
+			name:             "HashTile",
+			sumdbHandler:     func(rw http.ResponseWriter, req *http.Request) { fmt.Fprint(rw, strings.Repeat("x", 128)) },
+			target:           "sumdb/sumdb.example.com/tile/2/0/000",
+			wantStatusCode:   http.StatusOK,
+			wantContentType:  "application/octet-stream",
+			wantCacheControl: "public, max-age=86400",
+			wantContent:      strings.Repeat("x", 128),
+		},
+		{
+			name:             "NotFound",
+			sumdbHandler:     func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, -2) },
+			target:           "sumdb/sumdb.example.com/latest",
+			wantStatusCode:   http.StatusNotFound,
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "public, max-age=60",
+			wantContent:      "not found",
+		},
+		{
+			name:             "MissingPath",
+			target:           "sumdb/sumdb.example.com",
+			wantStatusCode:   http.StatusNotFound,
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "public, max-age=60",
+			wantContent:      "not found",
+		},
+		{
+			name:             "UnknownPath",
+			target:           "sumdb/sumdb.example.com/404",
+			wantStatusCode:   http.StatusNotFound,
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "public, max-age=86400",
+			wantContent:      "not found",
+		},
+		{
+			name:             "UnknownDatabase",
+			target:           "sumdb/sumdb2.example.com/supported",
+			wantStatusCode:   http.StatusNotFound,
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "public, max-age=60",
+			wantContent:      "not found",
+		},
+		{
+			name:             "InvalidTarget",
+			target:           "://invalid",
+			wantStatusCode:   http.StatusNotFound,
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "public, max-age=60",
+			wantContent:      "not found",
+		},
+		{
+			name:             "TempDirError",
+			tempDir:          filepath.Join(t.TempDir(), "404"),
+			target:           "sumdb/sumdb.example.com/latest",
+			wantStatusCode:   http.StatusInternalServerError,
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "no-store",
+			wantContent:      "internal server error",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.sumdbHandler == nil {
+				tt.sumdbHandler = func(rw http.ResponseWriter, req *http.Request) { fmt.Fprint(rw, req.URL.Path) }
+			}
+			sumdbServer := newHTTPTestServer(t, tt.sumdbHandler)
+			if tt.tempDir == "" {
+				tt.tempDir = t.TempDir()
+			}
+
+			g := &Goproxy{
+				ProxiedSumDBs: []string{"sumdb.example.com " + sumdbServer.URL},
+				TempDir:       tt.tempDir,
+				Logger:        slog.New(slog.DiscardHandler),
+			}
+			g.initOnce.Do(g.init)
+
+			rec := httptest.NewRecorder()
+			g.serveSumDB(rec, httptest.NewRequest("", "/", nil), tt.target)
+			recr := rec.Result()
+			if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
+				t.Errorf("got %d, want %d", got, want)
+			}
+			if got, want := recr.Header.Get("Content-Type"), tt.wantContentType; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+			if got, want := recr.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+			if b, err := io.ReadAll(recr.Body); err != nil {
+				t.Errorf("unexpected error %v", err)
+			} else if got, want := string(b), tt.wantContent; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+		})
+	}
+
 	t.Run("CacheFallback", func(t *testing.T) {
 		for _, resource := range []struct {
 			name string
@@ -2254,13 +2383,13 @@ func TestGoproxyServeSumDB(t *testing.T) {
 										return struct {
 											io.ReadSeeker
 											io.Closer
-											successResponseBody_ModTime
-											successResponseBody_ETag
+											testModTimeReader
+											testETagReader
 										}{
 											strings.NewReader("old checkpoint"),
 											closerFunc(func() error { return nil }),
-											successResponseBody_ModTime{modTime: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)},
-											successResponseBody_ETag{etag: `"old"`},
+											testModTimeReader{modTime: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)},
+											testETagReader{etag: `"old"`},
 										}, nil
 									},
 									put: func(context.Context, Cacher, string, io.ReadSeeker) error {
@@ -3364,134 +3493,6 @@ func TestGoproxyServeSumDB(t *testing.T) {
 			}
 		}
 	})
-
-	for _, tt := range []struct {
-		name             string
-		sumdbHandler     http.HandlerFunc
-		tempDir          string
-		target           string
-		wantStatusCode   int
-		wantContentType  string
-		wantCacheControl string
-		wantContent      string
-	}{
-		{
-			name:             "Supported",
-			target:           "sumdb/sumdb.example.com/supported",
-			wantStatusCode:   http.StatusOK,
-			wantCacheControl: "public, max-age=86400",
-		},
-		{
-			name:             "Latest",
-			target:           "sumdb/sumdb.example.com/latest",
-			wantStatusCode:   http.StatusOK,
-			wantContentType:  "text/plain; charset=utf-8",
-			wantCacheControl: "public, max-age=60",
-			wantContent:      "/latest",
-		},
-		{
-			name:             "Lookup",
-			target:           "sumdb/sumdb.example.com/lookup/example.com@v1.0.0",
-			wantStatusCode:   http.StatusOK,
-			wantContentType:  "text/plain; charset=utf-8",
-			wantCacheControl: "public, max-age=86400",
-			wantContent:      "/lookup/example.com@v1.0.0",
-		},
-		{
-			name:             "HashTile",
-			sumdbHandler:     func(rw http.ResponseWriter, req *http.Request) { fmt.Fprint(rw, strings.Repeat("x", 128)) },
-			target:           "sumdb/sumdb.example.com/tile/2/0/000",
-			wantStatusCode:   http.StatusOK,
-			wantContentType:  "application/octet-stream",
-			wantCacheControl: "public, max-age=86400",
-			wantContent:      strings.Repeat("x", 128),
-		},
-		{
-			name:             "NotFound",
-			sumdbHandler:     func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, -2) },
-			target:           "sumdb/sumdb.example.com/latest",
-			wantStatusCode:   http.StatusNotFound,
-			wantContentType:  "text/plain; charset=utf-8",
-			wantCacheControl: "public, max-age=60",
-			wantContent:      "not found",
-		},
-		{
-			name:             "MissingPath",
-			target:           "sumdb/sumdb.example.com",
-			wantStatusCode:   http.StatusNotFound,
-			wantContentType:  "text/plain; charset=utf-8",
-			wantCacheControl: "public, max-age=60",
-			wantContent:      "not found",
-		},
-		{
-			name:             "UnknownPath",
-			target:           "sumdb/sumdb.example.com/404",
-			wantStatusCode:   http.StatusNotFound,
-			wantContentType:  "text/plain; charset=utf-8",
-			wantCacheControl: "public, max-age=86400",
-			wantContent:      "not found",
-		},
-		{
-			name:             "UnknownDatabase",
-			target:           "sumdb/sumdb2.example.com/supported",
-			wantStatusCode:   http.StatusNotFound,
-			wantContentType:  "text/plain; charset=utf-8",
-			wantCacheControl: "public, max-age=60",
-			wantContent:      "not found",
-		},
-		{
-			name:             "InvalidTarget",
-			target:           "://invalid",
-			wantStatusCode:   http.StatusNotFound,
-			wantContentType:  "text/plain; charset=utf-8",
-			wantCacheControl: "public, max-age=60",
-			wantContent:      "not found",
-		},
-		{
-			name:             "TempDirError",
-			tempDir:          filepath.Join(t.TempDir(), "404"),
-			target:           "sumdb/sumdb.example.com/latest",
-			wantStatusCode:   http.StatusInternalServerError,
-			wantContentType:  "text/plain; charset=utf-8",
-			wantCacheControl: "no-store",
-			wantContent:      "internal server error",
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.sumdbHandler == nil {
-				tt.sumdbHandler = func(rw http.ResponseWriter, req *http.Request) { fmt.Fprint(rw, req.URL.Path) }
-			}
-			sumdbServer := newHTTPTestServer(t, tt.sumdbHandler)
-			if tt.tempDir == "" {
-				tt.tempDir = t.TempDir()
-			}
-
-			g := &Goproxy{
-				ProxiedSumDBs: []string{"sumdb.example.com " + sumdbServer.URL},
-				TempDir:       tt.tempDir,
-				Logger:        slog.New(slog.DiscardHandler),
-			}
-			g.initOnce.Do(g.init)
-
-			rec := httptest.NewRecorder()
-			g.serveSumDB(rec, httptest.NewRequest("", "/", nil), tt.target)
-			recr := rec.Result()
-			if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
-				t.Errorf("got %d, want %d", got, want)
-			}
-			if got, want := recr.Header.Get("Content-Type"), tt.wantContentType; got != want {
-				t.Errorf("got %q, want %q", got, want)
-			}
-			if got, want := recr.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
-				t.Errorf("got %q, want %q", got, want)
-			}
-			if b, err := io.ReadAll(recr.Body); err != nil {
-				t.Errorf("unexpected error %v", err)
-			} else if got, want := string(b), tt.wantContent; got != want {
-				t.Errorf("got %q, want %q", got, want)
-			}
-		})
-	}
 }
 
 func TestGoproxyServeCache(t *testing.T) {
@@ -3558,7 +3559,7 @@ func TestGoproxyServeCache(t *testing.T) {
 }
 
 func TestGoproxyCache(t *testing.T) {
-	t.Run("Normal", func(t *testing.T) {
+	t.Run("Content", func(t *testing.T) {
 		cacheDir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(cacheDir, "foo"), []byte("bar"), 0o644); err != nil {
 			t.Fatalf("unexpected error %v", err)
@@ -3610,7 +3611,7 @@ func TestGoproxyCache(t *testing.T) {
 }
 
 func TestGoproxyPutCache(t *testing.T) {
-	t.Run("Normal", func(t *testing.T) {
+	t.Run("Content", func(t *testing.T) {
 		cacheDir := t.TempDir()
 		g := &Goproxy{Cacher: DirCacher(cacheDir), TempDir: t.TempDir()}
 		g.initOnce.Do(g.init)
@@ -3661,29 +3662,8 @@ func TestCleanPath(t *testing.T) {
 	}
 }
 
-func getenv(env []string, key string) string {
-	for _, e := range slices.Backward(env) {
-		if k, v, ok := strings.Cut(e, "="); ok {
-			if k == key {
-				return v
-			}
-		}
-	}
-	return ""
-}
-
-func compareErrors(got, want error) bool {
-	if want != fs.ErrNotExist && errors.Is(want, fs.ErrNotExist) {
-		return errors.Is(got, fs.ErrNotExist) && got.Error() == want.Error()
-	}
-	return errors.Is(got, want) || got.Error() == want.Error()
-}
-
-type testUnwrapResponseWriter struct{ http.ResponseWriter }
-
-func (rw testUnwrapResponseWriter) Unwrap() http.ResponseWriter { return rw.ResponseWriter }
-
 func newHTTPTestServer(t *testing.T, handler http.Handler) *httptest.Server {
+	t.Helper()
 	server := httptest.NewServer(handler)
 	addr := server.Listener.Addr().String()
 	dialableTCPAddrs.Store(addr, struct{}{})
@@ -3695,6 +3675,7 @@ func newHTTPTestServer(t *testing.T, handler http.Handler) *httptest.Server {
 }
 
 func makeTempFile(t *testing.T, content []byte) (tempFile string, err error) {
+	t.Helper()
 	f, err := os.CreateTemp(t.TempDir(), "")
 	if err != nil {
 		return "", err
@@ -3712,12 +3693,12 @@ func makeTempFile(t *testing.T, content []byte) (tempFile string, err error) {
 func makeZip(files map[string][]byte) ([]byte, error) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
-	for k, v := range files {
+	for _, k := range slices.Sorted(maps.Keys(files)) {
 		w, err := zw.Create(k)
 		if err != nil {
 			return nil, err
 		}
-		if _, err := w.Write(v); err != nil {
+		if _, err := w.Write(files[k]); err != nil {
 			return nil, err
 		}
 	}
@@ -3727,24 +3708,25 @@ func makeZip(files map[string][]byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-type testReadSeeker struct {
-	io.ReadSeeker
-	read func(rs io.ReadSeeker, p []byte) (n int, err error)
-	seek func(rs io.ReadSeeker, offset int64, whence int) (int64, error)
+func getenv(env []string, key string) string {
+	for _, e := range slices.Backward(env) {
+		if k, v, ok := strings.Cut(e, "="); ok {
+			if k == key {
+				return v
+			}
+		}
+	}
+	return ""
 }
 
-func (rs *testReadSeeker) Read(p []byte) (n int, err error) {
-	if rs.read != nil {
-		return rs.read(rs.ReadSeeker, p)
+func compareErrors(got, want error) bool {
+	if got == nil || want == nil {
+		return got == want
 	}
-	return rs.ReadSeeker.Read(p)
-}
-
-func (rs *testReadSeeker) Seek(offset int64, whence int) (int64, error) {
-	if rs.seek != nil {
-		return rs.seek(rs.ReadSeeker, offset, whence)
+	if want != fs.ErrNotExist && errors.Is(want, fs.ErrNotExist) {
+		return errors.Is(got, fs.ErrNotExist) && got.Error() == want.Error()
 	}
-	return rs.ReadSeeker.Seek(offset, whence)
+	return errors.Is(got, want) || got.Error() == want.Error()
 }
 
 type testCacher struct {
@@ -3765,4 +3747,28 @@ func (c *testCacher) Put(ctx context.Context, name string, content io.ReadSeeker
 		return c.put(ctx, c.Cacher, name, content)
 	}
 	return c.Cacher.Put(ctx, name, content)
+}
+
+type testUnwrapResponseWriter struct{ http.ResponseWriter }
+
+func (rw testUnwrapResponseWriter) Unwrap() http.ResponseWriter { return rw.ResponseWriter }
+
+type testReadSeeker struct {
+	io.ReadSeeker
+	read func(rs io.ReadSeeker, p []byte) (n int, err error)
+	seek func(rs io.ReadSeeker, offset int64, whence int) (int64, error)
+}
+
+func (rs *testReadSeeker) Read(p []byte) (n int, err error) {
+	if rs.read != nil {
+		return rs.read(rs.ReadSeeker, p)
+	}
+	return rs.ReadSeeker.Read(p)
+}
+
+func (rs *testReadSeeker) Seek(offset int64, whence int) (int64, error) {
+	if rs.seek != nil {
+		return rs.seek(rs.ReadSeeker, offset, whence)
+	}
+	return rs.ReadSeeker.Seek(offset, whence)
 }

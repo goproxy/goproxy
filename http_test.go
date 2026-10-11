@@ -27,39 +27,155 @@ import (
 	"time"
 )
 
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
-
-type writerToFunc func(io.Writer) (int64, error)
-
-func (f writerToFunc) WriteTo(w io.Writer) (int64, error) { return f(w) }
-
-type zeroReader struct{}
-
-func (zeroReader) Read(p []byte) (int, error) {
-	clear(p)
-	return len(p), nil
-}
-
-type testHTTPResponseBody struct {
-	io.Reader
-	bytesRead int
-	closed    bool
-}
-
-func (b *testHTTPResponseBody) Read(p []byte) (int, error) {
-	n, err := b.Reader.Read(p)
-	b.bytesRead += n
-	return n, err
-}
-
-func (b *testHTTPResponseBody) Close() error {
-	b.closed = true
-	return nil
-}
-
 func TestHTTPGet(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		ctxTimeout    time.Duration
+		clientTimeout time.Duration
+		handler       http.HandlerFunc
+		configServer  func(server *httptest.Server)
+		wantContent   string
+		wantErr       func(serverURL string) error
+	}{
+		{
+			name:        "Success",
+			handler:     func(rw http.ResponseWriter, req *http.Request) { fmt.Fprint(rw, "foobar") },
+			wantContent: "foobar",
+		},
+		{
+			name: "NotFound",
+			handler: func(rw http.ResponseWriter, req *http.Request) {
+				rw.WriteHeader(http.StatusNotFound)
+				fmt.Fprint(rw, "not found")
+			},
+			wantErr: func(_ string) error { return fs.ErrNotExist },
+		},
+		{
+			name: "InternalServerError",
+			handler: func(rw http.ResponseWriter, req *http.Request) {
+				rw.WriteHeader(http.StatusInternalServerError)
+				fmt.Fprint(rw, "internal server error")
+			},
+			wantErr: func(_ string) error { return errBadUpstream },
+		},
+		{
+			name: "GatewayTimeout",
+			handler: func(rw http.ResponseWriter, req *http.Request) {
+				rw.WriteHeader(http.StatusGatewayTimeout)
+				fmt.Fprint(rw, "gateway timeout")
+			},
+			wantErr: func(_ string) error { return errFetchTimedOut },
+		},
+		{
+			name: "NotImplemented",
+			handler: func(rw http.ResponseWriter, req *http.Request) {
+				rw.WriteHeader(http.StatusNotImplemented)
+				fmt.Fprint(rw, "not implemented")
+			},
+			wantErr: func(serverURL string) error {
+				return fmt.Errorf("GET %s: 501 Not Implemented: not implemented", serverURL)
+			},
+		},
+		{
+			name:       "ContextDeadline",
+			ctxTimeout: 50 * time.Millisecond,
+			handler: func(rw http.ResponseWriter, req *http.Request) {
+				<-req.Context().Done()
+			},
+			wantErr: func(_ string) error { return context.DeadlineExceeded },
+		},
+		{
+			name:       "ContextCanceled",
+			ctxTimeout: -1,
+			handler: func(rw http.ResponseWriter, req *http.Request) {
+				rw.WriteHeader(http.StatusInternalServerError)
+				fmt.Fprint(rw, "internal server error")
+			},
+			wantErr: func(_ string) error { return context.Canceled },
+		},
+		{
+			name: "TruncatedErrorBody",
+			handler: func(rw http.ResponseWriter, req *http.Request) {
+				rw.WriteHeader(http.StatusInternalServerError)
+				rw.(http.Flusher).Flush()
+			},
+			configServer: func(server *httptest.Server) {
+				handler := server.Config.Handler
+				server.Config.Handler = http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+					handler.ServeHTTP(rw, req)
+					server.CloseClientConnections()
+				})
+			},
+			wantErr: func(_ string) error { return io.ErrUnexpectedEOF },
+		},
+		{
+			name:          "ClientTimeout",
+			clientTimeout: 50 * time.Millisecond,
+			handler: func(rw http.ResponseWriter, req *http.Request) {
+				<-req.Context().Done()
+			},
+			wantErr: func(_ string) error { return context.DeadlineExceeded },
+		},
+		{
+			name:        "LargeResponse",
+			handler:     func(rw http.ResponseWriter, req *http.Request) { io.WriteString(rw, strings.Repeat("x", 8<<10)) },
+			wantContent: strings.Repeat("x", 8<<10),
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
+			switch tt.ctxTimeout {
+			case 0:
+			case -1:
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+			default:
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, tt.ctxTimeout)
+				defer cancel()
+			}
+
+			client := http.DefaultClient
+			if tt.clientTimeout > 0 {
+				client2 := *client
+				client2.Timeout = tt.clientTimeout
+				client = &client2
+			}
+
+			server := newHTTPTestServer(t, tt.handler)
+			if tt.configServer != nil {
+				tt.configServer(server)
+			}
+
+			var wantErr error
+			if tt.wantErr != nil {
+				wantErr = tt.wantErr(server.URL)
+			}
+
+			var content bytes.Buffer
+			header, err := httpGet(ctx, client, server.URL, &content)
+			if wantErr != nil {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				if header != nil {
+					t.Errorf("got header %v, want nil", header)
+				}
+				if got, want := err, wantErr; !compareErrors(got, want) {
+					t.Errorf("got %v, want %v", got, want)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error %v", err)
+				}
+				if got, want := content.String(), tt.wantContent; got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
+			}
+		})
+	}
+
 	t.Run("ResponseHeader", func(t *testing.T) {
 		for _, tt := range []struct {
 			name         string
@@ -678,68 +794,70 @@ func TestHTTPGet(t *testing.T) {
 				{"ReadErrorAfterLimit", io.MultiReader(strings.NewReader(aboveLimit), iotest.ErrReader(io.ErrUnexpectedEOF)), maxErrorBodySize + 1, atLimit + "... (truncated)", nil},
 			} {
 				t.Run(strconv.Itoa(statusCode)+"/"+tt.name, func(t *testing.T) {
-					body := &testHTTPResponseBody{Reader: tt.content}
-					attempts := 0
-					client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-						attempts++
-						if attempts > 1 {
-							if !body.closed {
-								t.Error("response body was not closed before retrying")
+					synctest.Test(t, func(t *testing.T) {
+						body := &testHTTPResponseBody{Reader: tt.content}
+						attempts := 0
+						client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+							attempts++
+							if attempts > 1 {
+								if !body.closed {
+									t.Error("response body was not closed before retrying")
+								}
+								return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
 							}
-							return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+							return &http.Response{
+								StatusCode:    statusCode,
+								Status:        strconv.Itoa(statusCode) + " " + http.StatusText(statusCode),
+								Body:          body,
+								ContentLength: -1,
+								Request:       req,
+							}, nil
+						})}
+						_, err := httpGet(t.Context(), client, "https://example.com", nil)
+						if got, want := body.bytesRead, tt.wantRead; got != want {
+							t.Errorf("got bytes read %d, want %d", got, want)
 						}
-						return &http.Response{
-							StatusCode:    statusCode,
-							Status:        strconv.Itoa(statusCode) + " " + http.StatusText(statusCode),
-							Body:          body,
-							ContentLength: -1,
-							Request:       req,
-						}, nil
-					})}
-					_, err := httpGet(t.Context(), client, "https://example.com", nil)
-					if got, want := body.bytesRead, tt.wantRead; got != want {
-						t.Errorf("got bytes read %d, want %d", got, want)
-					}
-					if !body.closed {
-						t.Error("response body was not closed")
-					}
-					wantAttempts := 1
-					if tt.wantErr != nil {
-						if !errors.Is(err, tt.wantErr) {
-							t.Errorf("got %v, want %v", err, tt.wantErr)
+						if !body.closed {
+							t.Error("response body was not closed")
 						}
-					} else {
-						switch statusCode {
-						case http.StatusNotFound, http.StatusGone:
-							if !errors.Is(err, fs.ErrNotExist) {
-								t.Fatalf("got %v, want %v", err, fs.ErrNotExist)
+						wantAttempts := 1
+						if tt.wantErr != nil {
+							if !errors.Is(err, tt.wantErr) {
+								t.Errorf("got %v, want %v", err, tt.wantErr)
 							}
-							if got, want := err.Error(), tt.wantMessage; got != want {
-								t.Errorf("got %q, want %q", got, want)
-							}
-							rec := httptest.NewRecorder()
-							responseError(rec, httptest.NewRequest(http.MethodGet, "/", nil), err)
-							if got, want := rec.Header().Get("Cache-Control"), "public, max-age=60"; got != want {
-								t.Errorf("got %q, want %q", got, want)
-							}
-						case http.StatusBadRequest, http.StatusNotImplemented:
-							want := fmt.Sprintf("GET https://example.com: %d %s: %s", statusCode, http.StatusText(statusCode), tt.wantMessage)
-							if err == nil || err.Error() != want {
-								t.Errorf("got %v, want %s", err, want)
-							}
-							if errors.Is(err, fs.ErrNotExist) {
-								t.Errorf("unexpected absence error %v", err)
-							}
-						default:
-							wantAttempts = 2
-							if err != nil {
-								t.Errorf("unexpected error %v", err)
+						} else {
+							switch statusCode {
+							case http.StatusNotFound, http.StatusGone:
+								if !errors.Is(err, fs.ErrNotExist) {
+									t.Fatalf("got %v, want %v", err, fs.ErrNotExist)
+								}
+								if got, want := err.Error(), tt.wantMessage; got != want {
+									t.Errorf("got %q, want %q", got, want)
+								}
+								rec := httptest.NewRecorder()
+								responseError(rec, httptest.NewRequest(http.MethodGet, "/", nil), err)
+								if got, want := rec.Header().Get("Cache-Control"), "public, max-age=60"; got != want {
+									t.Errorf("got %q, want %q", got, want)
+								}
+							case http.StatusBadRequest, http.StatusNotImplemented:
+								want := fmt.Sprintf("GET https://example.com: %d %s: %s", statusCode, http.StatusText(statusCode), tt.wantMessage)
+								if err == nil || err.Error() != want {
+									t.Errorf("got %v, want %s", err, want)
+								}
+								if errors.Is(err, fs.ErrNotExist) {
+									t.Errorf("unexpected absence error %v", err)
+								}
+							default:
+								wantAttempts = 2
+								if err != nil {
+									t.Errorf("unexpected error %v", err)
+								}
 							}
 						}
-					}
-					if got, want := attempts, wantAttempts; got != want {
-						t.Errorf("got attempts %d, want %d", got, want)
-					}
+						if got, want := attempts, wantAttempts; got != want {
+							t.Errorf("got attempts %d, want %d", got, want)
+						}
+					})
 				})
 			}
 		}
@@ -815,160 +933,6 @@ func TestHTTPGet(t *testing.T) {
 		}
 	})
 
-	t.Run("Normal", func(t *testing.T) {
-		for _, tt := range []struct {
-			name          string
-			ctxTimeout    time.Duration
-			clientTimeout time.Duration
-			handler       http.HandlerFunc
-			configServer  func(server *httptest.Server)
-			wantContent   string
-			wantErr       func(serverURL string) error
-		}{
-			{
-				name:        "Success",
-				handler:     func(rw http.ResponseWriter, req *http.Request) { fmt.Fprint(rw, "foobar") },
-				wantContent: "foobar",
-			},
-			{
-				name: "NotFound",
-				handler: func(rw http.ResponseWriter, req *http.Request) {
-					rw.WriteHeader(http.StatusNotFound)
-					fmt.Fprint(rw, "not found")
-				},
-				wantErr: func(_ string) error { return fs.ErrNotExist },
-			},
-			{
-				name: "InternalServerError",
-				handler: func(rw http.ResponseWriter, req *http.Request) {
-					rw.WriteHeader(http.StatusInternalServerError)
-					fmt.Fprint(rw, "internal server error")
-				},
-				wantErr: func(_ string) error { return errBadUpstream },
-			},
-			{
-				name: "GatewayTimeout",
-				handler: func(rw http.ResponseWriter, req *http.Request) {
-					rw.WriteHeader(http.StatusGatewayTimeout)
-					fmt.Fprint(rw, "gateway timeout")
-				},
-				wantErr: func(_ string) error { return errFetchTimedOut },
-			},
-			{
-				name: "NotImplemented",
-				handler: func(rw http.ResponseWriter, req *http.Request) {
-					rw.WriteHeader(http.StatusNotImplemented)
-					fmt.Fprint(rw, "not implemented")
-				},
-				wantErr: func(serverURL string) error {
-					return fmt.Errorf("GET %s: 501 Not Implemented: not implemented", serverURL)
-				},
-			},
-			{
-				name:       "ContextDeadline",
-				ctxTimeout: 450 * time.Millisecond,
-				handler: func(rw http.ResponseWriter, req *http.Request) {
-					<-req.Context().Done()
-				},
-				wantErr: func(_ string) error { return context.DeadlineExceeded },
-			},
-			{
-				name:       "ContextCanceled",
-				ctxTimeout: -1,
-				handler: func(rw http.ResponseWriter, req *http.Request) {
-					rw.WriteHeader(http.StatusInternalServerError)
-					fmt.Fprint(rw, "internal server error")
-				},
-				wantErr: func(_ string) error { return context.Canceled },
-			},
-			{
-				name: "TruncatedErrorBody",
-				handler: func(rw http.ResponseWriter, req *http.Request) {
-					rw.WriteHeader(http.StatusInternalServerError)
-					rw.(http.Flusher).Flush()
-				},
-				configServer: func(server *httptest.Server) {
-					handler := server.Config.Handler
-					server.Config.Handler = http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-						handler.ServeHTTP(rw, req)
-						server.CloseClientConnections()
-					})
-				},
-				wantErr: func(_ string) error { return io.ErrUnexpectedEOF },
-			},
-			{
-				name:          "ClientTimeout",
-				clientTimeout: 50 * time.Millisecond,
-				handler: func(rw http.ResponseWriter, req *http.Request) {
-					time.Sleep(50 * time.Millisecond)
-					rw.WriteHeader(http.StatusInternalServerError)
-					fmt.Fprint(rw, "internal server error")
-				},
-				wantErr: func(serverURL string) error {
-					return fmt.Errorf("Get %q: context deadline exceeded (Client.Timeout exceeded while awaiting headers)", serverURL)
-				},
-			},
-			{
-				name:        "LargeResponse",
-				handler:     func(rw http.ResponseWriter, req *http.Request) { io.WriteString(rw, strings.Repeat("x", 8<<10)) },
-				wantContent: strings.Repeat("x", 8<<10),
-			},
-		} {
-			t.Run(tt.name, func(t *testing.T) {
-				ctx := t.Context()
-				switch tt.ctxTimeout {
-				case 0:
-				case -1:
-					var cancel context.CancelFunc
-					ctx, cancel = context.WithCancel(ctx)
-					cancel()
-				default:
-					var cancel context.CancelFunc
-					ctx, cancel = context.WithTimeout(ctx, tt.ctxTimeout)
-					defer cancel()
-				}
-
-				client := http.DefaultClient
-				if tt.clientTimeout > 0 {
-					client2 := *client
-					client2.Timeout = tt.clientTimeout
-					client = &client2
-				}
-
-				server := newHTTPTestServer(t, tt.handler)
-				if tt.configServer != nil {
-					tt.configServer(server)
-				}
-
-				var wantErr error
-				if tt.wantErr != nil {
-					wantErr = tt.wantErr(server.URL)
-				}
-
-				var content bytes.Buffer
-				header, err := httpGet(ctx, client, server.URL, &content)
-				if wantErr != nil {
-					if err == nil {
-						t.Fatal("expected error")
-					}
-					if header != nil {
-						t.Errorf("got header %v, want nil", header)
-					}
-					if got, want := err, wantErr; !compareErrors(got, want) {
-						t.Errorf("got %v, want %v", got, want)
-					}
-				} else {
-					if err != nil {
-						t.Fatalf("unexpected error %v", err)
-					}
-					if got, want := content.String(), tt.wantContent; got != want {
-						t.Errorf("got %q, want %q", got, want)
-					}
-				}
-			})
-		}
-	})
-
 	t.Run("InvalidURL", func(t *testing.T) {
 		if _, err := httpGet(t.Context(), http.DefaultClient, "::", nil); err == nil {
 			t.Fatal("expected error")
@@ -979,6 +943,55 @@ func TestHTTPGet(t *testing.T) {
 }
 
 func TestHTTPGetTemp(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		handler     http.HandlerFunc
+		wantContent string
+		wantErr     error
+	}{
+		{
+			name:        "Success",
+			handler:     func(rw http.ResponseWriter, req *http.Request) { fmt.Fprint(rw, "foobar") },
+			wantContent: "foobar",
+		},
+		{
+			name: "NotFound",
+			handler: func(rw http.ResponseWriter, req *http.Request) {
+				rw.WriteHeader(http.StatusNotFound)
+				fmt.Fprint(rw, "not found")
+			},
+			wantErr: fs.ErrNotExist,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			server := newHTTPTestServer(t, tt.handler)
+
+			tempFile, _, err := httpGetTemp(t.Context(), http.DefaultClient, server.URL, t.TempDir(), 0)
+			if tt.wantErr != nil {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				if got, want := err, tt.wantErr; !compareErrors(got, want) {
+					t.Errorf("got %v, want %v", got, want)
+				}
+				if _, err := os.Stat(tempFile); err == nil {
+					t.Error("expected error")
+				} else if got, want := err, fs.ErrNotExist; !compareErrors(got, want) {
+					t.Errorf("got %v, want %v", got, want)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error %v", err)
+				}
+				if b, err := os.ReadFile(tempFile); err != nil {
+					t.Errorf("unexpected error %v", err)
+				} else if got, want := string(b), tt.wantContent; got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
+			}
+		})
+	}
+
 	t.Run("BodyLimit", func(t *testing.T) {
 		for _, tt := range []struct {
 			name          string
@@ -1323,55 +1336,98 @@ func TestHTTPGetTemp(t *testing.T) {
 			})
 		}
 	})
+}
 
+func TestHTTPGetTempWriterWrite(t *testing.T) {
+	writeErr := errors.New("write failed")
 	for _, tt := range []struct {
-		name        string
-		handler     http.HandlerFunc
-		wantContent string
-		wantErr     error
+		name      string
+		maxBytes  int64
+		content   string
+		writeN    int
+		writeErr  error
+		wantN     int
+		wantErr   error
+		wantCalls int
 	}{
-		{
-			name:        "Success",
-			handler:     func(rw http.ResponseWriter, req *http.Request) { fmt.Fprint(rw, "foobar") },
-			wantContent: "foobar",
-		},
-		{
-			name: "NotFound",
-			handler: func(rw http.ResponseWriter, req *http.Request) {
-				rw.WriteHeader(http.StatusNotFound)
-				fmt.Fprint(rw, "not found")
-			},
-			wantErr: fs.ErrNotExist,
-		},
+		{"Unlimited", 0, "foobar", 6, nil, 6, nil, 1},
+		{"NegativeLimit", -1, "foobar", 6, nil, 6, nil, 1},
+		{"Empty", 6, "", 0, nil, 0, nil, 1},
+		{"AtLimit", 6, "foobar", 6, nil, 6, nil, 1},
+		{"AboveLimit", 5, "foobar", 6, nil, 0, errBadUpstream, 0},
+		{"WriteError", 6, "foobar", 0, writeErr, 0, writeErr, 1},
+		{"PartialWriteError", 6, "foobar", 3, writeErr, 3, writeErr, 1},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			server := newHTTPTestServer(t, tt.handler)
-
-			tempFile, _, err := httpGetTemp(t.Context(), http.DefaultClient, server.URL, t.TempDir(), 0)
-			if tt.wantErr != nil {
-				if err == nil {
-					t.Fatal("expected error")
-				}
-				if got, want := err, tt.wantErr; !compareErrors(got, want) {
-					t.Errorf("got %v, want %v", got, want)
-				}
-				if _, err := os.Stat(tempFile); err == nil {
-					t.Error("expected error")
-				} else if got, want := err, fs.ErrNotExist; !compareErrors(got, want) {
-					t.Errorf("got %v, want %v", got, want)
-				}
-			} else {
-				if err != nil {
-					t.Fatalf("unexpected error %v", err)
-				}
-				if b, err := os.ReadFile(tempFile); err != nil {
-					t.Errorf("unexpected error %v", err)
-				} else if got, want := string(b), tt.wantContent; got != want {
-					t.Errorf("got %q, want %q", got, want)
-				}
+			var content bytes.Buffer
+			calls := 0
+			w := &httpGetTempWriter{
+				Writer: writerFunc(func(p []byte) (int, error) {
+					calls++
+					content.Write(p[:tt.writeN])
+					return tt.writeN, tt.writeErr
+				}),
+				maxBytes: tt.maxBytes,
+			}
+			n, err := w.Write([]byte(tt.content))
+			if got, want := n, tt.wantN; got != want {
+				t.Errorf("got bytes written %d, want %d", got, want)
+			}
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("got error %v, want %v", err, tt.wantErr)
+			}
+			if _, ok := errors.AsType[*internalError](err); ok != (tt.writeErr != nil) {
+				t.Errorf("got internal error %t, want %t", ok, tt.writeErr != nil)
+			}
+			if got, want := w.written, int64(tt.wantN); got != want {
+				t.Errorf("got total bytes written %d, want %d", got, want)
+			}
+			if got, want := content.String(), tt.content[:tt.wantN]; got != want {
+				t.Errorf("got content %q, want %q", got, want)
+			}
+			if got, want := calls, tt.wantCalls; got != want {
+				t.Errorf("got write calls %d, want %d", got, want)
 			}
 		})
 	}
+
+	t.Run("MultipleWrites", func(t *testing.T) {
+		for _, tt := range []struct {
+			name        string
+			prefix      string
+			content     string
+			wantN       int
+			wantErr     error
+			wantContent string
+		}{
+			{"BelowLimit", "foo", "ba", 2, nil, "fooba"},
+			{"ExceedsRemainingLimit", "foo", "bars", 0, errBadUpstream, "foo"},
+			{"AtLimit", "foo", "bar", 3, nil, "foobar"},
+			{"EmptyAtLimit", "foobar", "", 0, nil, "foobar"},
+			{"AboveLimit", "foobar", "x", 0, errBadUpstream, "foobar"},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				var content bytes.Buffer
+				w := &httpGetTempWriter{Writer: &content, maxBytes: 6}
+				if n, err := w.Write([]byte(tt.prefix)); err != nil || n != len(tt.prefix) {
+					t.Fatalf("got initial write (%d, %v), want (%d, nil)", n, err, len(tt.prefix))
+				}
+				n, err := w.Write([]byte(tt.content))
+				if got, want := n, tt.wantN; got != want {
+					t.Errorf("got bytes written %d, want %d", got, want)
+				}
+				if !errors.Is(err, tt.wantErr) {
+					t.Errorf("got error %v, want %v", err, tt.wantErr)
+				}
+				if got, want := content.String(), tt.wantContent; got != want {
+					t.Errorf("got content %q, want %q", got, want)
+				}
+				if got, want := w.written, int64(len(tt.wantContent)); got != want {
+					t.Errorf("got total bytes written %d, want %d", got, want)
+				}
+			})
+		}
+	})
 }
 
 func TestIsRetryableHTTPClientDoError(t *testing.T) {
@@ -1550,3 +1606,39 @@ func TestParseHTTPRetryAfter(t *testing.T) {
 		})
 	}
 }
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+type testHTTPResponseBody struct {
+	io.Reader
+	bytesRead int
+	closed    bool
+}
+
+func (b *testHTTPResponseBody) Read(p []byte) (int, error) {
+	n, err := b.Reader.Read(p)
+	b.bytesRead += n
+	return n, err
+}
+
+func (b *testHTTPResponseBody) Close() error {
+	b.closed = true
+	return nil
+}
+
+type zeroReader struct{}
+
+func (zeroReader) Read(p []byte) (int, error) {
+	clear(p)
+	return len(p), nil
+}
+
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+
+type writerToFunc func(io.Writer) (int64, error)
+
+func (f writerToFunc) WriteTo(w io.Writer) (int64, error) { return f(w) }

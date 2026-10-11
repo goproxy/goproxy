@@ -17,6 +17,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/goproxy/goproxy"
@@ -250,63 +251,6 @@ func TestParseS3Endpoint(t *testing.T) {
 }
 
 func TestS3CacherGet(t *testing.T) {
-	t.Run("NotFound", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
-			rw.Header().Set("Content-Type", "application/xml")
-			rw.WriteHeader(http.StatusNotFound)
-			rw.Write([]byte(`<Error><Code>NoSuchKey</Code></Error>`))
-		}))
-		defer server.Close()
-
-		cacher := newTestS3Cacher(t, server, "test-bucket", "")
-		_, err := cacher.Get(t.Context(), "missing")
-		if !errors.Is(err, fs.ErrNotExist) {
-			t.Fatalf("got %v, want %v", err, fs.ErrNotExist)
-		}
-	})
-
-	t.Run("Forbidden", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
-			rw.Header().Set("Content-Type", "application/xml")
-			rw.WriteHeader(http.StatusForbidden)
-			rw.Write([]byte(`<Error><Code>AccessDenied</Code></Error>`))
-		}))
-		defer server.Close()
-
-		cacher := newTestS3Cacher(t, server, "test-bucket", "")
-		_, err := cacher.Get(t.Context(), "forbidden")
-		if err == nil || errors.Is(err, fs.ErrNotExist) {
-			t.Fatalf("got %v, want a non-not-found error", err)
-		}
-	})
-
-	t.Run("NotFoundAfterHead", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-			switch req.Method {
-			case http.MethodHead:
-				rw.Header().Set("Content-Length", "1")
-				rw.Header().Set("ETag", `"test-etag"`)
-				rw.WriteHeader(http.StatusOK)
-			case http.MethodGet:
-				rw.Header().Set("Content-Type", "application/xml")
-				rw.WriteHeader(http.StatusNotFound)
-				rw.Write([]byte(`<Error><Code>NoSuchKey</Code></Error>`))
-			default:
-				rw.WriteHeader(http.StatusMethodNotAllowed)
-			}
-		}))
-		defer server.Close()
-
-		cache, err := newTestS3Cacher(t, server, "test-bucket", "").Get(t.Context(), "missing")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer cache.Close()
-		if _, err := io.ReadAll(cache); !errors.Is(err, fs.ErrNotExist) {
-			t.Fatalf("got %v, want %v", err, fs.ErrNotExist)
-		}
-	})
-
 	const (
 		bucket  = "test-bucket"
 		key     = "example.com/@v/v1.0.0.mod"
@@ -452,6 +396,63 @@ func TestS3CacherGet(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("NotFound", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+			rw.Header().Set("Content-Type", "application/xml")
+			rw.WriteHeader(http.StatusNotFound)
+			rw.Write([]byte(`<Error><Code>NoSuchKey</Code></Error>`))
+		}))
+		defer server.Close()
+
+		cacher := newTestS3Cacher(t, server, "test-bucket", "")
+		_, err := cacher.Get(t.Context(), "missing")
+		if !errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("got %v, want %v", err, fs.ErrNotExist)
+		}
+	})
+
+	t.Run("Forbidden", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+			rw.Header().Set("Content-Type", "application/xml")
+			rw.WriteHeader(http.StatusForbidden)
+			rw.Write([]byte(`<Error><Code>AccessDenied</Code></Error>`))
+		}))
+		defer server.Close()
+
+		cacher := newTestS3Cacher(t, server, "test-bucket", "")
+		_, err := cacher.Get(t.Context(), "forbidden")
+		if err == nil || errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("got %v, want a non-not-found error", err)
+		}
+	})
+
+	t.Run("NotFoundAfterHead", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			switch req.Method {
+			case http.MethodHead:
+				rw.Header().Set("Content-Length", "1")
+				rw.Header().Set("ETag", `"test-etag"`)
+				rw.WriteHeader(http.StatusOK)
+			case http.MethodGet:
+				rw.Header().Set("Content-Type", "application/xml")
+				rw.WriteHeader(http.StatusNotFound)
+				rw.Write([]byte(`<Error><Code>NoSuchKey</Code></Error>`))
+			default:
+				rw.WriteHeader(http.StatusMethodNotAllowed)
+			}
+		}))
+		defer server.Close()
+
+		cache, err := newTestS3Cacher(t, server, "test-bucket", "").Get(t.Context(), "missing")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer cache.Close()
+		if _, err := io.ReadAll(cache); !errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("got %v, want %v", err, fs.ErrNotExist)
+		}
+	})
 }
 
 func TestS3CacherPut(t *testing.T) {
@@ -551,6 +552,55 @@ func TestS3CacherPut(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("ContentErrors", func(t *testing.T) {
+		wantErr := errors.New("content failed")
+		for _, tt := range []struct {
+			name    string
+			whence  int
+			failOn  int
+			readErr bool
+		}{
+			{"SeekEnd", io.SeekEnd, 1, false},
+			{"SeekStart", io.SeekStart, 1, false},
+			{"Read", io.SeekCurrent, 0, true},
+			{"HashRewind", io.SeekStart, 2, false},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				var attempts atomic.Int32
+				server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+					attempts.Add(1)
+					rw.WriteHeader(http.StatusBadRequest)
+				}))
+				defer server.Close()
+				cacher := newTestS3Cacher(t, server, "test-bucket", "")
+				seeks := 0
+				rs := strings.NewReader("test")
+				var reader io.Reader = rs
+				if tt.readErr {
+					reader = iotest.ErrReader(wantErr)
+				}
+				content := struct {
+					io.Reader
+					io.Seeker
+				}{reader, seekerFunc(func(offset int64, whence int) (int64, error) {
+					if whence == tt.whence {
+						seeks++
+						if seeks == tt.failOn {
+							return 0, wantErr
+						}
+					}
+					return rs.Seek(offset, whence)
+				})}
+				if err := cacher.Put(t.Context(), "file", content); !errors.Is(err, wantErr) {
+					t.Errorf("got error %v, want %v", err, wantErr)
+				}
+				if got := attempts.Load(); got != 0 {
+					t.Errorf("got upload attempts %d, want 0", got)
+				}
+			})
+		}
+	})
 
 	t.Run("Redirect", func(t *testing.T) {
 		for _, tt := range []struct {
@@ -814,8 +864,110 @@ func TestS3CacherPut(t *testing.T) {
 	})
 }
 
-func TestS3Cache(t *testing.T) {
-	t.Run("Read", func(t *testing.T) {
+func TestComputeContentMD5(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{"Empty", "", "1B2M2Y8AsgTpgAmY7PhCfg=="},
+		{"Content", "test", "CY9rzUYh03PK3k6DJie09g=="},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			content := strings.NewReader(tt.content)
+			got, err := computeContentMD5(content)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.want {
+				t.Errorf("got digest %q, want %q", got, tt.want)
+			}
+			if data, err := io.ReadAll(content); err != nil || string(data) != tt.content {
+				t.Errorf("got rewound content (%q, %v), want (%q, nil)", data, err, tt.content)
+			}
+		})
+	}
+
+	wantErr := errors.New("content failed")
+	for _, tt := range []struct {
+		name    string
+		content io.ReadSeeker
+	}{
+		{"ReadError", struct {
+			io.Reader
+			io.Seeker
+		}{iotest.ErrReader(wantErr), strings.NewReader("")}},
+		{"SeekError", struct {
+			io.Reader
+			io.Seeker
+		}{strings.NewReader("test"), seekerFunc(func(int64, int) (int64, error) { return 0, wantErr })}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if digest, err := computeContentMD5(tt.content); digest != "" || !errors.Is(err, wantErr) {
+				t.Errorf("got (%q, %v), want an empty digest and %v", digest, err, wantErr)
+			}
+		})
+	}
+}
+
+func TestReadSeekerAtReadAt(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		offset  int64
+		size    int
+		want    string
+		wantErr error
+	}{
+		{"Start", 0, 2, "te", nil},
+		{"Middle", 1, 2, "es", nil},
+		{"End", 2, 2, "st", nil},
+		{"Empty", 4, 0, "", nil},
+		{"ShortRead", 3, 2, "t", io.ErrUnexpectedEOF},
+		{"PastEnd", 5, 1, "", io.EOF},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			r := readSeekerAt{strings.NewReader("test")}
+			for range 2 {
+				buf := make([]byte, tt.size)
+				n, err := r.ReadAt(buf, tt.offset)
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("got error %v, want %v", err, tt.wantErr)
+				}
+				if n != len(tt.want) {
+					t.Fatalf("got bytes read %d, want %d", n, len(tt.want))
+				}
+				if got := string(buf[:n]); got != tt.want {
+					t.Errorf("got content %q, want %q", got, tt.want)
+				}
+			}
+		})
+	}
+
+	wantErr := errors.New("content failed")
+	for _, tt := range []struct {
+		name    string
+		content io.ReadSeeker
+	}{
+		{"ReadError", struct {
+			io.Reader
+			io.Seeker
+		}{iotest.ErrReader(wantErr), strings.NewReader("")}},
+		{"SeekError", struct {
+			io.Reader
+			io.Seeker
+		}{strings.NewReader("test"), seekerFunc(func(int64, int) (int64, error) { return 0, wantErr })}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			r := readSeekerAt{tt.content}
+			if n, err := r.ReadAt(make([]byte, 1), 0); n != 0 || !errors.Is(err, wantErr) {
+				t.Errorf("got (%d, %v), want (0, %v)", n, err, wantErr)
+			}
+		})
+	}
+}
+
+func TestS3CacheRead(t *testing.T) {
+	t.Run("Content", func(t *testing.T) {
 		const content = "test"
 		var opens int
 		cache := &s3Cache{
@@ -843,11 +995,11 @@ func TestS3Cache(t *testing.T) {
 			t.Fatalf("got (%d, %v), want (0, %v)", n, err, io.EOF)
 		}
 		if opens != 1 {
-			t.Fatalf("opened body %d times, want 1", opens)
+			t.Fatalf("got body opens %d, want 1", opens)
 		}
 	})
 
-	t.Run("ReadOpenError", func(t *testing.T) {
+	t.Run("OpenError", func(t *testing.T) {
 		wantErr := errors.New("open failed")
 		cache := &s3Cache{
 			size: 1,
@@ -860,49 +1012,163 @@ func TestS3Cache(t *testing.T) {
 		}
 	})
 
-	t.Run("Seek", func(t *testing.T) {
-		for _, tt := range []struct {
-			name    string
-			offset  int64
-			whence  int
-			want    int64
-			wantErr string
-		}{
-			{name: "Start", offset: 3, whence: io.SeekStart, want: 3},
-			{name: "Current", offset: 2, whence: io.SeekCurrent, want: 6},
-			{name: "End", offset: -1, whence: io.SeekEnd, want: 9},
-			{name: "Same", whence: io.SeekCurrent, want: 4},
-			{name: "Negative", offset: -5, whence: io.SeekStart, wantErr: "negative position"},
-			{name: "InvalidWhence", whence: -1, wantErr: "invalid whence"},
-		} {
-			t.Run(tt.name, func(t *testing.T) {
-				cache := &s3Cache{pos: 4, size: 10}
-				got, err := cache.Seek(tt.offset, tt.whence)
-				if tt.wantErr != "" {
-					if err == nil || err.Error() != tt.wantErr {
-						t.Fatalf("got %v, want %q", err, tt.wantErr)
-					}
-					return
-				}
-				if err != nil {
-					t.Fatal(err)
-				}
-				if got != tt.want {
-					t.Fatalf("got %d, want %d", got, tt.want)
-				}
-			})
+	t.Run("ReadError", func(t *testing.T) {
+		wantErr := errors.New("read failed")
+		closes := 0
+		cache := &s3Cache{
+			size: 1,
+			openAt: func(int64) (io.ReadCloser, error) {
+				return struct {
+					io.Reader
+					io.Closer
+				}{iotest.ErrReader(wantErr), closerFunc(func() error {
+					closes++
+					return nil
+				})}, nil
+			},
+		}
+		if n, err := cache.Read(make([]byte, 1)); n != 0 || !errors.Is(err, wantErr) {
+			t.Errorf("got (%d, %v), want (0, %v)", n, err, wantErr)
+		}
+		if cache.body != nil || closes != 1 {
+			t.Errorf("got body %v and closes %d, want a closed body and one close", cache.body, closes)
 		}
 	})
 
 	t.Run("Closed", func(t *testing.T) {
 		cache := &s3Cache{closed: true}
-		if _, err := cache.Read(make([]byte, 1)); !errors.Is(err, fs.ErrClosed) {
-			t.Fatalf("got %v, want %v", err, fs.ErrClosed)
-		}
-		if _, err := cache.Seek(0, io.SeekStart); !errors.Is(err, fs.ErrClosed) {
-			t.Fatalf("got %v, want %v", err, fs.ErrClosed)
+		if n, err := cache.Read(make([]byte, 1)); n != 0 || !errors.Is(err, fs.ErrClosed) {
+			t.Errorf("got (%d, %v), want (0, %v)", n, err, fs.ErrClosed)
 		}
 	})
+}
+
+func TestS3CacheSeek(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		offset  int64
+		whence  int
+		want    int64
+		wantErr string
+	}{
+		{name: "Start", offset: 3, whence: io.SeekStart, want: 3},
+		{name: "Current", offset: 2, whence: io.SeekCurrent, want: 6},
+		{name: "End", offset: -1, whence: io.SeekEnd, want: 9},
+		{name: "Same", whence: io.SeekCurrent, want: 4},
+		{name: "Negative", offset: -5, whence: io.SeekStart, wantErr: "negative position"},
+		{name: "InvalidWhence", whence: -1, wantErr: "invalid whence"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			closes := 0
+			cache := &s3Cache{
+				pos: 4, size: 10,
+				body: struct {
+					io.Reader
+					io.Closer
+				}{strings.NewReader("test"), closerFunc(func() error {
+					closes++
+					return nil
+				})},
+			}
+			defer cache.Close()
+			got, err := cache.Seek(tt.offset, tt.whence)
+			if tt.wantErr != "" {
+				if err == nil || err.Error() != tt.wantErr {
+					t.Fatalf("got %v, want %q", err, tt.wantErr)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			} else if got != tt.want {
+				t.Fatalf("got %d, want %d", got, tt.want)
+			}
+			wantPos, wantCloses := int64(4), 0
+			if tt.wantErr == "" {
+				wantPos = tt.want
+				if wantPos != 4 {
+					wantCloses = 1
+				}
+			}
+			if cache.pos != wantPos || closes != wantCloses {
+				t.Errorf("got position %d and closes %d, want %d and %d", cache.pos, closes, wantPos, wantCloses)
+			}
+		})
+	}
+
+	t.Run("Closed", func(t *testing.T) {
+		cache := &s3Cache{closed: true}
+		if pos, err := cache.Seek(0, io.SeekStart); pos != 0 || !errors.Is(err, fs.ErrClosed) {
+			t.Errorf("got (%d, %v), want (0, %v)", pos, err, fs.ErrClosed)
+		}
+	})
+}
+
+func TestS3CacheClose(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		open    bool
+		wantErr error
+	}{
+		{"Unopened", false, nil},
+		{"Opened", true, nil},
+		{"CloseError", true, errors.New("close failed")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cache := &s3Cache{}
+			closes := 0
+			if tt.open {
+				cache.body = struct {
+					io.Reader
+					io.Closer
+				}{strings.NewReader("test"), closerFunc(func() error {
+					closes++
+					return tt.wantErr
+				})}
+			}
+			if err := cache.Close(); !errors.Is(err, tt.wantErr) {
+				t.Errorf("got error %v, want %v", err, tt.wantErr)
+			}
+			if cache.body != nil {
+				t.Error("response body remains open after closing")
+			}
+			if err := cache.Close(); err != nil {
+				t.Errorf("unexpected error from repeated close %v", err)
+			}
+			wantCloses := 0
+			if tt.open {
+				wantCloses = 1
+			}
+			if closes != wantCloses {
+				t.Errorf("got closes %d, want %d", closes, wantCloses)
+			}
+			if _, err := cache.Read(make([]byte, 1)); !errors.Is(err, fs.ErrClosed) {
+				t.Errorf("got read error %v, want %v", err, fs.ErrClosed)
+			}
+			if _, err := cache.Seek(0, io.SeekStart); !errors.Is(err, fs.ErrClosed) {
+				t.Errorf("got seek error %v, want %v", err, fs.ErrClosed)
+			}
+		})
+	}
+}
+
+func newTestS3Cacher(t *testing.T, server *httptest.Server, bucket string, prefix string) *s3Cacher {
+	t.Helper()
+
+	cacher, err := newS3Cacher(s3CacherOptions{
+		accessKeyID:     "access-key-id",
+		secretAccessKey: "secret-access-key",
+		endpoint:        server.Listener.Addr().String(),
+		disableTLS:      true,
+		transport:       server.Client().Transport,
+		region:          "us-east-1",
+		bucket:          bucket,
+		prefix:          prefix,
+		forcePathStyle:  true,
+		partSize:        5 << 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cacher
 }
 
 func checkContentMD5(t *testing.T, req *http.Request, content []byte) {
@@ -929,29 +1195,20 @@ func checkNoSDKChecksumHeaders(t *testing.T, req *http.Request) {
 	}
 }
 
-func newTestS3Cacher(t *testing.T, server *httptest.Server, bucket string, prefix string) *s3Cacher {
-	t.Helper()
-
-	cacher, err := newS3Cacher(s3CacherOptions{
-		accessKeyID:     "access-key-id",
-		secretAccessKey: "secret-access-key",
-		endpoint:        server.Listener.Addr().String(),
-		disableTLS:      true,
-		transport:       server.Client().Transport,
-		region:          "us-east-1",
-		bucket:          bucket,
-		prefix:          prefix,
-		forcePathStyle:  true,
-		partSize:        5 << 20,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return cacher
-}
-
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
+}
+
+type seekerFunc func(int64, int) (int64, error)
+
+func (f seekerFunc) Seek(offset int64, whence int) (int64, error) {
+	return f(offset, whence)
+}
+
+type closerFunc func() error
+
+func (f closerFunc) Close() error {
+	return f()
 }

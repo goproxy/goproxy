@@ -123,27 +123,6 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 	return nil, lastErr
 }
 
-// httpGetTempWriter limits temporary file writes and marks write errors as
-// [internalError]. A positive maxBytes enables the limit.
-type httpGetTempWriter struct {
-	io.Writer
-	maxBytes int64
-	written  int64
-}
-
-// Write implements [io.Writer].
-func (w *httpGetTempWriter) Write(p []byte) (int, error) {
-	if w.maxBytes > 0 && int64(len(p)) > w.maxBytes-w.written {
-		return 0, fmt.Errorf("%w: response body exceeds %d bytes", errBadUpstream, w.maxBytes)
-	}
-	n, err := w.Writer.Write(p)
-	w.written += int64(n)
-	if err != nil {
-		return n, &internalError{err: err}
-	}
-	return n, nil
-}
-
 // httpGetTemp is like [httpGet] but writes the content to a new temporary file
 // in tempDir. A positive maxBytes limits the file size.
 func httpGetTemp(ctx context.Context, client *http.Client, url, tempDir string, maxBytes int64) (tempFile string, header http.Header, err error) {
@@ -165,6 +144,27 @@ func httpGetTemp(ctx context.Context, client *http.Client, url, tempDir string, 
 		return "", nil, &internalError{err: err}
 	}
 	return f.Name(), header, nil
+}
+
+// httpGetTempWriter limits temporary file writes and marks write errors as
+// [internalError]. A positive maxBytes enables the limit.
+type httpGetTempWriter struct {
+	io.Writer
+	maxBytes int64
+	written  int64
+}
+
+// Write implements [io.Writer].
+func (w *httpGetTempWriter) Write(p []byte) (int, error) {
+	if w.maxBytes > 0 && int64(len(p)) > w.maxBytes-w.written {
+		return 0, fmt.Errorf("%w: response body exceeds %d bytes", errBadUpstream, w.maxBytes)
+	}
+	n, err := w.Writer.Write(p)
+	w.written += int64(n)
+	if err != nil {
+		return n, &internalError{err: err}
+	}
+	return n, nil
 }
 
 // isRetryableHTTPClientDoError reports whether the err is a retryable error

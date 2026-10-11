@@ -36,17 +36,6 @@ func TestIsBadUpstreamError(t *testing.T) {
 	}
 }
 
-type testTimeoutError struct {
-	error
-	timeout bool
-}
-
-func (e testTimeoutError) Timeout() bool { return e.timeout }
-
-type testAsError struct{ error }
-
-func (e testAsError) As(target any) bool { return errors.As(e.error, target) }
-
 func TestIsFetchTimedOutError(t *testing.T) {
 	timeoutErr := testTimeoutError{errors.New("operation timed out"), true}
 	nonTimeoutErr := testTimeoutError{errors.New("operation failed"), false}
@@ -131,116 +120,124 @@ func TestInternalError(t *testing.T) {
 }
 
 func TestNotExistError(t *testing.T) {
-	t.Run("Normal", func(t *testing.T) {
-		for _, tt := range []struct {
-			name    string
-			err     error
-			wantErr error
-		}{
-			{"EmptyMessage", notExistErrorf(""), errors.New("")},
-			{"CustomMessage", notExistErrorf("foobar"), errors.New("foobar")},
-			{"NotExist", notExistErrorf("foobar"), fs.ErrNotExist},
-		} {
-			t.Run(tt.name, func(t *testing.T) {
-				if got, want := tt.err, tt.wantErr; !compareErrors(got, want) {
-					t.Errorf("got %v, want %v", got, want)
-				}
-			})
-		}
-	})
+	cause := errors.New("foobar")
+	e := &notExistError{err: cause}
+	if got, want := e.Error(), cause.Error(); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	if got := errors.Unwrap(e); got != cause {
+		t.Errorf("got %v, want the original error", got)
+	}
+	for _, tt := range []struct {
+		name   string
+		err    error
+		wantIs bool
+	}{
+		{"NotExist", fs.ErrNotExist, true},
+		{"Cause", cause, true},
+		{"EOF", io.EOF, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got, want := errors.Is(e, tt.err), tt.wantIs; got != want {
+				t.Errorf("got %t, want %t", got, want)
+			}
+		})
+	}
+}
 
-	t.Run("ErrorIs", func(t *testing.T) {
-		e := &notExistError{err: errors.New("foobar")}
-		for _, tt := range []struct {
-			name   string
-			err    error
-			wantIs bool
-		}{
-			{"NotExist", fs.ErrNotExist, true},
-			{"EOF", io.EOF, false},
-		} {
-			t.Run(tt.name, func(t *testing.T) {
-				if got, want := e.Is(tt.err), tt.wantIs; got != want {
-					t.Errorf("got %t, want %t", got, want)
-				}
-				if got, want := errors.Is(e, tt.err), tt.wantIs; got != want {
-					t.Errorf("got %t, want %t", got, want)
-				}
-			})
-		}
-	})
+func TestNotExistErrorf(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		err         error
+		wantMessage string
+	}{
+		{"EmptyMessage", notExistErrorf(""), ""},
+		{"CustomMessage", notExistErrorf("foobar"), "foobar"},
+		{"FormattedMessage", notExistErrorf("module %s@%s", "example.com", "v1.0.0"), "module example.com@v1.0.0"},
+		{"PercentMessage", notExistErrorf("%s", "module %s unavailable"), "module %s unavailable"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got, want := tt.err.Error(), tt.wantMessage; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+			if _, ok := errors.AsType[*notExistError](tt.err); !ok {
+				t.Errorf("got %T, want *notExistError", tt.err)
+			}
+			if !errors.Is(tt.err, fs.ErrNotExist) {
+				t.Error("expected match for fs.ErrNotExist")
+			}
+		})
+	}
 }
 
 func TestUncacheableNotExistError(t *testing.T) {
-	t.Run("Normal", func(t *testing.T) {
-		for _, tt := range []struct {
-			name        string
-			err         error
-			wantMessage string
-		}{
-			{"EmptyMessage", uncacheableNotExistErrorf(""), ""},
-			{"CustomMessage", uncacheableNotExistErrorf("foobar"), "foobar"},
-			{"FormattedMessage", uncacheableNotExistErrorf("module %s@%s", "example.com", "v1.0.0"), "module example.com@v1.0.0"},
-			{"PercentMessage", uncacheableNotExistErrorf("%s", "module %s unavailable"), "module %s unavailable"},
-		} {
-			t.Run(tt.name, func(t *testing.T) {
-				if got, want := tt.err.Error(), tt.wantMessage; got != want {
-					t.Errorf("got %q, want %q", got, want)
-				}
-				if _, ok := errors.AsType[*uncacheableNotExistError](tt.err); !ok {
-					t.Errorf("got %T, want *uncacheableNotExistError", tt.err)
-				}
-				if _, ok := errors.AsType[*notExistError](tt.err); !ok {
-					t.Errorf("got %T, want an error wrapping *notExistError", tt.err)
-				}
-				if !errors.Is(tt.err, fs.ErrNotExist) {
-					t.Error("expected match for fs.ErrNotExist")
-				}
-			})
-		}
-	})
+	cause := &fs.PathError{Op: "open", Path: "file", Err: fs.ErrNotExist}
+	err := &uncacheableNotExistError{notExistError{err: cause}}
+	if got, want := err.Error(), cause.Error(); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	if got := errors.Unwrap(err); got != &err.notExistError {
+		t.Errorf("got %v, want the embedded not-exist error", got)
+	}
+	if got := errors.Unwrap(&err.notExistError); got != cause {
+		t.Errorf("got %v, want the original path error", got)
+	}
+	for _, tt := range []struct {
+		name string
+		err  error
+	}{
+		{"Direct", err},
+		{"Wrapped", fmt.Errorf("request failed: %w", err)},
+		{"Nested", &notExistError{err: err}},
+		{"Joined", errors.Join(errors.New("request failed"), err)},
+		{"JoinedAbsence", errors.Join(notExistErrorf("module unavailable"), err)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got, ok := errors.AsType[*uncacheableNotExistError](tt.err); !ok || got != err {
+				t.Errorf("got %v, want the original uncacheable error", got)
+			}
+			if _, ok := errors.AsType[*notExistError](tt.err); !ok {
+				t.Errorf("got %T, want an error wrapping *notExistError", tt.err)
+			}
+			if got, ok := errors.AsType[*fs.PathError](tt.err); !ok || got != cause {
+				t.Errorf("got %v, want the original path error", got)
+			}
+			if !errors.Is(tt.err, fs.ErrNotExist) {
+				t.Error("expected match for fs.ErrNotExist")
+			}
+			if errors.Is(tt.err, fs.ErrPermission) {
+				t.Error("unexpected match for fs.ErrPermission")
+			}
+		})
+	}
+}
 
-	t.Run("ErrorChain", func(t *testing.T) {
-		cause := &fs.PathError{Op: "open", Path: "file", Err: fs.ErrNotExist}
-		err := &uncacheableNotExistError{notExistError{err: cause}}
-		if got, want := err.Error(), cause.Error(); got != want {
-			t.Errorf("got %q, want %q", got, want)
-		}
-		if got := errors.Unwrap(err); got != &err.notExistError {
-			t.Errorf("got %v, want the embedded not-exist error", got)
-		}
-		if got := errors.Unwrap(&err.notExistError); got != cause {
-			t.Errorf("got %v, want the original path error", got)
-		}
-		for _, tt := range []struct {
-			name string
-			err  error
-		}{
-			{"Direct", err},
-			{"Wrapped", fmt.Errorf("request failed: %w", err)},
-			{"Nested", &notExistError{err: err}},
-			{"Joined", errors.Join(errors.New("request failed"), err)},
-			{"JoinedAbsence", errors.Join(notExistErrorf("module unavailable"), err)},
-		} {
-			t.Run(tt.name, func(t *testing.T) {
-				if got, ok := errors.AsType[*uncacheableNotExistError](tt.err); !ok || got != err {
-					t.Errorf("got %v, want the original uncacheable error", got)
-				}
-				if _, ok := errors.AsType[*notExistError](tt.err); !ok {
-					t.Errorf("got %T, want an error wrapping *notExistError", tt.err)
-				}
-				if got, ok := errors.AsType[*fs.PathError](tt.err); !ok || got != cause {
-					t.Errorf("got %v, want the original path error", got)
-				}
-				if !errors.Is(tt.err, fs.ErrNotExist) {
-					t.Error("expected match for fs.ErrNotExist")
-				}
-				if errors.Is(tt.err, fs.ErrPermission) {
-					t.Error("unexpected match for fs.ErrPermission")
-				}
-			})
-		}
-	})
+func TestUncacheableNotExistErrorf(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		err         error
+		wantMessage string
+	}{
+		{"EmptyMessage", uncacheableNotExistErrorf(""), ""},
+		{"CustomMessage", uncacheableNotExistErrorf("foobar"), "foobar"},
+		{"FormattedMessage", uncacheableNotExistErrorf("module %s@%s", "example.com", "v1.0.0"), "module example.com@v1.0.0"},
+		{"PercentMessage", uncacheableNotExistErrorf("%s", "module %s unavailable"), "module %s unavailable"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got, want := tt.err.Error(), tt.wantMessage; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+			if _, ok := errors.AsType[*uncacheableNotExistError](tt.err); !ok {
+				t.Errorf("got %T, want *uncacheableNotExistError", tt.err)
+			}
+			if _, ok := errors.AsType[*notExistError](tt.err); !ok {
+				t.Errorf("got %T, want an error wrapping *notExistError", tt.err)
+			}
+			if !errors.Is(tt.err, fs.ErrNotExist) {
+				t.Error("expected match for fs.ErrNotExist")
+			}
+		})
+	}
 }
 
 func TestHTTPError(t *testing.T) {
@@ -276,3 +273,14 @@ func TestHTTPError(t *testing.T) {
 		})
 	}
 }
+
+type testTimeoutError struct {
+	error
+	timeout bool
+}
+
+func (e testTimeoutError) Timeout() bool { return e.timeout }
+
+type testAsError struct{ error }
+
+func (e testAsError) As(target any) bool { return errors.As(e.error, target) }
