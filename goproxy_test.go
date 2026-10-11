@@ -3148,6 +3148,80 @@ func TestGoproxyServeSumDB(t *testing.T) {
 		}
 	})
 
+	t.Run("HashTileBodyLimit", func(t *testing.T) {
+		for _, tile := range []struct {
+			name string
+			path string
+			size int
+		}{
+			{"Full", "/tile/8/0/000", 256 * tlog.HashSize},
+			{"Partial", "/tile/8/0/000.p/3", 3 * tlog.HashSize},
+		} {
+			for _, tt := range []struct {
+				name          string
+				contentLength int64
+				writerTo      bool
+			}{
+				{"UnknownContentLength", -1, false},
+				{"MisleadingContentLength", 1, false},
+				{"WriterTo", -1, true},
+			} {
+				for _, method := range []string{http.MethodGet, http.MethodHead} {
+					t.Run(tile.name+"/"+tt.name+"/"+method, func(t *testing.T) {
+						const responseSize = 1 << 20
+						body := &testHTTPResponseBody{Reader: io.LimitReader(zeroReader{}, responseSize)}
+						var responseBody io.ReadCloser = body
+						if tt.writerTo {
+							responseBody = struct {
+								io.ReadCloser
+								io.WriterTo
+							}{body, writerToFunc(func(w io.Writer) (int64, error) { return io.Copy(w, body) })}
+						}
+						calls := 0
+						g := &Goproxy{
+							ProxiedSumDBs: []string{"sumdb.example.com"},
+							TempDir:       t.TempDir(),
+							Logger:        slog.New(slog.DiscardHandler),
+							Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+								calls++
+								return &http.Response{StatusCode: http.StatusOK, ContentLength: tt.contentLength, Body: responseBody}, nil
+							}),
+						}
+						rec := httptest.NewRecorder()
+						g.ServeHTTP(rec, httptest.NewRequest(method, "/sumdb/sumdb.example.com"+tile.path, nil))
+						if got, want := rec.Code, http.StatusBadGateway; got != want {
+							t.Errorf("got status %d, want %d", got, want)
+						}
+						if got, want := rec.Header().Get("Cache-Control"), "no-store"; got != want {
+							t.Errorf("got cache control %q, want %q", got, want)
+						}
+						wantContent := "bad gateway"
+						if method == http.MethodHead {
+							wantContent = ""
+						}
+						if got, want := rec.Body.String(), wantContent; got != want {
+							t.Errorf("got content %q, want %q", got, want)
+						}
+						if got := body.bytesRead; got <= tile.size || got >= responseSize {
+							t.Errorf("read %d of %d bytes, want an early stop after %d bytes", got, responseSize, tile.size)
+						}
+						if !body.closed {
+							t.Error("response body was not closed")
+						}
+						if got, want := calls, 1; got != want {
+							t.Errorf("got %d upstream requests, want %d", got, want)
+						}
+						if entries, err := os.ReadDir(g.TempDir); err != nil {
+							t.Fatal(err)
+						} else if len(entries) != 0 {
+							t.Errorf("unexpected temporary files %v", entries)
+						}
+					})
+				}
+			}
+		}
+	})
+
 	t.Run("Paths", func(t *testing.T) {
 		var upstreamRequests atomic.Int32
 		var upstreamPath atomic.Value
