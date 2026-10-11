@@ -523,7 +523,11 @@ func (gf *GoFetcher) directDownload(ctx context.Context, path, version string) (
 // execGo executes the local Go binary with the given args and returns the output.
 func (gf *GoFetcher) execGo(ctx context.Context, args ...string) ([]byte, error) {
 	if gf.directFetchWorkerPool != nil {
-		gf.directFetchWorkerPool <- struct{}{}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case gf.directFetchWorkerPool <- struct{}{}:
+		}
 		defer func() { <-gf.directFetchWorkerPool }()
 	}
 

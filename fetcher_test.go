@@ -2565,17 +2565,6 @@ func TestGoFetcherDirectDownload(t *testing.T) {
 	}
 }
 
-type misbehavingDoneContext struct{}
-
-func (misbehavingDoneContext) Deadline() (deadline time.Time, ok bool) { return time.Time{}, false }
-func (misbehavingDoneContext) Done() <-chan struct{} {
-	ch := make(chan struct{})
-	close(ch)
-	return ch
-}
-func (misbehavingDoneContext) Err() error        { return nil }
-func (misbehavingDoneContext) Value(key any) any { return nil }
-
 func TestGoFetcherExecGo(t *testing.T) {
 	t.Setenv("GOMODCACHE", t.TempDir())
 
@@ -2620,8 +2609,9 @@ func TestGoFetcherExecGo(t *testing.T) {
 		},
 		{
 			n:       5,
-			ctx:     &misbehavingDoneContext{},
-			wantErr: errors.New("exec: not started"),
+			ctx:     t.Context(),
+			goBin:   filepath.Join(t.TempDir(), "404"),
+			wantErr: fs.ErrNotExist,
 		},
 		{
 			n:       6,
@@ -2646,6 +2636,9 @@ func TestGoFetcherExecGo(t *testing.T) {
 			}
 
 			output, err := gf.execGo(tt.ctx, tt.args...)
+			if got := len(gf.directFetchWorkerPool); got != 0 {
+				t.Errorf("got occupied slots %d, want 0", got)
+			}
 			if tt.wantNoStore {
 				if !errors.Is(err, fs.ErrNotExist) {
 					t.Fatalf("got %v, want %v", err, fs.ErrNotExist)
@@ -2681,6 +2674,93 @@ func TestGoFetcherExecGo(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("CanceledWithoutLimit", func(t *testing.T) {
+		gf := &GoFetcher{TempDir: t.TempDir()}
+		gf.initOnce.Do(gf.init)
+		if gf.initErr != nil {
+			t.Fatal(gf.initErr)
+		}
+		if output, err := gf.execGo(ctxCanceled); output != nil || err != context.Canceled {
+			t.Errorf("got %q, %v, want no output and %v", output, err, context.Canceled)
+		}
+	})
+
+	t.Run("Queued", func(t *testing.T) {
+		for _, tt := range []struct {
+			name    string
+			wantErr error
+		}{
+			{"Released", fs.ErrNotExist},
+			{"AlreadyCanceled", context.Canceled},
+			{"CanceledWhileWaiting", context.Canceled},
+			{"DeadlineExceeded", context.DeadlineExceeded},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					gf := &GoFetcher{
+						GoBin:                      filepath.Join(t.TempDir(), "404"),
+						MaxConcurrentDirectFetches: 1,
+						TempDir:                    t.TempDir(),
+					}
+					gf.initOnce.Do(gf.init)
+					if gf.initErr != nil {
+						t.Fatal(gf.initErr)
+					}
+					gf.directFetchWorkerPool <- struct{}{}
+					ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+					defer cancel()
+					if tt.name == "AlreadyCanceled" {
+						cancel()
+					}
+					done := make(chan error, 1)
+					go func() {
+						output, err := gf.execGo(ctx)
+						if output != nil {
+							t.Errorf("unexpected output %q", output)
+						}
+						done <- err
+					}()
+					synctest.Wait()
+					if tt.name != "AlreadyCanceled" && len(done) != 0 {
+						t.Error("command completed before a slot became available")
+					}
+					switch tt.name {
+					case "Released":
+						<-gf.directFetchWorkerPool
+					case "CanceledWhileWaiting":
+						cancel()
+					case "DeadlineExceeded":
+						time.Sleep(time.Second)
+					}
+					synctest.Wait()
+					var err error
+					select {
+					case err = <-done:
+					default:
+						t.Error("command is still waiting for a slot")
+						<-gf.directFetchWorkerPool
+						err = <-done
+					}
+					if !errors.Is(err, tt.wantErr) {
+						t.Errorf("got error %v, want %v", err, tt.wantErr)
+					}
+					wantOccupied := 1
+					if tt.name == "Released" {
+						wantOccupied = 0
+					}
+					if got := len(gf.directFetchWorkerPool); got != wantOccupied {
+						t.Errorf("got occupied slots %d, want %d", got, wantOccupied)
+					}
+					if entries, err := os.ReadDir(gf.TempDir); err != nil {
+						t.Fatal(err)
+					} else if len(entries) != 0 {
+						t.Errorf("unexpected temporary files %v", entries)
+					}
+				})
+			})
+		}
+	})
 }
 
 func TestCleanEnvGOPROXY(t *testing.T) {
