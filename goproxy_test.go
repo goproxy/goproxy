@@ -1125,7 +1125,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 		responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
 	}))
 	for _, tt := range []struct {
-		n                int
+		name             string
 		method           string
 		path             string
 		wantStatusCode   int
@@ -1136,7 +1136,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 		wantContent      string
 	}{
 		{
-			n:                1,
+			name:             "GET",
 			path:             "/example.com/@latest",
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "application/json; charset=utf-8",
@@ -1145,7 +1145,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 			wantContent:      info,
 		},
 		{
-			n:                2,
+			name:             "HEAD",
 			method:           http.MethodHead,
 			path:             "/example.com/@latest",
 			wantStatusCode:   http.StatusOK,
@@ -1154,7 +1154,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 			wantVary:         "Disable-Module-Fetch",
 		},
 		{
-			n:                3,
+			name:             "POST",
 			method:           http.MethodPost,
 			path:             "/example.com/@latest",
 			wantStatusCode:   http.StatusMethodNotAllowed,
@@ -1164,7 +1164,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 			wantContent:      "method not allowed",
 		},
 		{
-			n:                4,
+			name:             "RootPath",
 			path:             "/",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -1172,7 +1172,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 			wantContent:      "not found",
 		},
 		{
-			n:                5,
+			name:             "DotPath",
 			path:             "/.",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -1180,7 +1180,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 			wantContent:      "not found",
 		},
 		{
-			n:                6,
+			name:             "ParentPath",
 			path:             "/../example.com/@latest",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -1188,7 +1188,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 			wantContent:      "not found",
 		},
 		{
-			n:                7,
+			name:             "TrailingSlash",
 			path:             "/example.com/@latest/",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -1196,7 +1196,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 			wantContent:      "not found",
 		},
 		{
-			n:                8,
+			name:             "UnknownSumDB",
 			path:             "/sumdb/sumdb.example.com/supported",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -1204,7 +1204,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 			wantContent:      "not found",
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			g := &Goproxy{
 				Fetcher: &GoFetcher{
 					Env:     []string{"GOPROXY=" + proxyServer.URL, "GOSUMDB=off"},
@@ -1442,7 +1442,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 	})
 
 	for _, tt := range []struct {
-		n                  int
+		name               string
 		cacher             Cacher
 		target             string
 		disableModuleFetch bool
@@ -1452,7 +1452,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 		wantContent        string
 	}{
 		{
-			n:                1,
+			name:             "Latest",
 			target:           "example.com/@latest",
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "application/json; charset=utf-8",
@@ -1460,7 +1460,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      info,
 		},
 		{
-			n:                  2,
+			name:               "LatestFetchDisabled",
 			target:             "example.com/@latest",
 			disableModuleFetch: true,
 			wantStatusCode:     http.StatusNotFound,
@@ -1469,7 +1469,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:        "not found: temporarily unavailable",
 		},
 		{
-			n:                3,
+			name:             "List",
 			target:           "example.com/@v/list",
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -1477,7 +1477,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      list,
 		},
 		{
-			n:                  4,
+			name:               "ListFetchDisabled",
 			target:             "example.com/@v/list",
 			disableModuleFetch: true,
 			wantStatusCode:     http.StatusNotFound,
@@ -1486,7 +1486,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:        "not found: temporarily unavailable",
 		},
 		{
-			n:                5,
+			name:             "Info",
 			target:           "example.com/@v/v1.0.0.info",
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "application/json; charset=utf-8",
@@ -1494,7 +1494,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      info,
 		},
 		{
-			n: 6,
+			name: "InfoCacheOnly",
 			cacher: &testCacher{
 				Cacher: DirCacher(t.TempDir()),
 				get: func(ctx context.Context, c Cacher, name string) (io.ReadCloser, error) {
@@ -1509,7 +1509,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:        info,
 		},
 		{
-			n:                7,
+			name:             "MajorVersionQuery",
 			target:           "example.com/@v/v1.info",
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "application/json; charset=utf-8",
@@ -1517,7 +1517,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      info,
 		},
 		{
-			n:                8,
+			name:             "MinorVersionQuery",
 			target:           "example.com/@v/v1.0.info",
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "application/json; charset=utf-8",
@@ -1525,7 +1525,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      info,
 		},
 		{
-			n:                9,
+			name:             "BranchQuery",
 			target:           "example.com/@v/master.info",
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "application/json; charset=utf-8",
@@ -1533,7 +1533,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      info,
 		},
 		{
-			n:                10,
+			name:             "Mod",
 			target:           "example.com/@v/v1.0.0.mod",
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -1541,7 +1541,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      mod,
 		},
 		{
-			n: 11,
+			name: "ModCacheOnly",
 			cacher: &testCacher{
 				Cacher: DirCacher(t.TempDir()),
 				get: func(ctx context.Context, c Cacher, name string) (io.ReadCloser, error) {
@@ -1556,7 +1556,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:        mod,
 		},
 		{
-			n:                12,
+			name:             "Zip",
 			target:           "example.com/@v/v1.0.0.zip",
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "application/zip",
@@ -1564,7 +1564,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      string(zip),
 		},
 		{
-			n: 13,
+			name: "ZipCacheOnly",
 			cacher: &testCacher{
 				Cacher: DirCacher(t.TempDir()),
 				get: func(ctx context.Context, c Cacher, name string) (io.ReadCloser, error) {
@@ -1579,7 +1579,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:        string(zip),
 		},
 		{
-			n:                14,
+			name:             "MissingVersionSeparator",
 			target:           "example.com",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -1587,7 +1587,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      "not found: missing /@v/",
 		},
 		{
-			n:                15,
+			name:             "InvalidVersionSeparator",
 			target:           "example.com/@/",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -1595,7 +1595,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      "not found: missing /@v/",
 		},
 		{
-			n:                16,
+			name:             "InvalidModulePath",
 			target:           "foobar/@latest",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -1603,7 +1603,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      `not found: invalid escaped module path "foobar": malformed module path "foobar": missing dot in first path element`,
 		},
 		{
-			n:                17,
+			name:             "MissingExtension",
 			target:           "example.com/@v/foobar",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -1611,7 +1611,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      `not found: no file extension in filename "foobar"`,
 		},
 		{
-			n:                18,
+			name:             "UnexpectedExtension",
 			target:           "example.com/@v/foo.bar",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -1619,7 +1619,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      `not found: unexpected extension ".bar"`,
 		},
 		{
-			n:                19,
+			name:             "InvalidEscapedVersion",
 			target:           "example.com/@v/!!v1.0.0.info",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -1627,7 +1627,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      `not found: invalid escaped version "!!v1.0.0"`,
 		},
 		{
-			n:                20,
+			name:             "InvalidLatestInfo",
 			target:           "example.com/@v/latest.info",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -1635,7 +1635,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      "not found: invalid version",
 		},
 		{
-			n:                21,
+			name:             "InvalidUpgradeInfo",
 			target:           "example.com/@v/upgrade.info",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -1643,7 +1643,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      "not found: invalid version",
 		},
 		{
-			n:                22,
+			name:             "InvalidPatchInfo",
 			target:           "example.com/@v/patch.info",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -1651,7 +1651,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      "not found: invalid version",
 		},
 		{
-			n:                23,
+			name:             "NonCanonicalModVersion",
 			target:           "example.com/@v/master.mod",
 			wantStatusCode:   http.StatusNotFound,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -1659,7 +1659,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 			wantContent:      "not found: unrecognized version",
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			if tt.cacher == nil {
 				tt.cacher = DirCacher(t.TempDir())
 			}
@@ -1981,7 +1981,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 	})
 
 	for _, tt := range []struct {
-		n                int
+		name             string
 		proxyHandler     http.HandlerFunc
 		cacher           Cacher
 		target           string
@@ -1992,7 +1992,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 		wantContent      string
 	}{
 		{
-			n:                1,
+			name:             "Info",
 			target:           "example.com/@v/v1.0.0.info",
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "application/json; charset=utf-8",
@@ -2000,7 +2000,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			wantContent:      info,
 		},
 		{
-			n: 2,
+			name: "InfoCacheHit",
 			cacher: &testCacher{
 				Cacher: DirCacher(t.TempDir()),
 				get: func(ctx context.Context, c Cacher, name string) (io.ReadCloser, error) {
@@ -2014,7 +2014,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			wantContent:      info,
 		},
 		{
-			n: 3,
+			name: "InfoCacheOnly",
 			cacher: &testCacher{
 				Cacher: DirCacher(t.TempDir()),
 				get: func(ctx context.Context, c Cacher, name string) (io.ReadCloser, error) {
@@ -2029,7 +2029,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			wantContent:      info,
 		},
 		{
-			n:                4,
+			name:             "Mod",
 			target:           "example.com/@v/v1.0.0.mod",
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "text/plain; charset=utf-8",
@@ -2037,7 +2037,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			wantContent:      mod,
 		},
 		{
-			n:                5,
+			name:             "Zip",
 			target:           "example.com/@v/v1.0.0.zip",
 			wantStatusCode:   http.StatusOK,
 			wantContentType:  "application/zip",
@@ -2045,7 +2045,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			wantContent:      string(zip),
 		},
 		{
-			n:                6,
+			name:             "NotFound",
 			proxyHandler:     func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, -2) },
 			target:           "example.com/@v/v1.0.0.info",
 			wantStatusCode:   http.StatusNotFound,
@@ -2054,7 +2054,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			wantContent:      "not found",
 		},
 		{
-			n:                7,
+			name:             "FetchDisabled",
 			target:           "example.com/@v/v1.0.0.info",
 			noFetch:          true,
 			wantStatusCode:   http.StatusNotFound,
@@ -2063,7 +2063,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			wantContent:      "not found: temporarily unavailable",
 		},
 		{
-			n: 8,
+			name: "CacheGetError",
 			cacher: &testCacher{
 				Cacher: DirCacher(t.TempDir()),
 				get: func(ctx context.Context, c Cacher, name string) (io.ReadCloser, error) {
@@ -2077,7 +2077,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			wantContent:      "internal server error",
 		},
 		{
-			n: 9,
+			name: "CachePutError",
 			cacher: &testCacher{
 				Cacher: DirCacher(t.TempDir()),
 				put: func(ctx context.Context, c Cacher, name string, content io.ReadSeeker) error {
@@ -2091,7 +2091,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			wantContent:      "internal server error",
 		},
 		{
-			n: 10,
+			name: "ClosedModFile",
 			cacher: &testCacher{
 				Cacher: DirCacher(t.TempDir()),
 				put: func(ctx context.Context, c Cacher, name string, content io.ReadSeeker) error {
@@ -2108,7 +2108,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			wantContent:      "internal server error",
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			if tt.proxyHandler == nil {
 				tt.proxyHandler = proxyHandler
 			}
@@ -3640,20 +3640,20 @@ func TestGoproxyPutCache(t *testing.T) {
 
 func TestCleanPath(t *testing.T) {
 	for _, tt := range []struct {
-		n        int
+		name     string
 		path     string
 		wantPath string
 	}{
-		{1, "", "/"},
-		{2, ".", "/"},
-		{3, "..", "/"},
-		{4, "/.", "/"},
-		{5, "/..", "/"},
-		{6, "//", "/"},
-		{7, "/foo//bar", "/foo/bar"},
-		{8, "/foo//bar/", "/foo/bar/"},
+		{"Empty", "", "/"},
+		{"Dot", ".", "/"},
+		{"Parent", "..", "/"},
+		{"RootDot", "/.", "/"},
+		{"RootParent", "/..", "/"},
+		{"RepeatedRootSlash", "//", "/"},
+		{"RepeatedSlash", "/foo//bar", "/foo/bar"},
+		{"RepeatedSlashWithTrailingSlash", "/foo//bar/", "/foo/bar/"},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			if got, want := cleanPath(tt.path), tt.wantPath; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}

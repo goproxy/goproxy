@@ -206,15 +206,15 @@ func TestSumDBClientOpsSaveCache(t *testing.T) {
 
 func TestNewSumDBClientState(t *testing.T) {
 	for _, tt := range []struct {
-		n          int
+		name       string
 		envGOSUMDB string
 		wantErr    error
 	}{
-		{1, defaultEnvGOSUMDB, nil},
-		{2, defaultEnvGOSUMDB + " https://example.com", nil},
-		{3, "", errors.New("missing GOSUMDB")},
+		{"Default", defaultEnvGOSUMDB, nil},
+		{"ExplicitURL", defaultEnvGOSUMDB + " https://example.com", nil},
+		{"MissingGOSUMDB", "", errors.New("missing GOSUMDB")},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			scs, err := newSumdbClientState(defaultEnvGOPROXY, tt.envGOSUMDB, http.DefaultClient)
 			if tt.wantErr != nil {
 				if err == nil {
@@ -603,7 +603,7 @@ func TestSumDBClientStateURL(t *testing.T) {
 	})
 
 	for _, tt := range []struct {
-		n            int
+		name         string
 		proxyHandler http.HandlerFunc
 		envGOPROXY   func(proxyServerURL string) string
 		envGOSUMDB   string
@@ -612,47 +612,47 @@ func TestSumDBClientStateURL(t *testing.T) {
 		doubleCheck  bool
 	}{
 		{
-			n:          1,
+			name:       "Direct",
 			envGOPROXY: func(_ string) string { return "direct" },
 			envGOSUMDB: defaultEnvGOSUMDB,
 			wantURL:    func(_ string) string { return "https://" + defaultEnvGOSUMDB },
 		},
 		{
-			n:          2,
+			name:       "ExplicitURL",
 			envGOPROXY: func(_ string) string { return "direct" },
 			envGOSUMDB: defaultEnvGOSUMDB + " https://example.com",
 			wantURL:    func(_ string) string { return "https://example.com" },
 		},
 		{
-			n:            3,
+			name:         "Proxy",
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {},
 			envGOPROXY:   func(proxyServerURL string) string { return proxyServerURL },
 			envGOSUMDB:   defaultEnvGOSUMDB,
 			wantURL:      func(proxyServerURL string) string { return proxyServerURL + "/sumdb/" + defaultEnvGOSUMDB },
 		},
 		{
-			n:            4,
+			name:         "UnsupportedProxy",
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, -1) },
 			envGOPROXY:   func(proxyServerURL string) string { return proxyServerURL },
 			envGOSUMDB:   defaultEnvGOSUMDB,
 			wantURL:      func(_ string) string { return "https://" + defaultEnvGOSUMDB },
 		},
 		{
-			n:            5,
+			name:         "DirectFallback",
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, -1) },
 			envGOPROXY:   func(proxyServerURL string) string { return proxyServerURL + ",direct" },
 			envGOSUMDB:   defaultEnvGOSUMDB,
 			wantURL:      func(_ string) string { return "https://" + defaultEnvGOSUMDB },
 		},
 		{
-			n:            6,
+			name:         "DirectFallbackWithOff",
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseNotFound(rw, req, -2) },
 			envGOPROXY:   func(proxyServerURL string) string { return proxyServerURL + ",off" },
 			envGOSUMDB:   defaultEnvGOSUMDB,
 			wantURL:      func(_ string) string { return "https://" + defaultEnvGOSUMDB },
 		},
 		{
-			n:            7,
+			name:         "CachedProxyError",
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseInternalServerError(rw, req) },
 			envGOPROXY:   func(proxyServerURL string) string { return proxyServerURL },
 			envGOSUMDB:   defaultEnvGOSUMDB,
@@ -660,7 +660,7 @@ func TestSumDBClientStateURL(t *testing.T) {
 			doubleCheck:  true,
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			proxyServer := newHTTPTestServer(t, tt.proxyHandler)
 			envGOPROXY := tt.envGOPROXY(proxyServer.URL)
 
@@ -820,18 +820,18 @@ func TestSumDBClientStateReadRemote(t *testing.T) {
 	})
 
 	for _, tt := range []struct {
-		n            int
+		name         string
 		proxyHandler http.HandlerFunc
 		wantContent  string
 		wantErr      error
 	}{
 		{
-			n:            1,
+			name:         "Success",
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { fmt.Fprint(rw, "foobar") },
 			wantContent:  "foobar",
 		},
 		{
-			n: 2,
+			name: "FetchError",
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				if !strings.HasSuffix(req.URL.Path, "/supported") {
 					responseInternalServerError(rw, req)
@@ -840,12 +840,12 @@ func TestSumDBClientStateReadRemote(t *testing.T) {
 			wantErr: errBadUpstream,
 		},
 		{
-			n:            3,
+			name:         "DiscoveryError",
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) { responseInternalServerError(rw, req) },
 			wantErr:      errBadUpstream,
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			proxyServer := newHTTPTestServer(t, tt.proxyHandler)
 
 			scs, err := newSumdbClientState(proxyServer.URL, defaultEnvGOSUMDB, http.DefaultClient)
@@ -937,27 +937,27 @@ func TestSumDBClientStateReadConfig(t *testing.T) {
 	})
 
 	for _, tt := range []struct {
-		n           int
+		name        string
 		file        string
 		wantContent string
 		wantErr     error
 	}{
 		{
-			n:           1,
+			name:        "Key",
 			file:        "key",
 			wantContent: sumGolangOrgKey,
 		},
 		{
-			n:    2,
+			name: "Latest",
 			file: "/latest",
 		},
 		{
-			n:       3,
+			name:    "UnknownFile",
 			file:    "file",
 			wantErr: errors.New("unknown config file"),
 		},
 	} {
-		t.Run(strconv.Itoa(tt.n), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			scs, err := newSumdbClientState("direct", defaultEnvGOSUMDB, http.DefaultClient)
 			if err != nil {
 				t.Fatalf("unexpected error %v", err)
