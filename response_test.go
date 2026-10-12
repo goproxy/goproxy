@@ -361,7 +361,7 @@ func TestResponseSuccess(t *testing.T) {
 						rec := httptest.NewRecorder()
 						var rw http.ResponseWriter = rec
 						if tt.write != nil {
-							rw = testResponseWriter{rw, tt.write}
+							rw = testHTTPResponseWriter{rw, tt.write}
 						}
 						if tt.readerFrom {
 							rw = serveContentResponseWriter{rw}
@@ -412,7 +412,7 @@ func TestResponseSuccess(t *testing.T) {
 							}
 							var writer http.ResponseWriter = rw
 							if tt.flush {
-								writer = testResponseWriter{rw, func(p []byte) (int, error) {
+								writer = testHTTPResponseWriter{rw, func(p []byte) (int, error) {
 									n, err := rw.Write(p)
 									rw.(http.Flusher).Flush()
 									return n, err
@@ -1082,7 +1082,7 @@ func TestServeContentResponseWriterReadFrom(t *testing.T) {
 					rec := httptest.NewRecorder()
 					var rw http.ResponseWriter = rec
 					if tt.write != nil {
-						rw = testResponseWriter{rec, func(p []byte) (int, error) { return tt.write(rec, p) }}
+						rw = testHTTPResponseWriter{rec, func(p []byte) (int, error) { return tt.write(rec, p) }}
 					}
 					calls := 0
 					if readerFrom {
@@ -1146,13 +1146,9 @@ type testETagReader struct {
 
 func (r testETagReader) ETag() string { return r.etag }
 
-type testResponseWriter struct {
+type testHTTPResponseWriter struct {
 	http.ResponseWriter
 	write func([]byte) (int, error)
 }
 
-func (rw testResponseWriter) Write(p []byte) (int, error) { return rw.write(p) }
-
-type readerFromFunc func(io.Reader) (int64, error)
-
-func (f readerFromFunc) ReadFrom(r io.Reader) (int64, error) { return f(r) }
+func (rw testHTTPResponseWriter) Write(p []byte) (int, error) { return rw.write(p) }

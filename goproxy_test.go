@@ -339,7 +339,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 				t.Run(tt.name, func(t *testing.T) {
 					g := &Goproxy{
 						ProxiedSumDBs: []string{"sum.golang.org"},
-						Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+						Transport: httpRoundTripFunc(func(*http.Request) (*http.Response, error) {
 							t.Error("unexpected upstream request")
 							return nil, errors.New("unexpected upstream request")
 						}),
@@ -434,7 +434,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 						g := &Goproxy{ProxiedSumDBs: []string{"sum.golang.org"}}
 						server := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 							if wrapper.wrapped {
-								rw = testUnwrapResponseWriter{rw}
+								rw = testUnwrappingHTTPResponseWriter{rw}
 							}
 							g.ServeHTTP(rw, req)
 						}))
@@ -675,7 +675,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 								g := &Goproxy{
 									Fetcher: &GoFetcher{
 										Env: []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=off"},
-										Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+										Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 											upstreamCalls++
 											if got, want := req.URL.Path, resource.path; got != want {
 												t.Errorf("got upstream path %q, want %q", got, want)
@@ -800,7 +800,7 @@ func TestGoproxyServeHTTP(t *testing.T) {
 								gf := &GoFetcher{
 									Env:     []string{"GOPROXY=" + tt.proxy, "GOSUMDB=off"},
 									TempDir: missing,
-									Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+									Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 										t.Errorf("unexpected request %s", req.URL)
 										return nil, errors.New("unexpected request")
 									}),
@@ -2055,7 +2055,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 				gf := &GoFetcher{
 					Env:     []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=sum.golang.org https://sumdb.example.com"},
 					TempDir: t.TempDir(),
-					Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 						rec := httptest.NewRecorder()
 						if req.URL.Host == "sumdb.example.com" {
 							if tt.transportErr != nil {
@@ -2124,7 +2124,7 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 					fetcher := &GoFetcher{
 						Env:     []string{"GOPROXY=https://first.example.com,https://second.example.com", "GOSUMDB=off"},
 						TempDir: t.TempDir(),
-						Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 							rec := httptest.NewRecorder()
 							if req.URL.Host == "first.example.com" {
 								g.ServeHTTP(rec, req)
@@ -2371,7 +2371,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 								ProxiedSumDBs: []string{"sumdb.example.com"},
 								TempDir:       t.TempDir(),
 								Logger:        slog.New(slog.DiscardHandler),
-								Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+								Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 									return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
 								}),
 								Cacher: &testCacher{
@@ -2482,7 +2482,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 							g := &Goproxy{
 								ProxiedSumDBs: []string{"sumdb.example.com"},
 								TempDir:       t.TempDir(),
-								Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+								Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 									if got, want := req.URL.Path, endpoint.path; got != want {
 										t.Errorf("got upstream path %q, want %q", got, want)
 									}
@@ -2580,7 +2580,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 						g := &Goproxy{
 							ProxiedSumDBs: []string{"sumdb.example.com"},
 							TempDir:       t.TempDir(),
-							Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+							Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 								header := make(http.Header)
 								if policy.restricted {
 									header.Set("Cache-Control", "no-store")
@@ -2685,7 +2685,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 								ProxiedSumDBs: []string{"sumdb.example.com"},
 								TempDir:       t.TempDir(),
 								Logger:        slog.New(slog.DiscardHandler),
-								Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+								Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 									if tt.transportErr != nil {
 										return nil, tt.transportErr
 									}
@@ -2789,7 +2789,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 						upstreamCalls := 0
 						g := &Goproxy{
 							ProxiedSumDBs: []string{"sumdb.example.com " + tt.url},
-							Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+							Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 								upstreamCalls++
 								if got, want := req.URL.String(), tt.wantURL; got != want {
 									t.Errorf("got upstream URL %q, want %q", got, want)
@@ -2903,7 +2903,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 								"sumdb.example.com/v3 https://upstream.example.com/third",
 								"other.example.com/lookup",
 							},
-							Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+							Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 								upstreamCalls++
 								if got, want := req.URL.String(), tt.wantBaseURL+resource.path; got != want {
 									t.Errorf("got upstream URL %q, want %q", got, want)
@@ -2978,7 +2978,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 				"sumdb.example.com/lookup",
 				"sumdb.example.com/tile",
 			},
-			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 				t.Errorf("unexpected upstream request %s", req.URL)
 				return nil, context.Canceled
 			}),
@@ -3042,7 +3042,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 					ProxiedSumDBs: []string{"sumdb.example.com"},
 					TempDir:       tempDir,
 					Logger:        slog.New(slog.DiscardHandler),
-					Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 						files, err := filepath.Glob(filepath.Join(tempDir, "*", "*"))
 						if err != nil {
 							t.Fatal(err)
@@ -3311,7 +3311,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 							ProxiedSumDBs: []string{"sumdb.example.com"},
 							TempDir:       t.TempDir(),
 							Logger:        slog.New(slog.DiscardHandler),
-							Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+							Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 								calls++
 								return &http.Response{StatusCode: http.StatusOK, ContentLength: tt.contentLength, Body: responseBody}, nil
 							}),
@@ -3749,9 +3749,9 @@ func (c *testCacher) Put(ctx context.Context, name string, content io.ReadSeeker
 	return c.Cacher.Put(ctx, name, content)
 }
 
-type testUnwrapResponseWriter struct{ http.ResponseWriter }
+type testUnwrappingHTTPResponseWriter struct{ http.ResponseWriter }
 
-func (rw testUnwrapResponseWriter) Unwrap() http.ResponseWriter { return rw.ResponseWriter }
+func (rw testUnwrappingHTTPResponseWriter) Unwrap() http.ResponseWriter { return rw.ResponseWriter }
 
 type testReadSeeker struct {
 	io.ReadSeeker
@@ -3772,3 +3772,22 @@ func (rs *testReadSeeker) Seek(offset int64, whence int) (int64, error) {
 	}
 	return rs.ReadSeeker.Seek(offset, whence)
 }
+
+type zeroReader struct{}
+
+func (zeroReader) Read(p []byte) (int, error) {
+	clear(p)
+	return len(p), nil
+}
+
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+
+type writerToFunc func(io.Writer) (int64, error)
+
+func (f writerToFunc) WriteTo(w io.Writer) (int64, error) { return f(w) }
+
+type readerFromFunc func(io.Reader) (int64, error)
+
+func (f readerFromFunc) ReadFrom(r io.Reader) (int64, error) { return f(r) }

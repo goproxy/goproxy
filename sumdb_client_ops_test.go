@@ -40,7 +40,7 @@ func TestSumDBClientOpsReadRemote(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				ctx, cancel := context.WithTimeout(context.WithValue(t.Context(), contextKey{}, tt.name), time.Second)
 				defer cancel()
-				client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 					if got, want := req.URL.Path, "/lookup/example.com@v1.0.0"; got != want {
 						t.Errorf("got path %q, want %q", got, want)
 					}
@@ -350,7 +350,7 @@ func TestSumDBClientStateURL(t *testing.T) {
 			} {
 				t.Run(strconv.Itoa(statusCode)+"/"+tt.name, func(t *testing.T) {
 					attempts := 0
-					client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 						attempts++
 						if got, want := req.URL.Path, "/sumdb/"+defaultEnvGOSUMDB+"/supported"; got != want {
 							t.Errorf("got path %q, want %q", got, want)
@@ -417,7 +417,7 @@ func TestSumDBClientStateURL(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				synctest.Test(t, func(t *testing.T) {
 					var hosts []string
-					client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 						hosts = append(hosts, req.URL.Host)
 						if _, ok := req.Context().Deadline(); !ok {
 							t.Error("request has no deadline")
@@ -461,7 +461,7 @@ func TestSumDBClientStateURL(t *testing.T) {
 	t.Run("FailureCacheExpiry", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			attempts := 0
-			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 				attempts++
 				code := http.StatusOK
 				if attempts == 1 {
@@ -524,7 +524,7 @@ func TestSumDBClientStateURL(t *testing.T) {
 				var started, finished sync.WaitGroup
 				started.Add(callers)
 				var attempts atomic.Int32
-				client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 					code := tt.nextStatus
 					if attempts.Add(1) == 1 {
 						started.Wait()
@@ -576,7 +576,7 @@ func TestSumDBClientStateURL(t *testing.T) {
 		} {
 			t.Run(tt.name, func(t *testing.T) {
 				attempts := 0
-				client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 					attempts++
 					return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
 				})}
@@ -612,7 +612,7 @@ func TestSumDBClientStateURL(t *testing.T) {
 		} {
 			t.Run(tt.name, func(t *testing.T) {
 				attempts := 0
-				client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 					attempts++
 					return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
 				})}
@@ -670,7 +670,7 @@ func TestSumDBClientStateURL(t *testing.T) {
 							defer cancel()
 							started, release := make(chan struct{}), make(chan struct{})
 							var attempts atomic.Int32
-							client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+							client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 								if attempts.Add(1) == 1 {
 									close(started)
 									select {
@@ -814,7 +814,7 @@ func TestSumDBClientStateReadRemote(t *testing.T) {
 				synctest.Test(t, func(t *testing.T) {
 					attempts := 0
 					var body *testHTTPResponseBody
-					client := &http.Client{Timeout: tt.clientTimeout, Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					client := &http.Client{Timeout: tt.clientTimeout, Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 						if _, ok := req.Context().Deadline(); !ok {
 							t.Error("request has no deadline")
 							return nil, context.DeadlineExceeded
@@ -878,7 +878,7 @@ func TestSumDBClientStateReadRemote(t *testing.T) {
 
 	t.Run("ConcurrentTimeouts", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 				if _, ok := req.Context().Deadline(); !ok {
 					t.Error("request has no deadline")
 					return nil, context.DeadlineExceeded
@@ -974,7 +974,7 @@ func TestSumDBClientStateReadConfig(t *testing.T) {
 		}
 		forkHandler := sumdb.NewServer(fork)
 		var useFork atomic.Bool
-		httpClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		httpClient := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 			rec := httptest.NewRecorder()
 			if useFork.Load() {
 				forkHandler.ServeHTTP(rec, req)

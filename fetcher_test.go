@@ -165,7 +165,7 @@ func TestGoFetcherInit(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				gf := &GoFetcher{
 					Env: []string{"GOSUMDB=" + key},
-					Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+					Transport: httpRoundTripFunc(func(*http.Request) (*http.Response, error) {
 						t.Error("unexpected upstream request")
 						return nil, context.Canceled
 					}),
@@ -350,7 +350,7 @@ func TestGoFetcherQuery(t *testing.T) {
 						var hosts []string
 						gf := &GoFetcher{
 							Env: []string{"GOPROXY=https://proxy.example.com" + tt.separator + "https://fallback.example.com", "GOSUMDB=off"},
-							Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+							Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 								hosts = append(hosts, req.URL.Host)
 								if req.URL.Host == "proxy.example.com" {
 									return &http.Response{
@@ -398,7 +398,7 @@ func TestGoFetcherQuery(t *testing.T) {
 					var hosts []string
 					gf := &GoFetcher{
 						Env: []string{"GOPROXY=https://proxy.example.com" + tt.separator + "https://fallback.example.com", "GOSUMDB=off"},
-						Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 							hosts = append(hosts, req.URL.Host)
 							if req.URL.Host == "proxy.example.com" {
 								return nil, &net.OpError{Op: "dial", Net: "tcp", Err: dnsErr}
@@ -449,7 +449,7 @@ func TestGoFetcherQuery(t *testing.T) {
 						var requests []string
 						gf := &GoFetcher{
 							Env: []string{"GOPROXY=https://proxy.example.com" + fallback.separator + "https://fallback.example.com", "GOSUMDB=off"},
-							Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+							Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 								requests = append(requests, req.URL.Host)
 								content := tt.info
 								if req.URL.Host == "fallback.example.com" {
@@ -612,7 +612,7 @@ func TestGoFetcherProxyQuery(t *testing.T) {
 				body := &testHTTPResponseBody{Reader: strings.NewReader(content)}
 				gf := &GoFetcher{
 					Env: []string{"GOSUMDB=off"},
-					Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 						return &http.Response{StatusCode: http.StatusOK, ContentLength: -1, Body: body}, nil
 					}),
 				}
@@ -1424,7 +1424,7 @@ func TestGoFetcherDownload(t *testing.T) {
 		gf := &GoFetcher{
 			Env:     []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=off"},
 			TempDir: t.TempDir(),
-			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 				if strings.HasSuffix(req.URL.Path, ".info") {
 					return &http.Response{StatusCode: http.StatusOK, ContentLength: -1, Body: body}, nil
 				}
@@ -1482,7 +1482,7 @@ func TestGoFetcherDownload(t *testing.T) {
 					Env:     []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=off"},
 					TempDir: t.TempDir(),
 				}
-				gf.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				gf.Transport = httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 					ext := filepath.Ext(req.URL.Path)
 					if ext == tt.ext {
 						files, err := filepath.Glob(filepath.Join(gf.TempDir, "*", "*"))
@@ -1609,7 +1609,7 @@ func TestGoFetcherDownload(t *testing.T) {
 				gf := &GoFetcher{
 					Env:     []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=" + vkey + " https://sumdb.example.com"},
 					TempDir: t.TempDir(),
-					Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 						rec := httptest.NewRecorder()
 						if req.URL.Host == "sumdb.example.com" {
 							requests.Add(1)
@@ -1688,7 +1688,7 @@ func TestGoFetcherDownload(t *testing.T) {
 		gf := &GoFetcher{
 			Env:     []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=" + vkey + " https://sumdb.example.com"},
 			TempDir: t.TempDir(),
-			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 				rec := httptest.NewRecorder()
 				if req.URL.Host == "sumdb.example.com" {
 					sumdbHandler(rec, req)
@@ -1765,7 +1765,7 @@ func TestGoFetcherDownload(t *testing.T) {
 							gf := &GoFetcher{
 								Env:     []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=" + tt.envGOSUMDB},
 								TempDir: t.TempDir(),
-								Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+								Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 									if blocking.Load() && strings.HasPrefix(req.URL.Path, tt.pathPrefix) {
 										attempts.Add(1)
 										if tt.bodyStatus != 0 {
@@ -1870,7 +1870,7 @@ func TestGoFetcherDownload(t *testing.T) {
 							gf := &GoFetcher{
 								Env:     []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=" + vkey + " https://sumdb.example.com"},
 								TempDir: t.TempDir(),
-								Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+								Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 									rec := httptest.NewRecorder()
 									if req.URL.Host == "sumdb.example.com" {
 										sumdbHandler(rec, req)
@@ -1965,7 +1965,7 @@ func TestGoFetcherDownload(t *testing.T) {
 					gf := &GoFetcher{
 						Env:     []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=" + tt.envGOSUMDB},
 						TempDir: t.TempDir(),
-						Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 							if strings.HasPrefix(req.URL.Path, tt.pathPrefix) {
 								if req.Context().Value(contextKey{}) == true {
 									close(started)
@@ -2042,7 +2042,7 @@ func TestGoFetcherDownload(t *testing.T) {
 					gf := &GoFetcher{
 						Env:     []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=" + tt.envGOSUMDB},
 						TempDir: t.TempDir(),
-						Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 							if failing.Load() && strings.HasPrefix(req.URL.Path, tt.pathPrefix) {
 								attempts.Add(1)
 								if _, ok := req.Context().Deadline(); !ok {
@@ -2123,7 +2123,7 @@ func TestGoFetcherDownload(t *testing.T) {
 					Env:     []string{"GOPROXY=https://proxy.example.com", "GOSUMDB=" + vkey + " https://sumdb.example.com"},
 					TempDir: t.TempDir(),
 				}
-				gf.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				gf.Transport = httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 					rec := httptest.NewRecorder()
 					if req.URL.Host == "sumdb.example.com" {
 						sumdbHandler(rec, req)
@@ -2200,7 +2200,7 @@ func TestGoFetcherDownload(t *testing.T) {
 				gf := &GoFetcher{
 					Env:     []string{"GOPROXY=https://proxy.example.com" + tt.proxies, "GOSUMDB=off"},
 					TempDir: t.TempDir(),
-					Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 						ext := filepath.Ext(req.URL.Path)
 						requests = append(requests, req.URL.Host+ext)
 						if req.URL.Host == "proxy.example.com" && ext == ".mod" {
@@ -2426,7 +2426,7 @@ func TestGoFetcherProxyDownload(t *testing.T) {
 				gf := &GoFetcher{
 					Env:     []string{"GOSUMDB=off"},
 					TempDir: t.TempDir(),
-					Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 						ext := filepath.Ext(req.URL.Path)
 						requests = append(requests, ext)
 						if ext == tt.ext {
@@ -3069,7 +3069,7 @@ func TestWalkEnvGOPROXY(t *testing.T) {
 			} {
 				t.Run(strconv.Itoa(statusCode)+"/"+tt.name, func(t *testing.T) {
 					attempts, proxyCalls, directCalls := 0, 0, 0
-					client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 						attempts++
 						return &http.Response{
 							StatusCode: statusCode,
