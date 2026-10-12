@@ -198,7 +198,7 @@ func TestHTTPGet(t *testing.T) {
 					synctest.Test(t, func(t *testing.T) {
 						wantHeader := http.Header{"Cache-Control": {"max-age=60", policy.cacheControl}}
 						attempts := 0
-						client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 							attempts++
 							if attempts < tt.wantAttempts {
 								return &http.Response{
@@ -257,7 +257,7 @@ func TestHTTPGet(t *testing.T) {
 		} {
 			t.Run(tt.name, func(t *testing.T) {
 				body := &testHTTPResponseBody{Reader: tt.content}
-				client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 					return &http.Response{
 						StatusCode: http.StatusOK,
 						Header:     http.Header{"Cache-Control": {"no-store"}},
@@ -300,7 +300,7 @@ func TestHTTPGet(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				synctest.Test(t, func(t *testing.T) {
 					attempts := 0
-					client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 						attempts++
 						return &http.Response{
 							StatusCode: tt.statusCode,
@@ -362,7 +362,7 @@ func TestHTTPGet(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				attempts := 0
 				body := &testHTTPResponseBody{Reader: strings.NewReader("upstream details")}
-				client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 					attempts++
 					if tt.redirect && attempts == 1 {
 						return &http.Response{
@@ -430,7 +430,7 @@ func TestHTTPGet(t *testing.T) {
 				synctest.Test(t, func(t *testing.T) {
 					attempts := 0
 					var lastAttempt time.Time
-					client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 						attempts++
 						lastAttempt = time.Now()
 						if attempts <= tt.failures {
@@ -472,7 +472,7 @@ func TestHTTPGet(t *testing.T) {
 				transport.TLSClientConfig.Time = func() time.Time { return server.Certificate().NotBefore.Add(time.Hour) }
 				tt.configure(transport.TLSClientConfig)
 				attempts := 0
-				client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 					attempts++
 					return transport.RoundTrip(req)
 				})}
@@ -531,7 +531,7 @@ func TestHTTPGet(t *testing.T) {
 						}
 						body := &testHTTPResponseBody{Reader: strings.NewReader("upstream details")}
 						attempts := 0
-						client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 							attempts++
 							if attempts > 1 {
 								if !body.closed {
@@ -611,7 +611,7 @@ func TestHTTPGet(t *testing.T) {
 						}()
 					}
 					attempts := 0
-					client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 						attempts++
 						return &http.Response{
 							StatusCode: http.StatusServiceUnavailable,
@@ -641,7 +641,7 @@ func TestHTTPGet(t *testing.T) {
 	t.Run("RetryAfterAttempts", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			attempts := 0
-			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 				attempts++
 				return &http.Response{
 					StatusCode: http.StatusServiceUnavailable,
@@ -691,7 +691,7 @@ func TestHTTPGet(t *testing.T) {
 					}()
 					body := &testHTTPResponseBody{Reader: r}
 					attempts := 0
-					client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 						attempts++
 						if attempts > 1 {
 							if !body.closed {
@@ -735,7 +735,7 @@ func TestHTTPGet(t *testing.T) {
 			t.Run(strconv.Itoa(statusCode), func(t *testing.T) {
 				synctest.Test(t, func(t *testing.T) {
 					attempts := 0
-					client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 						attempts++
 						return &http.Response{
 							StatusCode: statusCode,
@@ -797,7 +797,7 @@ func TestHTTPGet(t *testing.T) {
 					synctest.Test(t, func(t *testing.T) {
 						body := &testHTTPResponseBody{Reader: tt.content}
 						attempts := 0
-						client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 							attempts++
 							if attempts > 1 {
 								if !body.closed {
@@ -1035,7 +1035,7 @@ func TestHTTPGetTemp(t *testing.T) {
 					}{body, strings.NewReader(tt.content)}
 				}
 				attempts := 0
-				client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 					attempts++
 					contentLength := tt.contentLength
 					if contentLength == 0 {
@@ -1203,7 +1203,7 @@ func TestHTTPGetTemp(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			body := &testHTTPResponseBody{Reader: strings.NewReader("foobar")}
 			var tempFile *os.File
-			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 				return &http.Response{
 					StatusCode: http.StatusOK,
 					Header:     http.Header{"Cache-Control": {"no-store"}},
@@ -1607,9 +1607,9 @@ func TestParseHTTPRetryAfter(t *testing.T) {
 	}
 }
 
-type roundTripFunc func(*http.Request) (*http.Response, error)
+type httpRoundTripFunc func(*http.Request) (*http.Response, error)
 
-func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+func (f httpRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
 
 type testHTTPResponseBody struct {
 	io.Reader
@@ -1627,18 +1627,3 @@ func (b *testHTTPResponseBody) Close() error {
 	b.closed = true
 	return nil
 }
-
-type zeroReader struct{}
-
-func (zeroReader) Read(p []byte) (int, error) {
-	clear(p)
-	return len(p), nil
-}
-
-type writerFunc func([]byte) (int, error)
-
-func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
-
-type writerToFunc func(io.Writer) (int64, error)
-
-func (f writerToFunc) WriteTo(w io.Writer) (int64, error) { return f(w) }

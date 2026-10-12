@@ -184,7 +184,7 @@ func TestNewS3Cacher(t *testing.T) {
 			cacher, err := newS3Cacher(s3CacherOptions{
 				endpoint:   tt.endpoint,
 				disableTLS: tt.disableTLS,
-				transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 					request <- req
 					return &http.Response{
 						StatusCode: http.StatusNotFound,
@@ -791,6 +791,154 @@ func TestS3CacherPut(t *testing.T) {
 		}
 	})
 
+	t.Run("MultipartSizeLimit", func(t *testing.T) {
+		const partSize = 5 << 20
+		for _, tt := range []struct {
+			name         string
+			size         int64
+			wantErr      string
+			wantAttempts int32
+		}{
+			{"AtLimit", partSize * 10_000, "create failed", 1},
+			{"AboveLimit", partSize*10_000 + 1, "exceeds the maximum for part size", 0},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				var attempts atomic.Int32
+				server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+					attempts.Add(1)
+					rw.Header().Set("Content-Type", "application/xml")
+					rw.WriteHeader(http.StatusBadRequest)
+					io.WriteString(rw, `<Error><Code>InvalidRequest</Code><Message>create failed</Message></Error>`)
+				}))
+				defer server.Close()
+				cacher := newTestS3Cacher(t, server, "test-bucket", "")
+				content := struct {
+					io.Reader
+					io.Seeker
+				}{strings.NewReader(""), seekerFunc(func(_ int64, whence int) (int64, error) {
+					if whence == io.SeekEnd {
+						return tt.size, nil
+					}
+					return 0, nil
+				})}
+				if err := cacher.Put(t.Context(), "file", content); err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("got error %v, want content %q", err, tt.wantErr)
+				}
+				if got, want := attempts.Load(), tt.wantAttempts; got != want {
+					t.Errorf("got upload attempts %d, want %d", got, want)
+				}
+			})
+		}
+	})
+
+	t.Run("MultipartErrors", func(t *testing.T) {
+		const (
+			partSize = 5 << 20
+			uploadID = "test-upload-id"
+		)
+		data := bytes.Repeat([]byte("a"), partSize+1)
+		readErr := errors.New("content failed")
+		for _, tt := range []struct {
+			name            string
+			failOperation   string
+			missingUploadID bool
+			readErr         bool
+			abortErr        bool
+			wantOperations  []string
+		}{
+			{"CreateFailure", "CreateMultipartUpload", false, false, false, []string{"CreateMultipartUpload"}},
+			{"MissingUploadID", "", true, false, false, []string{"CreateMultipartUpload"}},
+			{"PartReadFailure", "", false, true, false, []string{"CreateMultipartUpload", "AbortMultipartUpload"}},
+			{"PartUploadFailure", "UploadPart", false, false, false, []string{"CreateMultipartUpload", "UploadPart", "AbortMultipartUpload"}},
+			{"CompletionFailure", "CompleteMultipartUpload", false, false, false, []string{"CreateMultipartUpload", "UploadPart", "UploadPart", "CompleteMultipartUpload", "AbortMultipartUpload"}},
+			{"AbortFailure", "", false, true, true, []string{"CreateMultipartUpload", "AbortMultipartUpload"}},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				var mu sync.Mutex
+				var operations []string
+				server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+					if _, err := io.Copy(io.Discard, req.Body); err != nil {
+						t.Error(err)
+						rw.WriteHeader(http.StatusBadRequest)
+						return
+					}
+					var operation string
+					query := req.URL.Query()
+					switch {
+					case req.Method == http.MethodPost && query.Has("uploads"):
+						operation = "CreateMultipartUpload"
+					case req.Method == http.MethodPut && query.Get("uploadId") == uploadID:
+						operation = "UploadPart"
+					case req.Method == http.MethodPost && query.Get("uploadId") == uploadID:
+						operation = "CompleteMultipartUpload"
+					case req.Method == http.MethodDelete && query.Get("uploadId") == uploadID:
+						operation = "AbortMultipartUpload"
+					default:
+						t.Errorf("unexpected request: %s %s", req.Method, req.URL)
+						rw.WriteHeader(http.StatusBadRequest)
+						return
+					}
+					mu.Lock()
+					operations = append(operations, operation)
+					mu.Unlock()
+					if operation == tt.failOperation || operation == "AbortMultipartUpload" && tt.abortErr {
+						rw.Header().Set("Content-Type", "application/xml")
+						rw.WriteHeader(http.StatusBadRequest)
+						io.WriteString(rw, `<Error><Code>InvalidRequest</Code><Message>`+operation+` failed</Message></Error>`)
+						return
+					}
+					switch operation {
+					case "CreateMultipartUpload":
+						rw.Header().Set("Content-Type", "application/xml")
+						body := `<InitiateMultipartUploadResult/>`
+						if !tt.missingUploadID {
+							body = `<InitiateMultipartUploadResult><UploadId>` + uploadID + `</UploadId></InitiateMultipartUploadResult>`
+						}
+						io.WriteString(rw, body)
+					case "UploadPart":
+						rw.Header().Set("ETag", `"test-etag"`)
+						rw.WriteHeader(http.StatusOK)
+					case "AbortMultipartUpload":
+						rw.WriteHeader(http.StatusNoContent)
+					}
+				}))
+				defer server.Close()
+				cacher := newTestS3Cacher(t, server, "test-bucket", "")
+				rs := bytes.NewReader(data)
+				var reader io.Reader = rs
+				if tt.readErr {
+					reader = iotest.ErrReader(readErr)
+				}
+				content := struct {
+					io.Reader
+					io.Seeker
+				}{reader, rs}
+				err := cacher.Put(t.Context(), "file", content)
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				if tt.missingUploadID && err.Error() != "S3 multipart upload response has no upload ID" {
+					t.Errorf("got error %v, want a missing upload ID error", err)
+				}
+				if tt.readErr && !errors.Is(err, readErr) {
+					t.Errorf("got error %v, want %v", err, readErr)
+				}
+				if tt.failOperation != "" && !strings.Contains(err.Error(), tt.failOperation+" failed") {
+					t.Errorf("got error %v, want a %s error", err, tt.failOperation)
+				}
+				if tt.abortErr && (!strings.Contains(err.Error(), "abort S3 multipart upload:") || !strings.Contains(err.Error(), "AbortMultipartUpload failed")) {
+					t.Errorf("got error %v, want an abort error", err)
+				}
+				mu.Lock()
+				gotOperations := slices.Clone(operations)
+				mu.Unlock()
+				if !slices.Equal(gotOperations, tt.wantOperations) {
+					t.Errorf("got operations %q, want %q", gotOperations, tt.wantOperations)
+				}
+			})
+		}
+	})
+
 	t.Run("MultipartFailure", func(t *testing.T) {
 		const (
 			bucket   = "test-bucket"
@@ -1195,9 +1343,9 @@ func checkNoSDKChecksumHeaders(t *testing.T, req *http.Request) {
 	}
 }
 
-type roundTripFunc func(*http.Request) (*http.Response, error)
+type httpRoundTripFunc func(*http.Request) (*http.Response, error)
 
-func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+func (f httpRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 

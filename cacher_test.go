@@ -113,6 +113,30 @@ func TestDirCacherPut(t *testing.T) {
 		})
 	}
 
+	t.Run("InvalidDirectory", func(t *testing.T) {
+		cacheDir := t.TempDir()
+		file := filepath.Join(cacheDir, "file")
+		if err := os.WriteFile(file, []byte("foobar"), 0o644); err != nil {
+			t.Fatalf("unexpected error %v", err)
+		}
+		dirCacher := DirCacher(file)
+		if err := dirCacher.Put(t.Context(), "a/b/c", strings.NewReader("foobar")); err == nil {
+			t.Fatal("expected error")
+		}
+	})
+
+	t.Run("CreateTempError", func(t *testing.T) {
+		dirCacher := DirCacher(t.TempDir())
+		if err := dirCacher.Put(t.Context(), "invalid\x00", strings.NewReader("foobar")); err == nil {
+			t.Fatal("expected error")
+		}
+		if entries, err := os.ReadDir(string(dirCacher)); err != nil {
+			t.Fatal(err)
+		} else if len(entries) != 0 {
+			t.Errorf("got directory entries %v, want none", entries)
+		}
+	})
+
 	t.Run("ReadError", func(t *testing.T) {
 		for _, tt := range []struct {
 			name    string
@@ -151,17 +175,45 @@ func TestDirCacherPut(t *testing.T) {
 		}
 	})
 
-	t.Run("InvalidDirectory", func(t *testing.T) {
-		cacheDir := t.TempDir()
-		file := filepath.Join(cacheDir, "file")
-		if err := os.WriteFile(file, []byte("foobar"), 0o644); err != nil {
-			t.Fatalf("unexpected error %v", err)
-		}
-		dirCacher := DirCacher(file)
-		if err := dirCacher.Put(t.Context(), "a/b/c", strings.NewReader("foobar")); err == nil {
-			t.Fatal("expected error")
-		}
-	})
+	for _, tt := range []struct {
+		name        string
+		fail        func(*os.File) error
+		wantErr     error
+		skipWindows bool
+	}{
+		{"CloseError", (*os.File).Close, fs.ErrClosed, false},
+		{"ChmodError", func(f *os.File) error { return os.Remove(f.Name()) }, fs.ErrNotExist, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.skipWindows && runtime.GOOS == "windows" {
+				t.Skip("Windows does not allow removing an open file")
+			}
+			dirCacher := DirCacher(t.TempDir())
+			file := filepath.Join(string(dirCacher), "file")
+			if err := os.WriteFile(file, []byte("original"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			content := struct {
+				io.ReadSeeker
+				io.WriterTo
+			}{strings.NewReader(""), writerToFunc(func(w io.Writer) (int64, error) {
+				return 0, tt.fail(w.(*os.File))
+			})}
+			if err := dirCacher.Put(t.Context(), "file", content); !errors.Is(err, tt.wantErr) {
+				t.Errorf("got error %v, want %v", err, tt.wantErr)
+			}
+			if data, err := os.ReadFile(file); err != nil {
+				t.Fatal(err)
+			} else if got, want := string(data), "original"; got != want {
+				t.Errorf("got content %q, want %q", got, want)
+			}
+			if entries, err := os.ReadDir(string(dirCacher)); err != nil {
+				t.Fatal(err)
+			} else if len(entries) != 1 || entries[0].Name() != "file" {
+				t.Errorf("got directory entries %v, want only file", entries)
+			}
+		})
+	}
 
 	t.Run("RenameError", func(t *testing.T) {
 		dirCacher := DirCacher(t.TempDir())
