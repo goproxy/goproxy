@@ -123,9 +123,9 @@ func TestGoFetcherInit(t *testing.T) {
 				if got, want := getenv(gf.env, "GOPRIVATE"), ""; got != want {
 					t.Errorf("got %q, want %q", got, want)
 				}
-				if gf.directFetchWorkerPool == nil {
+				if gf.directFetchSemaphore == nil {
 					t.Error("unexpected nil")
-				} else if got, want := cap(gf.directFetchWorkerPool), 10; got != want {
+				} else if got, want := cap(gf.directFetchSemaphore), 10; got != want {
 					t.Errorf("got %d, want %d", got, want)
 				}
 				if gf.httpClient == nil {
@@ -231,7 +231,7 @@ func TestGoFetcherQuery(t *testing.T) {
 	infoTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 	info := marshalInfo(infoVersion, infoTime)
 	proxyHandler := func(rw http.ResponseWriter, req *http.Request) {
-		responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
+		responseContent(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
 	}
 
 	for _, tt := range []struct {
@@ -266,9 +266,9 @@ func TestGoFetcherQuery(t *testing.T) {
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				switch req.URL.Path {
 				case "/direct/example.com/@v/list":
-					responseSuccess(rw, req, strings.NewReader(infoVersion), "text/plain; charset=utf-8", -2)
+					responseContent(rw, req, strings.NewReader(infoVersion), "text/plain; charset=utf-8", -2)
 				case "/direct/example.com/@v/v1.0.0.info":
-					responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
+					responseContent(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
 				default:
 					responseNotFound(rw, req, -2)
 				}
@@ -503,7 +503,7 @@ func TestGoFetcherProxyQuery(t *testing.T) {
 	info := marshalInfo(infoVersion, infoTime)
 
 	proxyHandler := func(rw http.ResponseWriter, req *http.Request) {
-		responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
+		responseContent(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
 	}
 	for _, tt := range []struct {
 		name         string
@@ -673,7 +673,7 @@ func TestGoFetcherProxyQuery(t *testing.T) {
 		} {
 			t.Run(tt.name, func(t *testing.T) {
 				proxyServer := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-					responseSuccess(rw, req, strings.NewReader(marshalInfo(tt.version, infoTime)), "application/json; charset=utf-8", -2)
+					responseContent(rw, req, strings.NewReader(marshalInfo(tt.version, infoTime)), "application/json; charset=utf-8", -2)
 				}))
 				gf := &GoFetcher{TempDir: t.TempDir()}
 				gf.initOnce.Do(gf.init)
@@ -759,7 +759,7 @@ func TestGoFetcherProxyQuery(t *testing.T) {
 							if got, want := req.URL.RawQuery, "source=test"; got != want {
 								t.Errorf("got query %q, want %q", got, want)
 							}
-							responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
+							responseContent(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
 						}))
 
 						gf := &GoFetcher{TempDir: t.TempDir()}
@@ -800,7 +800,7 @@ func TestGoFetcherDirectQuery(t *testing.T) {
 	infoTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 	info := marshalInfo(infoVersion, infoTime)
 	proxyServer := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
+		responseContent(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
 	}))
 
 	for _, tt := range []struct {
@@ -862,11 +862,11 @@ func TestGoFetcherList(t *testing.T) {
 	proxyHandler := func(rw http.ResponseWriter, req *http.Request) {
 		switch strings.TrimPrefix(req.URL.Path, "/direct") {
 		case "/example.com/@v/list":
-			responseSuccess(rw, req, strings.NewReader(list), "text/plain; charset=utf-8", -2)
+			responseContent(rw, req, strings.NewReader(list), "text/plain; charset=utf-8", -2)
 		case "/example.com/@v/v1.1.0.info":
-			responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
+			responseContent(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
 		case "/example.com/@v/v1.1.0.mod":
-			responseSuccess(rw, req, strings.NewReader(mod), "text/plain; charset=utf-8", -2)
+			responseContent(rw, req, strings.NewReader(mod), "text/plain; charset=utf-8", -2)
 		default:
 			responseNotFound(rw, req, -2)
 		}
@@ -914,7 +914,7 @@ func TestGoFetcherList(t *testing.T) {
 		{
 			name: "FilteredVersions",
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
-				responseSuccess(rw, req, strings.NewReader(`
+				responseContent(rw, req, strings.NewReader(`
 v1.0.0
 v1.1.0 foo bar
 v1.1.1-0.20200101000000-0123456789ab
@@ -978,7 +978,7 @@ invalid
 func TestGoFetcherProxyList(t *testing.T) {
 	list := "v1.0.0\nv1.1.0"
 	proxyHandler := func(rw http.ResponseWriter, req *http.Request) {
-		responseSuccess(rw, req, strings.NewReader(list), "text/plain; charset=utf-8", -2)
+		responseContent(rw, req, strings.NewReader(list), "text/plain; charset=utf-8", -2)
 	}
 	for _, tt := range []struct {
 		name         string
@@ -1049,11 +1049,11 @@ func TestGoFetcherDirectList(t *testing.T) {
 	proxyServer := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		switch req.URL.Path {
 		case "/example.com/@v/list":
-			responseSuccess(rw, req, strings.NewReader(list), "text/plain; charset=utf-8", -2)
+			responseContent(rw, req, strings.NewReader(list), "text/plain; charset=utf-8", -2)
 		case "/example.com/@v/v1.1.0.info":
-			responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
+			responseContent(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
 		case "/example.com/@v/v1.1.0.mod":
-			responseSuccess(rw, req, strings.NewReader(mod), "text/plain; charset=utf-8", -2)
+			responseContent(rw, req, strings.NewReader(mod), "text/plain; charset=utf-8", -2)
 		default:
 			responseNotFound(rw, req, -2)
 		}
@@ -1119,11 +1119,11 @@ func TestGoFetcherDownload(t *testing.T) {
 	proxyHandler := func(rw http.ResponseWriter, req *http.Request) {
 		switch strings.TrimPrefix(req.URL.Path, "/direct") {
 		case "/example.com/@v/v1.0.0.info":
-			responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
+			responseContent(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
 		case "/example.com/@v/v1.0.0.mod":
-			responseSuccess(rw, req, strings.NewReader(mod), "text/plain; charset=utf-8", -2)
+			responseContent(rw, req, strings.NewReader(mod), "text/plain; charset=utf-8", -2)
 		case "/example.com/@v/v1.0.0.zip":
-			responseSuccess(rw, req, bytes.NewReader(zipContent), "application/zip", -2)
+			responseContent(rw, req, bytes.NewReader(zipContent), "application/zip", -2)
 		default:
 			responseNotFound(rw, req, -2)
 		}
@@ -1220,7 +1220,7 @@ func TestGoFetcherDownload(t *testing.T) {
 			name: "EmptyInfo",
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				if req.URL.Path == "/example.com/@v/v1.0.0.info" {
-					responseSuccess(rw, req, strings.NewReader(""), "application/json; charset=utf-8", -2)
+					responseContent(rw, req, strings.NewReader(""), "application/json; charset=utf-8", -2)
 				} else {
 					proxyHandler(rw, req)
 				}
@@ -1240,7 +1240,7 @@ func TestGoFetcherDownload(t *testing.T) {
 			name: "EmptyMod",
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				if req.URL.Path == "/example.com/@v/v1.0.0.mod" {
-					responseSuccess(rw, req, strings.NewReader(""), "text/plain; charset=utf-8", -2)
+					responseContent(rw, req, strings.NewReader(""), "text/plain; charset=utf-8", -2)
 				} else {
 					proxyHandler(rw, req)
 				}
@@ -1260,7 +1260,7 @@ func TestGoFetcherDownload(t *testing.T) {
 			name: "EmptyZip",
 			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
 				if req.URL.Path == "/example.com/@v/v1.0.0.zip" {
-					responseSuccess(rw, req, strings.NewReader(""), "application/json", -2)
+					responseContent(rw, req, strings.NewReader(""), "application/json", -2)
 				} else {
 					proxyHandler(rw, req)
 				}
@@ -1554,7 +1554,7 @@ func TestGoFetcherDownload(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				proxyServer := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 					if req.URL.Path == "/example.com/@v/v1.0.0.info" {
-						responseSuccess(rw, req, strings.NewReader(marshalInfo(tt.version, time.Time{})), "application/json; charset=utf-8", -2)
+						responseContent(rw, req, strings.NewReader(marshalInfo(tt.version, time.Time{})), "application/json; charset=utf-8", -2)
 					} else {
 						proxyHandler(rw, req)
 					}
@@ -2256,11 +2256,11 @@ func TestGoFetcherProxyDownload(t *testing.T) {
 	proxyHandler := func(rw http.ResponseWriter, req *http.Request) {
 		switch req.URL.Path {
 		case "/example.com/@v/v1.0.0.info":
-			responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
+			responseContent(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
 		case "/example.com/@v/v1.0.0.mod":
-			responseSuccess(rw, req, strings.NewReader(mod), "text/plain; charset=utf-8", -2)
+			responseContent(rw, req, strings.NewReader(mod), "text/plain; charset=utf-8", -2)
 		case "/example.com/@v/v1.0.0.zip":
-			responseSuccess(rw, req, bytes.NewReader(zipContent), "application/zip", -2)
+			responseContent(rw, req, bytes.NewReader(zipContent), "application/zip", -2)
 		default:
 			responseNotFound(rw, req, -2)
 		}
@@ -2495,11 +2495,11 @@ func TestGoFetcherDirectDownload(t *testing.T) {
 	proxyServer := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		switch req.URL.Path {
 		case "/example.com/@v/v1.0.0.info":
-			responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
+			responseContent(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
 		case "/example.com/@v/v1.0.0.mod":
-			responseSuccess(rw, req, strings.NewReader(mod), "text/plain; charset=utf-8", -2)
+			responseContent(rw, req, strings.NewReader(mod), "text/plain; charset=utf-8", -2)
 		case "/example.com/@v/v1.0.0.zip":
-			responseSuccess(rw, req, bytes.NewReader(zip), "application/zip", -2)
+			responseContent(rw, req, bytes.NewReader(zip), "application/zip", -2)
 		default:
 			responseNotFound(rw, req, -2)
 		}
@@ -2636,7 +2636,7 @@ func TestGoFetcherExecGo(t *testing.T) {
 			}
 
 			output, err := gf.execGo(tt.ctx, tt.args...)
-			if got := len(gf.directFetchWorkerPool); got != 0 {
+			if got := len(gf.directFetchSemaphore); got != 0 {
 				t.Errorf("got occupied slots %d, want 0", got)
 			}
 			if tt.wantNoStore {
@@ -2707,7 +2707,7 @@ func TestGoFetcherExecGo(t *testing.T) {
 					if gf.initErr != nil {
 						t.Fatal(gf.initErr)
 					}
-					gf.directFetchWorkerPool <- struct{}{}
+					gf.directFetchSemaphore <- struct{}{}
 					ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 					defer cancel()
 					if tt.name == "AlreadyCanceled" {
@@ -2727,7 +2727,7 @@ func TestGoFetcherExecGo(t *testing.T) {
 					}
 					switch tt.name {
 					case "Released":
-						<-gf.directFetchWorkerPool
+						<-gf.directFetchSemaphore
 					case "CanceledWhileWaiting":
 						cancel()
 					case "DeadlineExceeded":
@@ -2739,7 +2739,7 @@ func TestGoFetcherExecGo(t *testing.T) {
 					case err = <-done:
 					default:
 						t.Error("command is still waiting for a slot")
-						<-gf.directFetchWorkerPool
+						<-gf.directFetchSemaphore
 						err = <-done
 					}
 					if !errors.Is(err, tt.wantErr) {
@@ -2749,7 +2749,7 @@ func TestGoFetcherExecGo(t *testing.T) {
 					if tt.name == "Released" {
 						wantOccupied = 0
 					}
-					if got := len(gf.directFetchWorkerPool); got != wantOccupied {
+					if got := len(gf.directFetchSemaphore); got != wantOccupied {
 						t.Errorf("got occupied slots %d, want %d", got, wantOccupied)
 					}
 					if entries, err := os.ReadDir(gf.TempDir); err != nil {
@@ -3173,53 +3173,53 @@ func TestCleanEnvGOSUMDB(t *testing.T) {
 
 func TestParseEnvGOSUMDB(t *testing.T) {
 	for _, tt := range []struct {
-		name            string
-		envGOSUMDB      string
-		wantName        string
-		wantKey         string
-		wantURL         string
-		wantIsDirectURL bool
-		wantErr         error
+		name           string
+		envGOSUMDB     string
+		wantName       string
+		wantKey        string
+		wantURL        string
+		wantAllowProxy bool
+		wantErr        error
 	}{
 		{
-			name:            "Default",
-			envGOSUMDB:      defaultEnvGOSUMDB,
-			wantName:        defaultEnvGOSUMDB,
-			wantKey:         sumGolangOrgKey,
-			wantURL:         "https://" + defaultEnvGOSUMDB,
-			wantIsDirectURL: true,
+			name:           "Default",
+			envGOSUMDB:     defaultEnvGOSUMDB,
+			wantName:       defaultEnvGOSUMDB,
+			wantKey:        sumGolangOrgKey,
+			wantURL:        "https://" + defaultEnvGOSUMDB,
+			wantAllowProxy: true,
 		},
 		{
-			name:            "VerifierKey",
-			envGOSUMDB:      sumGolangOrgKey,
-			wantName:        defaultEnvGOSUMDB,
-			wantKey:         sumGolangOrgKey,
-			wantURL:         "https://" + defaultEnvGOSUMDB,
-			wantIsDirectURL: true,
+			name:           "VerifierKey",
+			envGOSUMDB:     sumGolangOrgKey,
+			wantName:       defaultEnvGOSUMDB,
+			wantKey:        sumGolangOrgKey,
+			wantURL:        "https://" + defaultEnvGOSUMDB,
+			wantAllowProxy: true,
 		},
 		{
-			name:            "VerifierKeyWithURL",
-			envGOSUMDB:      sumGolangOrgKey + " https://" + defaultEnvGOSUMDB,
-			wantName:        defaultEnvGOSUMDB,
-			wantKey:         sumGolangOrgKey,
-			wantURL:         "https://" + defaultEnvGOSUMDB,
-			wantIsDirectURL: false,
+			name:           "VerifierKeyWithURL",
+			envGOSUMDB:     sumGolangOrgKey + " https://" + defaultEnvGOSUMDB,
+			wantName:       defaultEnvGOSUMDB,
+			wantKey:        sumGolangOrgKey,
+			wantURL:        "https://" + defaultEnvGOSUMDB,
+			wantAllowProxy: false,
 		},
 		{
-			name:            "ChinaMirror",
-			envGOSUMDB:      "sum.golang.google.cn",
-			wantName:        defaultEnvGOSUMDB,
-			wantKey:         sumGolangOrgKey,
-			wantURL:         "https://sum.golang.google.cn",
-			wantIsDirectURL: false,
+			name:           "ChinaMirror",
+			envGOSUMDB:     "sum.golang.google.cn",
+			wantName:       defaultEnvGOSUMDB,
+			wantKey:        sumGolangOrgKey,
+			wantURL:        "https://sum.golang.google.cn",
+			wantAllowProxy: false,
 		},
 		{
-			name:            "ChinaMirrorWithURL",
-			envGOSUMDB:      "sum.golang.google.cn https://example.com",
-			wantName:        defaultEnvGOSUMDB,
-			wantKey:         sumGolangOrgKey,
-			wantURL:         "https://example.com",
-			wantIsDirectURL: false,
+			name:           "ChinaMirrorWithURL",
+			envGOSUMDB:     "sum.golang.google.cn https://example.com",
+			wantName:       defaultEnvGOSUMDB,
+			wantKey:        sumGolangOrgKey,
+			wantURL:        "https://example.com",
+			wantAllowProxy: false,
 		},
 		{
 			name:    "Empty",
@@ -3252,7 +3252,7 @@ func TestParseEnvGOSUMDB(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			name, key, u, isDirectURL, err := parseEnvGOSUMDB(tt.envGOSUMDB)
+			name, key, u, allowProxy, err := parseEnvGOSUMDB(tt.envGOSUMDB)
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatal("expected error")
@@ -3273,7 +3273,7 @@ func TestParseEnvGOSUMDB(t *testing.T) {
 				if got, want := u.String(), tt.wantURL; got != want {
 					t.Errorf("got %q, want %q", got, want)
 				}
-				if got, want := isDirectURL, tt.wantIsDirectURL; got != want {
+				if got, want := allowProxy, tt.wantAllowProxy; got != want {
 					t.Errorf("got %t, want %t", got, want)
 				}
 			}
@@ -3303,7 +3303,7 @@ func TestParseEnvGOSUMDB(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					name, key, u, isDirectURL, err := parseEnvGOSUMDB(verifierKey + mode.url)
+					name, key, u, allowProxy, err := parseEnvGOSUMDB(verifierKey + mode.url)
 					if err == nil {
 						t.Fatal("expected error")
 					}
@@ -3313,8 +3313,8 @@ func TestParseEnvGOSUMDB(t *testing.T) {
 					if e, ok := errors.AsType[*url.Error](err); !ok || e.URL != "https://"+tt.sumdbName {
 						t.Errorf("got error %v, want URL parse error", err)
 					}
-					if name != "" || key != "" || u != nil || isDirectURL {
-						t.Errorf("got (%q, %q, %v, %t), want empty result", name, key, u, isDirectURL)
+					if name != "" || key != "" || u != nil || allowProxy {
+						t.Errorf("got (%q, %q, %v, %t), want empty result", name, key, u, allowProxy)
 					}
 				})
 			}

@@ -64,7 +64,7 @@ func TestSumDBClientOpsReadRemote(t *testing.T) {
 						Body:       io.NopCloser(strings.NewReader("remote data")),
 					}, nil
 				})}
-				scs, err := newSumdbClientState("direct", defaultEnvGOSUMDB+" https://sumdb.example.com", client)
+				scs, err := newSumDBClientState("direct", defaultEnvGOSUMDB+" https://sumdb.example.com", client)
 				if err != nil {
 					t.Fatalf("unexpected error %v", err)
 				}
@@ -172,12 +172,12 @@ func TestSumDBClientOpsWriteCache(t *testing.T) {
 	}
 }
 
-func TestSumDBClientOpsSaveCache(t *testing.T) {
+func TestSumDBClientOpsPublishCache(t *testing.T) {
 	t.Run("Empty", func(t *testing.T) {
 		scs := &sumdbClientState{}
 		scs.WriteCache("existing", []byte("original"))
 		ops := &sumdbClientOps{sumdbClientState: scs}
-		ops.saveCache()
+		ops.publishCache()
 		if got, err := scs.ReadCache("existing"); err != nil || string(got) != "original" {
 			t.Errorf("got (%q, %v), want (%q, nil)", got, err, "original")
 		}
@@ -189,7 +189,7 @@ func TestSumDBClientOpsSaveCache(t *testing.T) {
 		ops := &sumdbClientOps{sumdbClientState: scs}
 		ops.WriteCache("existing", []byte("updated"))
 		ops.WriteCache("new", []byte("buffered"))
-		ops.saveCache()
+		ops.publishCache()
 		for _, tt := range []struct {
 			file string
 			want string
@@ -215,7 +215,7 @@ func TestNewSumDBClientState(t *testing.T) {
 		{"MissingGOSUMDB", "", errors.New("missing GOSUMDB")},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			scs, err := newSumdbClientState(defaultEnvGOPROXY, tt.envGOSUMDB, http.DefaultClient)
+			scs, err := newSumDBClientState(defaultEnvGOPROXY, tt.envGOSUMDB, http.DefaultClient)
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatal("expected error")
@@ -301,7 +301,7 @@ func TestSumDBClientStateURL(t *testing.T) {
 			proxyServer := newHTTPTestServer(t, tt.proxyHandler)
 			envGOPROXY := tt.envGOPROXY(proxyServer.URL)
 
-			scs, err := newSumdbClientState(envGOPROXY, tt.envGOSUMDB, http.DefaultClient)
+			scs, err := newSumDBClientState(envGOPROXY, tt.envGOSUMDB, http.DefaultClient)
 			if err != nil {
 				t.Fatalf("unexpected error %v", err)
 			}
@@ -366,7 +366,7 @@ func TestSumDBClientStateURL(t *testing.T) {
 							Request:    req,
 						}, nil
 					})}
-					scs, err := newSumdbClientState("https://example.com"+tt.suffix, defaultEnvGOSUMDB, client)
+					scs, err := newSumDBClientState("https://example.com"+tt.suffix, defaultEnvGOSUMDB, client)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -429,7 +429,7 @@ func TestSumDBClientStateURL(t *testing.T) {
 						}
 						return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
 					})}
-					scs, err := newSumdbClientState("https://example.com"+tt.suffix, defaultEnvGOSUMDB, client)
+					scs, err := newSumDBClientState("https://example.com"+tt.suffix, defaultEnvGOSUMDB, client)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -474,7 +474,7 @@ func TestSumDBClientStateURL(t *testing.T) {
 					Request:    req,
 				}, nil
 			})}
-			scs, err := newSumdbClientState("https://example.com", defaultEnvGOSUMDB, client)
+			scs, err := newSumDBClientState("https://example.com", defaultEnvGOSUMDB, client)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -537,7 +537,7 @@ func TestSumDBClientStateURL(t *testing.T) {
 						Request:    req,
 					}, nil
 				})}
-				scs, err := newSumdbClientState("https://example.com", defaultEnvGOSUMDB, client)
+				scs, err := newSumDBClientState("https://example.com", defaultEnvGOSUMDB, client)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -580,7 +580,7 @@ func TestSumDBClientStateURL(t *testing.T) {
 					attempts++
 					return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
 				})}
-				scs, err := newSumdbClientState("https://example.com", defaultEnvGOSUMDB, client)
+				scs, err := newSumDBClientState("https://example.com", defaultEnvGOSUMDB, client)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -616,7 +616,7 @@ func TestSumDBClientStateURL(t *testing.T) {
 					attempts++
 					return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
 				})}
-				scs, err := newSumdbClientState("https://example.com", defaultEnvGOSUMDB, client)
+				scs, err := newSumDBClientState("https://example.com", defaultEnvGOSUMDB, client)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -681,7 +681,7 @@ func TestSumDBClientStateURL(t *testing.T) {
 								}
 								return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
 							})}
-							scs, err := newSumdbClientState("https://example.com", defaultEnvGOSUMDB, client)
+							scs, err := newSumDBClientState("https://example.com", defaultEnvGOSUMDB, client)
 							if err != nil {
 								t.Fatal(err)
 							}
@@ -768,7 +768,7 @@ func TestSumDBClientStateReadRemote(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			proxyServer := newHTTPTestServer(t, tt.proxyHandler)
 
-			scs, err := newSumdbClientState(proxyServer.URL, defaultEnvGOSUMDB, http.DefaultClient)
+			scs, err := newSumDBClientState(proxyServer.URL, defaultEnvGOSUMDB, http.DefaultClient)
 			if err != nil {
 				t.Fatalf("unexpected error %v", err)
 			}
@@ -850,7 +850,7 @@ func TestSumDBClientStateReadRemote(t *testing.T) {
 					if tt.discoveryDelay > 0 {
 						envGOSUMDB = defaultEnvGOSUMDB
 					}
-					scs, err := newSumdbClientState("https://example.com", envGOSUMDB, client)
+					scs, err := newSumDBClientState("https://example.com", envGOSUMDB, client)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -886,7 +886,7 @@ func TestSumDBClientStateReadRemote(t *testing.T) {
 				<-req.Context().Done()
 				return nil, req.Context().Err()
 			})}
-			scs, err := newSumdbClientState("direct", defaultEnvGOSUMDB+" https://example.com", client)
+			scs, err := newSumDBClientState("direct", defaultEnvGOSUMDB+" https://example.com", client)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -935,7 +935,7 @@ func TestSumDBClientStateReadConfig(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			scs, err := newSumdbClientState("direct", defaultEnvGOSUMDB, http.DefaultClient)
+			scs, err := newSumDBClientState("direct", defaultEnvGOSUMDB, http.DefaultClient)
 			if err != nil {
 				t.Fatalf("unexpected error %v", err)
 			}
@@ -985,7 +985,7 @@ func TestSumDBClientStateReadConfig(t *testing.T) {
 			resp.Request = req
 			return resp, nil
 		})}
-		scs, err := newSumdbClientState("direct", vkey+" https://sumdb.example.com", httpClient)
+		scs, err := newSumDBClientState("direct", vkey+" https://sumdb.example.com", httpClient)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -993,7 +993,7 @@ func TestSumDBClientStateReadConfig(t *testing.T) {
 			ops := &sumdbClientOps{sumdbClientState: scs, ctx: t.Context()}
 			_, err := sumdb.NewClient(ops).Lookup("example.com", vers)
 			if err == nil {
-				ops.saveCache()
+				ops.publishCache()
 			}
 			return err
 		}

@@ -19,8 +19,8 @@ import (
 // cache writes until checksum verification succeeds.
 type sumdbClientOps struct {
 	*sumdbClientState
-	ctx   context.Context
-	cache sync.Map
+	ctx           context.Context
+	bufferedCache sync.Map
 }
 
 // ReadRemote implements [sumdb.ClientOps].
@@ -30,7 +30,7 @@ func (sco *sumdbClientOps) ReadRemote(path string) ([]byte, error) {
 
 // ReadCache implements [sumdb.ClientOps].
 func (sco *sumdbClientOps) ReadCache(file string) ([]byte, error) {
-	if data, ok := sco.cache.Load(file); ok {
+	if data, ok := sco.bufferedCache.Load(file); ok {
 		return bytes.Clone(data.([]byte)), nil
 	}
 	return sco.sumdbClientState.ReadCache(file)
@@ -38,12 +38,12 @@ func (sco *sumdbClientOps) ReadCache(file string) ([]byte, error) {
 
 // WriteCache implements [sumdb.ClientOps].
 func (sco *sumdbClientOps) WriteCache(file string, data []byte) {
-	sco.cache.Store(file, bytes.Clone(data))
+	sco.bufferedCache.Store(file, bytes.Clone(data))
 }
 
-// saveCache publishes the buffered cache writes.
-func (sco *sumdbClientOps) saveCache() {
-	sco.cache.Range(func(file, data any) bool {
+// publishCache publishes the buffered cache writes.
+func (sco *sumdbClientOps) publishCache() {
+	sco.bufferedCache.Range(func(file, data any) bool {
 		sco.sumdbClientState.WriteCache(file.(string), data.([]byte))
 		return true
 	})
@@ -51,22 +51,22 @@ func (sco *sumdbClientOps) saveCache() {
 
 // sumdbClientState holds shared checksum database client state.
 type sumdbClientState struct {
-	name            string
-	key             string
-	directURL       *url.URL
-	urlLock         chan struct{}
-	urlValue        *url.URL
-	urlDeterminedAt time.Time
-	urlDetermineErr error
-	latestMu        sync.Mutex
-	latest          []byte
-	cache           sync.Map
-	envGOPROXY      string
-	httpClient      *http.Client
+	name             string
+	key              string
+	directURL        *url.URL
+	urlLock          chan struct{}
+	urlValue         *url.URL
+	urlLastAttemptAt time.Time
+	urlDetermineErr  error
+	latestMu         sync.Mutex
+	latest           []byte
+	cache            sync.Map
+	envGOPROXY       string
+	httpClient       *http.Client
 }
 
-// newSumdbClientState creates a new [sumdbClientState].
-func newSumdbClientState(envGOPROXY, envGOSUMDB string, httpClient *http.Client) (*sumdbClientState, error) {
+// newSumDBClientState creates a new [sumdbClientState].
+func newSumDBClientState(envGOPROXY, envGOSUMDB string, httpClient *http.Client) (*sumdbClientState, error) {
 	var (
 		scs = &sumdbClientState{
 			urlLock:    make(chan struct{}, 1),
@@ -74,15 +74,15 @@ func newSumdbClientState(envGOPROXY, envGOSUMDB string, httpClient *http.Client)
 			httpClient: httpClient,
 		}
 
-		u           *url.URL
-		isDirectURL bool
-		err         error
+		u          *url.URL
+		allowProxy bool
+		err        error
 	)
-	scs.name, scs.key, u, isDirectURL, err = parseEnvGOSUMDB(envGOSUMDB)
+	scs.name, scs.key, u, allowProxy, err = parseEnvGOSUMDB(envGOSUMDB)
 	if err != nil {
 		return nil, err
 	}
-	if isDirectURL {
+	if allowProxy {
 		scs.directURL = u
 	} else {
 		scs.urlValue = u
@@ -105,7 +105,7 @@ func (scs *sumdbClientState) url(ctx context.Context) (*url.URL, error) {
 	if scs.urlValue != nil {
 		return scs.urlValue, nil
 	}
-	if time.Since(scs.urlDeterminedAt) < 10*time.Second && scs.urlDetermineErr != nil {
+	if time.Since(scs.urlLastAttemptAt) < 10*time.Second && scs.urlDetermineErr != nil {
 		return nil, scs.urlDetermineErr
 	}
 
@@ -123,7 +123,7 @@ func (scs *sumdbClientState) url(ctx context.Context) (*url.URL, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	scs.urlDeterminedAt = time.Now()
+	scs.urlLastAttemptAt = time.Now()
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		scs.urlDetermineErr = err
 		return nil, err
