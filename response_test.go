@@ -34,8 +34,8 @@ func TestSetResponseCacheControlHeader(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
 			setResponseCacheControlHeader(rec, tt.maxAge)
-			recr := rec.Result()
-			if got, want := recr.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
+			resp := rec.Result()
+			if got, want := resp.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
 		})
@@ -63,17 +63,17 @@ func TestResponseString(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
 			responseString(rec, httptest.NewRequest(tt.method, "/", nil), http.StatusOK, 60, tt.content)
-			recr := rec.Result()
-			if got, want := recr.StatusCode, http.StatusOK; got != want {
+			resp := rec.Result()
+			if got, want := resp.StatusCode, http.StatusOK; got != want {
 				t.Errorf("got %d, want %d", got, want)
 			}
-			if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+			if got, want := resp.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
-			if got, want := recr.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
+			if got, want := resp.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
-			if b, err := io.ReadAll(recr.Body); err != nil {
+			if b, err := io.ReadAll(resp.Body); err != nil {
 				t.Errorf("unexpected error %v", err)
 			} else if got, want := string(b), tt.wantContent; got != want {
 				t.Errorf("got %q, want %q", got, want)
@@ -101,21 +101,21 @@ func TestResponseBadRequest(t *testing.T) {
 				rec := httptest.NewRecorder()
 				rec.Header().Set("Cache-Control", "public, max-age=86400")
 				responseBadRequest(rec, httptest.NewRequest(method, "/", nil), tt.msgs...)
-				recr := rec.Result()
-				if got, want := recr.StatusCode, http.StatusBadRequest; got != want {
+				resp := rec.Result()
+				if got, want := resp.StatusCode, http.StatusBadRequest; got != want {
 					t.Errorf("got %d, want %d", got, want)
 				}
-				if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+				if got, want := resp.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 					t.Errorf("got %q, want %q", got, want)
 				}
-				if got, want := recr.Header.Get("Cache-Control"), "no-store"; got != want {
+				if got, want := resp.Header.Get("Cache-Control"), "no-store"; got != want {
 					t.Errorf("got %q, want %q", got, want)
 				}
 				wantContent := tt.wantContent
 				if method == http.MethodHead {
 					wantContent = ""
 				}
-				if b, err := io.ReadAll(recr.Body); err != nil {
+				if b, err := io.ReadAll(resp.Body); err != nil {
 					t.Errorf("unexpected error %v", err)
 				} else if got, want := string(b), wantContent; got != want {
 					t.Errorf("got %q, want %q", got, want)
@@ -146,17 +146,17 @@ func TestResponseNotFound(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
 			responseNotFound(rec, httptest.NewRequest("", "/", nil), 60, tt.msgs...)
-			recr := rec.Result()
-			if got, want := recr.StatusCode, http.StatusNotFound; got != want {
+			resp := rec.Result()
+			if got, want := resp.StatusCode, http.StatusNotFound; got != want {
 				t.Errorf("got %d, want %d", got, want)
 			}
-			if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+			if got, want := resp.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
-			if got, want := recr.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
+			if got, want := resp.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
-			if b, err := io.ReadAll(recr.Body); err != nil {
+			if b, err := io.ReadAll(resp.Body); err != nil {
 				t.Errorf("unexpected error %v", err)
 			} else if got, want := string(b), tt.wantContent; got != want {
 				t.Errorf("got %q, want %q", got, want)
@@ -168,20 +168,20 @@ func TestResponseNotFound(t *testing.T) {
 func TestResponseMethodNotAllowed(t *testing.T) {
 	rec := httptest.NewRecorder()
 	responseMethodNotAllowed(rec, httptest.NewRequest("", "/", nil), 60)
-	recr := rec.Result()
-	if got, want := recr.StatusCode, http.StatusMethodNotAllowed; got != want {
+	resp := rec.Result()
+	if got, want := resp.StatusCode, http.StatusMethodNotAllowed; got != want {
 		t.Errorf("got %d, want %d", got, want)
 	}
-	if got, want := recr.Header.Get("Allow"), "GET, HEAD"; got != want {
+	if got, want := resp.Header.Get("Allow"), "GET, HEAD"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+	if got, want := resp.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	if got, want := recr.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
+	if got, want := resp.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	if b, err := io.ReadAll(recr.Body); err != nil {
+	if b, err := io.ReadAll(resp.Body); err != nil {
 		t.Errorf("unexpected error %v", err)
 	} else if got, want := string(b), "method not allowed"; got != want {
 		t.Errorf("got %q, want %q", got, want)
@@ -203,21 +203,21 @@ func TestResponseInternalServerError(t *testing.T) {
 					rec.Header().Set("Cache-Control", tt.cacheControl)
 				}
 				responseInternalServerError(rec, httptest.NewRequest(method, "/", nil))
-				recr := rec.Result()
-				if got, want := recr.StatusCode, http.StatusInternalServerError; got != want {
+				resp := rec.Result()
+				if got, want := resp.StatusCode, http.StatusInternalServerError; got != want {
 					t.Errorf("got %d, want %d", got, want)
 				}
-				if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+				if got, want := resp.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 					t.Errorf("got %q, want %q", got, want)
 				}
-				if got, want := recr.Header.Get("Cache-Control"), "no-store"; got != want {
+				if got, want := resp.Header.Get("Cache-Control"), "no-store"; got != want {
 					t.Errorf("got %q, want %q", got, want)
 				}
 				wantContent := "internal server error"
 				if method == http.MethodHead {
 					wantContent = ""
 				}
-				if b, err := io.ReadAll(recr.Body); err != nil {
+				if b, err := io.ReadAll(resp.Body); err != nil {
 					t.Errorf("unexpected error %v", err)
 				} else if got, want := string(b), wantContent; got != want {
 					t.Errorf("got %q, want %q", got, want)
@@ -227,7 +227,7 @@ func TestResponseInternalServerError(t *testing.T) {
 	}
 }
 
-func TestResponseSuccess(t *testing.T) {
+func TestResponseContent(t *testing.T) {
 	for _, tt := range []struct {
 		name              string
 		method            string
@@ -311,27 +311,27 @@ func TestResponseSuccess(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			responseSuccess(rec, httptest.NewRequest(tt.method, "/", nil), tt.content, "text/plain; charset=utf-8", 60)
-			recr := rec.Result()
-			if got, want := recr.StatusCode, http.StatusOK; got != want {
+			responseContent(rec, httptest.NewRequest(tt.method, "/", nil), tt.content, "text/plain; charset=utf-8", 60)
+			resp := rec.Result()
+			if got, want := resp.StatusCode, http.StatusOK; got != want {
 				t.Errorf("got %d, want %d", got, want)
 			}
-			if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+			if got, want := resp.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
-			if got, want := recr.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
+			if got, want := resp.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
-			if got, want := recr.ContentLength, tt.wantContentLength; got != want {
+			if got, want := resp.ContentLength, tt.wantContentLength; got != want {
 				t.Errorf("got %d, want %d", got, want)
 			}
-			if got, want := recr.Header.Get("Last-Modified"), tt.wantLastModified; got != want {
+			if got, want := resp.Header.Get("Last-Modified"), tt.wantLastModified; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
-			if got, want := recr.Header.Get("ETag"), tt.wantETag; got != want {
+			if got, want := resp.Header.Get("ETag"), tt.wantETag; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
-			if b, err := io.ReadAll(recr.Body); err != nil {
+			if b, err := io.ReadAll(resp.Body); err != nil {
 				t.Errorf("unexpected error %v", err)
 			} else if got, want := string(b), tt.wantContent; got != want {
 				t.Errorf("got %q, want %q", got, want)
@@ -377,7 +377,7 @@ func TestResponseSuccess(t *testing.T) {
 									t.Errorf("got panic %v, want %v", got, wantPanic)
 								}
 							}()
-							responseSuccess(rw, httptest.NewRequest(method, "/", nil), struct{ io.Reader }{tt.content}, "text/plain; charset=utf-8", 60)
+							responseContent(rw, httptest.NewRequest(method, "/", nil), struct{ io.Reader }{tt.content}, "text/plain; charset=utf-8", 60)
 						}()
 						if got, want := rec.Body.String(), wantContent; got != want {
 							t.Errorf("got content %q, want %q", got, want)
@@ -418,7 +418,7 @@ func TestResponseSuccess(t *testing.T) {
 									return n, err
 								}}
 							}
-							responseSuccess(writer, req, struct{ io.Reader }{content}, "text/plain; charset=utf-8", 60)
+							responseContent(writer, req, struct{ io.Reader }{content}, "text/plain; charset=utf-8", 60)
 						}))
 						server.EnableHTTP2 = protoMajor == 2
 						server.StartTLS()
@@ -560,7 +560,7 @@ func TestResponseSuccess(t *testing.T) {
 									},
 								}
 							}
-							responseSuccess(rw, req, content, "text/plain; charset=utf-8", 604800)
+							responseContent(rw, req, content, "text/plain; charset=utf-8", 604800)
 						}))
 						for _, method := range []string{http.MethodGet, http.MethodHead} {
 							t.Run(method, func(t *testing.T) {
@@ -645,7 +645,7 @@ func TestResponseSuccess(t *testing.T) {
 				req := httptest.NewRequest(http.MethodHead, "/", nil)
 				req.Header = tt.header.Clone()
 				rec := httptest.NewRecorder()
-				responseSuccess(rec, req, content, "text/plain; charset=utf-8", 604800)
+				responseContent(rec, req, content, "text/plain; charset=utf-8", 604800)
 				resp := rec.Result()
 				if got, want := resp.StatusCode, tt.wantStatusCode; got != want {
 					t.Errorf("got status %d, want %d", got, want)
@@ -695,7 +695,7 @@ func TestResponseSuccess(t *testing.T) {
 			http.ResponseWriter
 			io.ReaderFrom
 		}{rec, &buf}
-		responseSuccess(rw, httptest.NewRequest(http.MethodGet, "/", nil), strings.NewReader("foobar"), "text/plain; charset=utf-8", 60)
+		responseContent(rw, httptest.NewRequest(http.MethodGet, "/", nil), strings.NewReader("foobar"), "text/plain; charset=utf-8", 60)
 		if got, want := buf.String(), "foobar"; got != want {
 			t.Errorf("got content %q, want %q", got, want)
 		}
@@ -790,17 +790,17 @@ func TestResponseError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
 			responseError(rec, httptest.NewRequest("", "/", nil), tt.err)
-			recr := rec.Result()
-			if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
+			resp := rec.Result()
+			if got, want := resp.StatusCode, tt.wantStatusCode; got != want {
 				t.Errorf("got %d, want %d", got, want)
 			}
-			if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+			if got, want := resp.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
-			if got, want := recr.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
+			if got, want := resp.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
-			if b, err := io.ReadAll(recr.Body); err != nil {
+			if b, err := io.ReadAll(resp.Body); err != nil {
 				t.Errorf("unexpected error %v", err)
 			} else if got, want := string(b), tt.wantContent; got != want {
 				t.Errorf("got %q, want %q", got, want)

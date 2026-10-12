@@ -192,7 +192,7 @@ func TestGoproxyInit(t *testing.T) {
 func TestGoproxyServeHTTP(t *testing.T) {
 	info := marshalInfo("v1.0.0", time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC))
 	proxyServer := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
+		responseContent(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
 	}))
 	for _, tt := range []struct {
 		name             string
@@ -287,23 +287,23 @@ func TestGoproxyServeHTTP(t *testing.T) {
 
 			rec := httptest.NewRecorder()
 			g.ServeHTTP(rec, httptest.NewRequest(tt.method, tt.path, nil))
-			recr := rec.Result()
-			if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
+			resp := rec.Result()
+			if got, want := resp.StatusCode, tt.wantStatusCode; got != want {
 				t.Errorf("got %d, want %d", got, want)
 			}
-			if got, want := recr.Header.Get("Allow"), tt.wantAllow; got != want {
+			if got, want := resp.Header.Get("Allow"), tt.wantAllow; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
-			if got, want := recr.Header.Get("Content-Type"), tt.wantContentType; got != want {
+			if got, want := resp.Header.Get("Content-Type"), tt.wantContentType; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
-			if got, want := recr.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
+			if got, want := resp.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
-			if got, want := recr.Header.Get("Vary"), tt.wantVary; got != want {
+			if got, want := resp.Header.Get("Vary"), tt.wantVary; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
-			if b, err := io.ReadAll(recr.Body); err != nil {
+			if b, err := io.ReadAll(resp.Body); err != nil {
 				t.Errorf("unexpected error %v", err)
 			} else if got, want := string(b), tt.wantContent; got != want {
 				t.Errorf("got %q, want %q", got, want)
@@ -1222,17 +1222,17 @@ func TestGoproxyServeHTTP(t *testing.T) {
 				t.Run(tt.name+"/"+method, func(t *testing.T) {
 					rec := httptest.NewRecorder()
 					g.ServeHTTP(rec, httptest.NewRequest(method, tt.path, nil))
-					recr := rec.Result()
-					if got, want := recr.StatusCode, http.StatusMethodNotAllowed; got != want {
+					resp := rec.Result()
+					if got, want := resp.StatusCode, http.StatusMethodNotAllowed; got != want {
 						t.Errorf("got %d, want %d", got, want)
 					}
-					if got, want := recr.Header.Get("Allow"), "GET, HEAD"; got != want {
+					if got, want := resp.Header.Get("Allow"), "GET, HEAD"; got != want {
 						t.Errorf("got %q, want %q", got, want)
 					}
-					if got, want := recr.Header.Get("Cache-Control"), "no-store"; got != want {
+					if got, want := resp.Header.Get("Cache-Control"), "no-store"; got != want {
 						t.Errorf("got %q, want %q", got, want)
 					}
-					if b, err := io.ReadAll(recr.Body); err != nil {
+					if b, err := io.ReadAll(resp.Body); err != nil {
 						t.Errorf("unexpected error %v", err)
 					} else if got, want := string(b), "method not allowed"; got != want {
 						t.Errorf("got %q, want %q", got, want)
@@ -1257,17 +1257,17 @@ func TestGoproxyServeFetch(t *testing.T) {
 		upstreamRequests.Add(1)
 		switch req.URL.Path {
 		case "/example.com/@latest":
-			responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
+			responseContent(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
 		case "/example.com/@v/list":
-			responseSuccess(rw, req, strings.NewReader(list), "text/plain; charset=utf-8", -2)
+			responseContent(rw, req, strings.NewReader(list), "text/plain; charset=utf-8", -2)
 		default:
 			switch path.Ext(req.URL.Path) {
 			case ".info":
-				responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
+				responseContent(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
 			case ".mod":
-				responseSuccess(rw, req, strings.NewReader(mod), "text/plain; charset=utf-8", -2)
+				responseContent(rw, req, strings.NewReader(mod), "text/plain; charset=utf-8", -2)
 			case ".zip":
-				responseSuccess(rw, req, bytes.NewReader(zip), "application/zip", -2)
+				responseContent(rw, req, bytes.NewReader(zip), "application/zip", -2)
 			default:
 				responseNotFound(rw, req, -2)
 			}
@@ -1514,20 +1514,20 @@ func TestGoproxyServeFetch(t *testing.T) {
 			}
 			rec := httptest.NewRecorder()
 			g.serveFetch(rec, req, tt.target)
-			recr := rec.Result()
-			if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
+			resp := rec.Result()
+			if got, want := resp.StatusCode, tt.wantStatusCode; got != want {
 				t.Errorf("got %d, want %d", got, want)
 			}
-			if got, want := recr.Header.Get("Content-Type"), tt.wantContentType; got != want {
+			if got, want := resp.Header.Get("Content-Type"), tt.wantContentType; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
-			if got, want := recr.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
+			if got, want := resp.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
-			if got, want := recr.Header.Get("Vary"), "Disable-Module-Fetch"; got != want {
+			if got, want := resp.Header.Get("Vary"), "Disable-Module-Fetch"; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
-			if b, err := io.ReadAll(recr.Body); err != nil {
+			if b, err := io.ReadAll(resp.Body); err != nil {
 				t.Errorf("unexpected error %v", err)
 			} else if got, want := string(b), tt.wantContent; got != want {
 				t.Errorf("got %q, want %q", got, want)
@@ -1707,7 +1707,7 @@ func TestGoproxyServeFetch(t *testing.T) {
 func TestGoproxyServeFetchQuery(t *testing.T) {
 	info := marshalInfo("v1.0.0", time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC))
 	proxyHandler := func(rw http.ResponseWriter, req *http.Request) {
-		responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
+		responseContent(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
 	}
 	for _, tt := range []struct {
 		name             string
@@ -1751,17 +1751,17 @@ func TestGoproxyServeFetchQuery(t *testing.T) {
 
 			rec := httptest.NewRecorder()
 			g.serveFetchQuery(rec, httptest.NewRequest("", "/", nil), "example.com/@latest", "example.com", "latest")
-			recr := rec.Result()
-			if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
+			resp := rec.Result()
+			if got, want := resp.StatusCode, tt.wantStatusCode; got != want {
 				t.Errorf("got %d, want %d", got, want)
 			}
-			if got, want := recr.Header.Get("Content-Type"), tt.wantContentType; got != want {
+			if got, want := resp.Header.Get("Content-Type"), tt.wantContentType; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
-			if got, want := recr.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
+			if got, want := resp.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
-			if b, err := io.ReadAll(recr.Body); err != nil {
+			if b, err := io.ReadAll(resp.Body); err != nil {
 				t.Errorf("unexpected error %v", err)
 			} else if got, want := string(b), tt.wantContent; got != want {
 				t.Errorf("got %q, want %q", got, want)
@@ -1773,7 +1773,7 @@ func TestGoproxyServeFetchQuery(t *testing.T) {
 func TestGoproxyServeFetchList(t *testing.T) {
 	list := "v1.0.0\nv1.1.0"
 	proxyHandler := func(rw http.ResponseWriter, req *http.Request) {
-		responseSuccess(rw, req, strings.NewReader(list), "text/plain; charset=utf-8", -2)
+		responseContent(rw, req, strings.NewReader(list), "text/plain; charset=utf-8", -2)
 	}
 	for _, tt := range []struct {
 		name             string
@@ -1814,17 +1814,17 @@ func TestGoproxyServeFetchList(t *testing.T) {
 
 			rec := httptest.NewRecorder()
 			g.serveFetchList(rec, httptest.NewRequest("", "/", nil), "example.com/@v/list", "example.com")
-			recr := rec.Result()
-			if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
+			resp := rec.Result()
+			if got, want := resp.StatusCode, tt.wantStatusCode; got != want {
 				t.Errorf("got %d, want %d", got, want)
 			}
-			if got, want := recr.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
+			if got, want := resp.Header.Get("Content-Type"), "text/plain; charset=utf-8"; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
-			if got, want := recr.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
+			if got, want := resp.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
-			if b, err := io.ReadAll(recr.Body); err != nil {
+			if b, err := io.ReadAll(resp.Body); err != nil {
 				t.Errorf("unexpected error %v", err)
 			} else if got, want := string(b), tt.wantContent; got != want {
 				t.Errorf("got %q, want %q", got, want)
@@ -1843,11 +1843,11 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 	proxyHandler := func(rw http.ResponseWriter, req *http.Request) {
 		switch path.Ext(req.URL.Path) {
 		case ".info":
-			responseSuccess(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
+			responseContent(rw, req, strings.NewReader(info), "application/json; charset=utf-8", -2)
 		case ".mod":
-			responseSuccess(rw, req, strings.NewReader(mod), "text/plain; charset=utf-8", -2)
+			responseContent(rw, req, strings.NewReader(mod), "text/plain; charset=utf-8", -2)
 		case ".zip":
-			responseSuccess(rw, req, bytes.NewReader(zip), "application/zip", -2)
+			responseContent(rw, req, bytes.NewReader(zip), "application/zip", -2)
 		default:
 			responseNotFound(rw, req, -2)
 		}
@@ -2015,17 +2015,17 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			}
 			rec := httptest.NewRecorder()
 			g.serveFetchDownload(rec, httptest.NewRequest("", "/", nil), tt.target, modulePath, moduleVersion, tt.noFetch)
-			recr := rec.Result()
-			if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
+			resp := rec.Result()
+			if got, want := resp.StatusCode, tt.wantStatusCode; got != want {
 				t.Errorf("got %d, want %d", got, want)
 			}
-			if got, want := recr.Header.Get("Content-Type"), tt.wantContentType; got != want {
+			if got, want := resp.Header.Get("Content-Type"), tt.wantContentType; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
-			if got, want := recr.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
+			if got, want := resp.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
-			if b, err := io.ReadAll(recr.Body); err != nil {
+			if b, err := io.ReadAll(resp.Body); err != nil {
 				t.Errorf("unexpected error %v", err)
 			} else if got, want := string(b), tt.wantContent; got != want {
 				t.Errorf("got %q, want %q", got, want)
@@ -2201,8 +2201,8 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			t.Error("cached content was not closed, potential memory leak")
 		}
 
-		recr := rec.Result()
-		if got, want := recr.StatusCode, http.StatusOK; got != want {
+		resp := rec.Result()
+		if got, want := resp.StatusCode, http.StatusOK; got != want {
 			t.Errorf("got status %d, want %d", got, want)
 		}
 	})
@@ -2319,17 +2319,17 @@ func TestGoproxyServeSumDB(t *testing.T) {
 
 			rec := httptest.NewRecorder()
 			g.serveSumDB(rec, httptest.NewRequest("", "/", nil), tt.target)
-			recr := rec.Result()
-			if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
+			resp := rec.Result()
+			if got, want := resp.StatusCode, tt.wantStatusCode; got != want {
 				t.Errorf("got %d, want %d", got, want)
 			}
-			if got, want := recr.Header.Get("Content-Type"), tt.wantContentType; got != want {
+			if got, want := resp.Header.Get("Content-Type"), tt.wantContentType; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
-			if got, want := recr.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
+			if got, want := resp.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
-			if b, err := io.ReadAll(recr.Body); err != nil {
+			if b, err := io.ReadAll(resp.Body); err != nil {
 				t.Errorf("unexpected error %v", err)
 			} else if got, want := string(b), tt.wantContent; got != want {
 				t.Errorf("got %q, want %q", got, want)
@@ -3545,11 +3545,11 @@ func TestGoproxyServeCache(t *testing.T) {
 			req := httptest.NewRequest("", "/", nil)
 			rec := httptest.NewRecorder()
 			g.serveCache(rec, req, "target", "", -2)
-			recr := rec.Result()
-			if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
+			resp := rec.Result()
+			if got, want := resp.StatusCode, tt.wantStatusCode; got != want {
 				t.Errorf("got %d, want %d", got, want)
 			}
-			if b, err := io.ReadAll(recr.Body); err != nil {
+			if b, err := io.ReadAll(resp.Body); err != nil {
 				t.Errorf("unexpected error %v", err)
 			} else if got, want := string(b), tt.wantContent; got != want {
 				t.Errorf("got %q, want %q", got, want)

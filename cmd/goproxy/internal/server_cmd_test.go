@@ -928,11 +928,11 @@ func TestNewServerHandler(t *testing.T) {
 			req := httptest.NewRequest(tt.method, "https://example.com"+tt.path, nil)
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
-			recr := rec.Result()
-			if got, want := recr.StatusCode, tt.wantStatusCode; got != want {
+			resp := rec.Result()
+			if got, want := resp.StatusCode, tt.wantStatusCode; got != want {
 				t.Errorf("got %d, want %d", got, want)
 			}
-			if got, want := recr.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
+			if got, want := resp.Header.Get("Cache-Control"), tt.wantCacheControl; got != want {
 				t.Errorf("got %q, want %q", got, want)
 			}
 			if got, want := int64(rec.Body.Len()), tt.wantContentLength; got != want {

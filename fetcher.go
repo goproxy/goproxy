@@ -124,15 +124,15 @@ type GoFetcher struct {
 	// If Transport is nil, [http.DefaultTransport] is used.
 	Transport http.RoundTripper
 
-	initOnce              sync.Once
-	initErr               error
-	env                   []string
-	envGOPROXY            string
-	envGONOPROXY          string
-	envGONOSUMDB          string
-	directFetchWorkerPool chan struct{}
-	httpClient            *http.Client
-	sumdbClientState      *sumdbClientState
+	initOnce             sync.Once
+	initErr              error
+	env                  []string
+	envGOPROXY           string
+	envGONOPROXY         string
+	envGONOSUMDB         string
+	directFetchSemaphore chan struct{}
+	httpClient           *http.Client
+	sumdbClientState     *sumdbClientState
 }
 
 // init initializes the f.
@@ -185,12 +185,12 @@ func (gf *GoFetcher) init() {
 	)
 
 	if gf.MaxConcurrentDirectFetches > 0 {
-		gf.directFetchWorkerPool = make(chan struct{}, gf.MaxConcurrentDirectFetches)
+		gf.directFetchSemaphore = make(chan struct{}, gf.MaxConcurrentDirectFetches)
 	}
 
 	gf.httpClient = &http.Client{Transport: gf.Transport}
 	if envGOSUMDB != "off" {
-		gf.sumdbClientState, gf.initErr = newSumdbClientState(gf.envGOPROXY, envGOSUMDB, gf.httpClient)
+		gf.sumdbClientState, gf.initErr = newSumDBClientState(gf.envGOPROXY, envGOSUMDB, gf.httpClient)
 	}
 }
 
@@ -418,7 +418,7 @@ func (gf *GoFetcher) Download(ctx context.Context, path, version string) (info, 
 		if err != nil {
 			return
 		}
-		sumdbOps.saveCache()
+		sumdbOps.publishCache()
 	}
 
 	infoContent := strings.NewReader(marshalInfo(infoVersion, infoTime))
@@ -435,14 +435,14 @@ func (gf *GoFetcher) Download(ctx context.Context, path, version string) (info, 
 	}
 
 	var (
-		closers int32 = 3
-		closed        = func() {
-			if atomic.AddInt32(&closers, -1) == 0 {
+		remainingClosers int32 = 3
+		onClose                = func() {
+			if atomic.AddInt32(&remainingClosers, -1) == 0 {
 				cleanup()
 			}
 		}
 	)
-	infoClosedOnce := sync.OnceFunc(closed)
+	infoClosedOnce := sync.OnceFunc(onClose)
 	info = struct {
 		io.ReadSeeker
 		io.Closer
@@ -450,7 +450,7 @@ func (gf *GoFetcher) Download(ctx context.Context, path, version string) (info, 
 		infoClosedOnce()
 		return nil
 	})}
-	modClosedOnce := sync.OnceFunc(closed)
+	modClosedOnce := sync.OnceFunc(onClose)
 	mod = struct {
 		io.ReadSeeker
 		io.Closer
@@ -458,7 +458,7 @@ func (gf *GoFetcher) Download(ctx context.Context, path, version string) (info, 
 		defer modClosedOnce()
 		return modContent.Close()
 	})}
-	zipClosedOnce := sync.OnceFunc(closed)
+	zipClosedOnce := sync.OnceFunc(onClose)
 	zip = struct {
 		io.ReadSeeker
 		io.Closer
@@ -522,13 +522,13 @@ func (gf *GoFetcher) directDownload(ctx context.Context, path, version string) (
 
 // execGo executes the local Go binary with the given args and returns the output.
 func (gf *GoFetcher) execGo(ctx context.Context, args ...string) ([]byte, error) {
-	if gf.directFetchWorkerPool != nil {
+	if gf.directFetchSemaphore != nil {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case gf.directFetchWorkerPool <- struct{}{}:
+		case gf.directFetchSemaphore <- struct{}{}:
 		}
-		defer func() { <-gf.directFetchWorkerPool }()
+		defer func() { <-gf.directFetchSemaphore }()
 	}
 
 	tempDir, err := os.MkdirTemp(gf.TempDir, tempDirPattern)
@@ -672,7 +672,7 @@ func cleanEnvGOSUMDB(envGOSUMDB string) string {
 const sumGolangOrgKey = "sum.golang.org+033de0ae+Ac4zctda0e5eza+HJyk9SxEdh+s3Ux18htTTAD8OuAn8"
 
 // parseEnvGOSUMDB parses the envGOSUMDB.
-func parseEnvGOSUMDB(envGOSUMDB string) (name string, key string, u *url.URL, isDirectURL bool, err error) {
+func parseEnvGOSUMDB(envGOSUMDB string) (name string, key string, u *url.URL, allowProxy bool, err error) {
 	parts := strings.Fields(envGOSUMDB)
 	if l := len(parts); l == 0 {
 		return "", "", nil, false, errors.New("missing GOSUMDB")
@@ -706,13 +706,13 @@ func parseEnvGOSUMDB(envGOSUMDB string) (name string, key string, u *url.URL, is
 		*u != (url.URL{Scheme: "https", Host: u.Host, Path: u.Path, RawPath: u.RawPath}) {
 		return "", "", nil, false, fmt.Errorf("invalid sumdb name (must be host[/path]): %s %+v", name, *u)
 	}
-	isDirectURL = true
+	allowProxy = true
 	if len(parts) > 1 {
 		u, err = url.Parse(parts[1])
 		if err != nil {
 			return "", "", nil, false, fmt.Errorf("invalid GOSUMDB URL: %w", err)
 		}
-		isDirectURL = false
+		allowProxy = false
 	}
 	return
 }

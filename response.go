@@ -81,9 +81,9 @@ func responseInternalServerError(rw http.ResponseWriter, req *http.Request) {
 	responseString(rw, req, http.StatusInternalServerError, -1, "internal server error")
 }
 
-// responseSuccess responses success to the client with the content, contentType
-// , and cacheControlMaxAge.
-func responseSuccess(rw http.ResponseWriter, req *http.Request, content io.Reader, contentType string, cacheControlMaxAge int) {
+// responseContent responds to the client with the content using the contentType
+// and cacheControlMaxAge.
+func responseContent(rw http.ResponseWriter, req *http.Request, content io.Reader, contentType string, cacheControlMaxAge int) {
 	rw.Header().Set("Content-Type", contentType)
 	setResponseCacheControlHeader(rw, cacheControlMaxAge)
 

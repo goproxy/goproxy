@@ -237,7 +237,7 @@ func (g *Goproxy) serveFetchQuery(rw http.ResponseWriter, req *http.Request, tar
 		responseError(rw, req, err)
 		return
 	}
-	responseSuccess(rw, req, strings.NewReader(marshalInfo(version, time)), "application/json; charset=utf-8", 60)
+	responseContent(rw, req, strings.NewReader(marshalInfo(version, time)), "application/json; charset=utf-8", 60)
 }
 
 // serveFetchList serves fetch list requests.
@@ -248,7 +248,7 @@ func (g *Goproxy) serveFetchList(rw http.ResponseWriter, req *http.Request, targ
 		responseError(rw, req, err)
 		return
 	}
-	responseSuccess(rw, req, strings.NewReader(strings.Join(versions, "\n")), "text/plain; charset=utf-8", 60)
+	responseContent(rw, req, strings.NewReader(strings.Join(versions, "\n")), "text/plain; charset=utf-8", 60)
 }
 
 // serveFetchDownload serves fetch download requests.
@@ -273,7 +273,7 @@ func (g *Goproxy) serveFetchDownload(rw http.ResponseWriter, req *http.Request, 
 
 	if content, err := g.cache(req.Context(), target); err == nil {
 		defer content.Close()
-		responseSuccess(rw, req, content, contentType, cacheControlMaxAge)
+		responseContent(rw, req, content, contentType, cacheControlMaxAge)
 		return
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		g.logger.Error("failed to get cached module file", "error", err, "target", target)
@@ -321,7 +321,7 @@ func (g *Goproxy) serveFetchDownload(rw http.ResponseWriter, req *http.Request, 
 		responseInternalServerError(rw, req)
 		return
 	}
-	responseSuccess(rw, req, content, contentType, 604800)
+	responseContent(rw, req, content, contentType, 604800)
 }
 
 // serveSumDB serves checksum database proxy requests.
@@ -433,7 +433,7 @@ func (g *Goproxy) serveSumDB(rw http.ResponseWriter, req *http.Request, target s
 		return
 	}
 	defer f.Close()
-	responseSuccess(rw, req, f, contentType, cacheControlMaxAge)
+	responseContent(rw, req, f, contentType, cacheControlMaxAge)
 }
 
 // serveCache serves requests with cached content.
@@ -449,7 +449,7 @@ func (g *Goproxy) serveCache(rw http.ResponseWriter, req *http.Request, name, co
 		return
 	}
 	defer content.Close()
-	responseSuccess(rw, req, content, contentType, cacheControlMaxAge)
+	responseContent(rw, req, content, contentType, cacheControlMaxAge)
 }
 
 // cache returns the matched cache for the name from the g.Cacher.

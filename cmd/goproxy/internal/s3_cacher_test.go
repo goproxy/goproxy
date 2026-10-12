@@ -556,10 +556,10 @@ func TestS3CacherPut(t *testing.T) {
 	t.Run("ContentErrors", func(t *testing.T) {
 		wantErr := errors.New("content failed")
 		for _, tt := range []struct {
-			name    string
-			whence  int
-			failOn  int
-			readErr bool
+			name     string
+			whence   int
+			failOn   int
+			failRead bool
 		}{
 			{"SeekEnd", io.SeekEnd, 1, false},
 			{"SeekStart", io.SeekStart, 1, false},
@@ -577,7 +577,7 @@ func TestS3CacherPut(t *testing.T) {
 				seeks := 0
 				rs := strings.NewReader("test")
 				var reader io.Reader = rs
-				if tt.readErr {
+				if tt.failRead {
 					reader = iotest.ErrReader(wantErr)
 				}
 				content := struct {
@@ -842,8 +842,8 @@ func TestS3CacherPut(t *testing.T) {
 			name            string
 			failOperation   string
 			missingUploadID bool
-			readErr         bool
-			abortErr        bool
+			failRead        bool
+			failAbort       bool
 			wantOperations  []string
 		}{
 			{"CreateFailure", "CreateMultipartUpload", false, false, false, []string{"CreateMultipartUpload"}},
@@ -881,7 +881,7 @@ func TestS3CacherPut(t *testing.T) {
 					mu.Lock()
 					operations = append(operations, operation)
 					mu.Unlock()
-					if operation == tt.failOperation || operation == "AbortMultipartUpload" && tt.abortErr {
+					if operation == tt.failOperation || operation == "AbortMultipartUpload" && tt.failAbort {
 						rw.Header().Set("Content-Type", "application/xml")
 						rw.WriteHeader(http.StatusBadRequest)
 						io.WriteString(rw, `<Error><Code>InvalidRequest</Code><Message>`+operation+` failed</Message></Error>`)
@@ -906,7 +906,7 @@ func TestS3CacherPut(t *testing.T) {
 				cacher := newTestS3Cacher(t, server, "test-bucket", "")
 				rs := bytes.NewReader(data)
 				var reader io.Reader = rs
-				if tt.readErr {
+				if tt.failRead {
 					reader = iotest.ErrReader(readErr)
 				}
 				content := struct {
@@ -920,13 +920,13 @@ func TestS3CacherPut(t *testing.T) {
 				if tt.missingUploadID && err.Error() != "S3 multipart upload response has no upload ID" {
 					t.Errorf("got error %v, want a missing upload ID error", err)
 				}
-				if tt.readErr && !errors.Is(err, readErr) {
+				if tt.failRead && !errors.Is(err, readErr) {
 					t.Errorf("got error %v, want %v", err, readErr)
 				}
 				if tt.failOperation != "" && !strings.Contains(err.Error(), tt.failOperation+" failed") {
 					t.Errorf("got error %v, want a %s error", err, tt.failOperation)
 				}
-				if tt.abortErr && (!strings.Contains(err.Error(), "abort S3 multipart upload:") || !strings.Contains(err.Error(), "AbortMultipartUpload failed")) {
+				if tt.failAbort && (!strings.Contains(err.Error(), "abort S3 multipart upload:") || !strings.Contains(err.Error(), "AbortMultipartUpload failed")) {
 					t.Errorf("got error %v, want an abort error", err)
 				}
 				mu.Lock()
