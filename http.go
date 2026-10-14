@@ -51,6 +51,10 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 
 		resp, err := client.Do(req)
 		if err != nil {
+			// Request timeouts may match [context.DeadlineExceeded] while ctx is live.
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			if isRetryableHTTPClientDoError(err) {
 				lastErr = err
 				continue
@@ -167,10 +171,22 @@ func (w *httpGetTempWriter) Write(p []byte) (int, error) {
 	return n, nil
 }
 
+// checkHTTPRedirect restricts redirects to HTTP and HTTPS and preserves
+// [http.Client]'s default limit of ten requests.
+func checkHTTPRedirect(req *http.Request, via []*http.Request) error {
+	if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+		return http.ErrUseLastResponse
+	}
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	return nil
+}
+
 // isRetryableHTTPClientDoError reports whether the err is a retryable error
 // returned by [http.Client.Do].
 func isRetryableHTTPClientDoError(err error) bool {
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, http.ErrSchemeMismatch) {
+	if errors.Is(err, context.Canceled) || errors.Is(err, http.ErrSchemeMismatch) {
 		return false
 	}
 	if e, ok := errors.AsType[*net.DNSError](err); ok && e.IsNotFound {

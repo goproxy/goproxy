@@ -794,21 +794,22 @@ func TestSumDBClientStateReadRemote(t *testing.T) {
 
 	t.Run("Timeout", func(t *testing.T) {
 		for _, tt := range []struct {
-			name           string
-			firstStatus    int
-			bodyStatus     int
-			discoveryDelay time.Duration
-			clientTimeout  time.Duration
-			wantAttempts   int
-			wantDuration   time.Duration
+			name            string
+			firstStatus     int
+			bodyStatus      int
+			discoveryDelay  time.Duration
+			clientTimeout   time.Duration
+			wantAttempts    int
+			wantDuration    time.Duration
+			wantMaxDuration time.Duration
 		}{
-			{"Headers", 0, 0, 0, 0, 1, time.Minute},
-			{"Body", 0, http.StatusOK, 0, 0, 1, time.Minute},
-			{"ErrorBody", 0, http.StatusServiceUnavailable, 0, 0, 1, time.Minute},
-			{"Retry", http.StatusServiceUnavailable, 0, 0, 0, 2, time.Minute},
-			{"Redirect", http.StatusFound, 0, 0, 0, 2, time.Minute},
-			{"AfterDiscovery", 0, 0, 40 * time.Second, 0, 1, 100 * time.Second},
-			{"ShorterClientTimeout", 0, 0, 0, 5 * time.Second, 1, 5 * time.Second},
+			{"Headers", 0, 0, 0, 0, 1, time.Minute, 0},
+			{"Body", 0, http.StatusOK, 0, 0, 1, time.Minute, 0},
+			{"ErrorBody", 0, http.StatusServiceUnavailable, 0, 0, 1, time.Minute, 0},
+			{"Retry", http.StatusServiceUnavailable, 0, 0, 0, 2, time.Minute, 0},
+			{"Redirect", http.StatusFound, 0, 0, 0, 2, time.Minute, 0},
+			{"AfterDiscovery", 0, 0, 40 * time.Second, 0, 1, 100 * time.Second, 0},
+			{"ShorterClientTimeout", 0, 0, 0, 5 * time.Second, 3, 15 * time.Second, 16 * time.Second},
 		} {
 			t.Run(tt.name, func(t *testing.T) {
 				synctest.Test(t, func(t *testing.T) {
@@ -865,7 +866,11 @@ func TestSumDBClientStateReadRemote(t *testing.T) {
 					if got := attempts; got != tt.wantAttempts {
 						t.Errorf("got attempts %d, want %d", got, tt.wantAttempts)
 					}
-					if got := time.Since(started); got != tt.wantDuration {
+					if got := time.Since(started); tt.wantMaxDuration > 0 {
+						if got < tt.wantDuration || got >= tt.wantMaxDuration {
+							t.Errorf("got duration %v, want [%v, %v)", got, tt.wantDuration, tt.wantMaxDuration)
+						}
+					} else if got != tt.wantDuration {
 						t.Errorf("got duration %v, want %v", got, tt.wantDuration)
 					}
 					if body != nil && !body.closed {

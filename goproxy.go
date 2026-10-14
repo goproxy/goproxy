@@ -119,7 +119,7 @@ func (g *Goproxy) init() {
 		g.proxiedSumDBs[name] = u
 	}
 
-	g.httpClient = &http.Client{Transport: g.Transport}
+	g.httpClient = &http.Client{Transport: g.Transport, CheckRedirect: checkHTTPRedirect}
 
 	g.logger = g.Logger
 	if g.logger == nil {

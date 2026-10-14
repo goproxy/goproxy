@@ -188,7 +188,7 @@ func (gf *GoFetcher) init() {
 		gf.directFetchSemaphore = make(chan struct{}, gf.MaxConcurrentDirectFetches)
 	}
 
-	gf.httpClient = &http.Client{Transport: gf.Transport}
+	gf.httpClient = &http.Client{Transport: gf.Transport, CheckRedirect: checkHTTPRedirect}
 	if envGOSUMDB != "off" {
 		gf.sumdbClientState, gf.initErr = newSumDBClientState(gf.envGOPROXY, envGOSUMDB, gf.httpClient)
 	}
@@ -305,6 +305,7 @@ func (gf *GoFetcher) List(ctx context.Context, path string) (versions []string, 
 		return version == ""
 	})
 	semver.Sort(versions)
+	versions = slices.Compact(versions)
 	return
 }
 

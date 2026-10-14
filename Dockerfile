@@ -30,6 +30,8 @@ RUN apk add --no-cache git git-lfs openssh gpg subversion fossil mercurial
 RUN git lfs install --system
 
 WORKDIR /goproxy
+RUN chown nobody:nobody /goproxy
+
 VOLUME /goproxy
 EXPOSE 8080
 
