@@ -3493,6 +3493,56 @@ func TestGoproxyServeSumDB(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("FileTransport", func(t *testing.T) {
+		for _, tt := range []struct {
+			name       string
+			redirect   bool
+			wantStatus int
+		}{
+			{"ExplicitSource", false, http.StatusOK},
+			{"HTTPRedirect", true, http.StatusBadGateway},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				dir := t.TempDir()
+				const content = "local file content"
+				if err := os.WriteFile(filepath.Join(dir, "latest"), []byte(content), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				upstream := "file:///"
+				if tt.redirect {
+					server := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+						http.Redirect(rw, req, "file:///latest", http.StatusFound)
+					}))
+					upstream = server.URL
+				}
+				transport := http.DefaultTransport.(*http.Transport).Clone()
+				transport.RegisterProtocol("file", http.NewFileTransport(http.Dir(dir)))
+				defer transport.CloseIdleConnections()
+				g := &Goproxy{
+					ProxiedSumDBs: []string{"sumdb.example.com " + upstream},
+					TempDir:       t.TempDir(),
+					Transport:     transport,
+					Logger:        slog.New(slog.DiscardHandler),
+				}
+				rec := httptest.NewRecorder()
+				g.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/sumdb/sumdb.example.com/latest", nil))
+				if got, want := rec.Code, tt.wantStatus; got != want {
+					t.Errorf("got status %d, want %d", got, want)
+				}
+				if tt.redirect {
+					if got, want := rec.Header().Get("Cache-Control"), "no-store"; got != want {
+						t.Errorf("got cache control %q, want %q", got, want)
+					}
+					if strings.Contains(rec.Body.String(), content) {
+						t.Error("local file content was disclosed")
+					}
+				} else if got := rec.Body.String(); got != content {
+					t.Errorf("got content %q, want %q", got, content)
+				}
+			})
+		}
+	})
 }
 
 func TestGoproxyServeCache(t *testing.T) {

@@ -928,6 +928,17 @@ invalid
 			wantVersions: []string{"v1.0.0", "v1.1.0"},
 		},
 		{
+			name: "DuplicateVersions",
+			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
+				responseContent(rw, req, strings.NewReader("v1.1.0\nv1.0.0\nv1.1.0 extra\nv1.0.0\nv1.0.0+incompatible\nv1.0.0+incompatible\ninvalid\n"), "text/plain; charset=utf-8", -2)
+			},
+			env: func(proxyServerURL string) []string {
+				return append(os.Environ(), "GOPROXY="+proxyServerURL)
+			},
+			path:         "example.com",
+			wantVersions: []string{"v1.0.0", "v1.0.0+incompatible", "v1.1.0"},
+		},
+		{
 			name:    "InvalidPath",
 			path:    "foobar",
 			wantErr: errors.New(`malformed module path "foobar": missing dot in first path element`),

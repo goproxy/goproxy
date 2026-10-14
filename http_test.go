@@ -20,6 +20,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"testing/iotest"
@@ -423,6 +424,9 @@ func TestHTTPGet(t *testing.T) {
 		}{
 			{"LastAttemptSuccess", syscall.ECONNRESET, 2, 3, nil},
 			{"Exhausted", syscall.ECONNRESET, 3, 3, syscall.ECONNRESET},
+			{"RequestTimeout", testHTTPTimeoutError{}, 2, 3, nil},
+			{"RequestTimeoutExhausted", testHTTPTimeoutError{}, 3, 3, testHTTPTimeoutError{}},
+			{"RequestDeadline", context.DeadlineExceeded, 3, 3, context.DeadlineExceeded},
 			{"DNSNotFound", &net.OpError{Op: "dial", Net: "tcp", Err: notFound}, 3, 1, notFound},
 			{"DNSTemporary", &net.OpError{Op: "dial", Net: "tcp", Err: temporary}, 3, 3, temporary},
 		} {
@@ -447,6 +451,88 @@ func TestHTTPGet(t *testing.T) {
 					}
 					if got := time.Since(lastAttempt); got != 0 {
 						t.Errorf("got delay after final attempt %v, want 0", got)
+					}
+				})
+			})
+		}
+	})
+
+	t.Run("ResponseHeaderTimeout", func(t *testing.T) {
+		for _, tt := range []struct {
+			name         string
+			failures     int32
+			wantAttempts int32
+		}{
+			{"Recovery", 1, 2},
+			{"Exhausted", 3, 3},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				var attempts atomic.Int32
+				server := newHTTPTestServer(t, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+					if attempts.Add(1) <= tt.failures {
+						<-req.Context().Done()
+						return
+					}
+					fmt.Fprint(rw, "foobar")
+				}))
+				transport := http.DefaultTransport.(*http.Transport).Clone()
+				transport.ResponseHeaderTimeout = 50 * time.Millisecond
+				defer transport.CloseIdleConnections()
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				var content bytes.Buffer
+				_, err := httpGet(ctx, &http.Client{Transport: transport}, server.URL, &content)
+				if tt.failures < tt.wantAttempts {
+					if err != nil {
+						t.Fatalf("unexpected error %v", err)
+					}
+					if got, want := content.String(), "foobar"; got != want {
+						t.Errorf("got content %q, want %q", got, want)
+					}
+				} else if !errors.Is(err, context.DeadlineExceeded) {
+					t.Errorf("got error %v, want a timeout", err)
+				}
+				if err := ctx.Err(); err != nil {
+					t.Errorf("unexpected caller context error %v", err)
+				}
+				if got, want := attempts.Load(), tt.wantAttempts; got != want {
+					t.Errorf("got attempts %d, want %d", got, want)
+				}
+			})
+		}
+	})
+
+	t.Run("ContextExpiresDuringRequest", func(t *testing.T) {
+		for _, tt := range []struct {
+			name    string
+			ctx     func(*testing.T) (context.Context, context.CancelFunc)
+			wantErr error
+		}{
+			{"Canceled", func(t *testing.T) (context.Context, context.CancelFunc) { return context.WithCancel(t.Context()) }, context.Canceled},
+			{"Deadline", func(t *testing.T) (context.Context, context.CancelFunc) {
+				return context.WithTimeout(t.Context(), time.Second)
+			}, context.DeadlineExceeded},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					ctx, cancel := tt.ctx(t)
+					defer cancel()
+					attempts := 0
+					client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+						attempts++
+						if tt.wantErr == context.Canceled {
+							cancel()
+						} else {
+							time.Sleep(time.Second)
+						}
+						return nil, testHTTPTimeoutError{}
+					})}
+					_, err := httpGet(ctx, client, "https://example.com", nil)
+					if !errors.Is(err, tt.wantErr) {
+						t.Errorf("got error %v, want %v", err, tt.wantErr)
+					}
+					if attempts != 1 {
+						t.Errorf("got attempts %d, want 1", attempts)
 					}
 				})
 			})
@@ -1430,6 +1516,114 @@ func TestHTTPGetTempWriterWrite(t *testing.T) {
 	})
 }
 
+func TestCheckHTTPRedirect(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		url     string
+		via     int
+		wantErr error
+	}{
+		{"HTTP", "http://example.com", 1, nil},
+		{"HTTPS", "https://example.com", 1, nil},
+		{"BeforeLimit", "https://example.com", 9, nil},
+		{"AtLimit", "https://example.com", 10, errors.New("stopped after 10 redirects")},
+		{"File", "file:///secret", 1, http.ErrUseLastResponse},
+		{"OtherScheme", "custom://example.com", 1, http.ErrUseLastResponse},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tt.url, nil)
+			if err := checkHTTPRedirect(req, make([]*http.Request, tt.via)); !compareErrors(err, tt.wantErr) {
+				t.Errorf("got error %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+
+	t.Run("Clients", func(t *testing.T) {
+		for _, tt := range []struct {
+			name   string
+			client func(http.RoundTripper) *http.Client
+		}{
+			{"Goproxy", func(transport http.RoundTripper) *http.Client {
+				g := &Goproxy{Transport: transport}
+				g.initOnce.Do(g.init)
+				return g.httpClient
+			}},
+			{"GoFetcher", func(transport http.RoundTripper) *http.Client {
+				gf := &GoFetcher{Env: []string{"GOSUMDB=off"}, Transport: transport}
+				gf.initOnce.Do(gf.init)
+				return gf.httpClient
+			}},
+		} {
+			for _, target := range []struct {
+				name       string
+				url        string
+				wantStatus int
+			}{
+				{"HTTP", "http://upstream.example.com/redirected", http.StatusOK},
+				{"HTTPS", "https://upstream.example.com/redirected", http.StatusOK},
+				{"File", "file:///secret", http.StatusFound},
+				{"OtherScheme", "custom://example.com/secret", http.StatusFound},
+			} {
+				t.Run(tt.name+"/"+target.name, func(t *testing.T) {
+					attempts := 0
+					body := &testHTTPResponseBody{Reader: strings.NewReader("redirect response")}
+					client := tt.client(httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+						attempts++
+						if attempts == 1 {
+							return &http.Response{
+								StatusCode: http.StatusFound,
+								Status:     "302 Found",
+								Header:     http.Header{"Location": {target.url}},
+								Body:       body,
+							}, nil
+						}
+						if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+							t.Errorf("unexpected redirected request %s", req.URL)
+						}
+						return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+					}))
+					_, err := httpGet(t.Context(), client, "https://example.com/original", nil)
+					wantAttempts := 2
+					if target.wantStatus == http.StatusOK {
+						if err != nil {
+							t.Errorf("unexpected error %v", err)
+						}
+					} else {
+						wantAttempts = 1
+						if e, ok := errors.AsType[*httpError](err); !ok || e.statusCode != target.wantStatus {
+							t.Errorf("got error %v, want HTTP status %d", err, target.wantStatus)
+						}
+					}
+					if attempts != wantAttempts {
+						t.Errorf("got attempts %d, want %d", attempts, wantAttempts)
+					}
+					if !body.closed {
+						t.Error("redirect response body was not closed")
+					}
+				})
+			}
+
+			t.Run(tt.name+"/DirectFile", func(t *testing.T) {
+				dir := t.TempDir()
+				if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("foobar"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				transport := http.DefaultTransport.(*http.Transport).Clone()
+				transport.RegisterProtocol("file", http.NewFileTransport(http.Dir(dir)))
+				defer transport.CloseIdleConnections()
+				var content bytes.Buffer
+				_, err := httpGet(t.Context(), tt.client(transport), "file:///file.txt", &content)
+				if err != nil {
+					t.Fatalf("unexpected error %v", err)
+				}
+				if got, want := content.String(), "foobar"; got != want {
+					t.Errorf("got content %q, want %q", got, want)
+				}
+			})
+		}
+	})
+}
+
 func TestIsRetryableHTTPClientDoError(t *testing.T) {
 	for _, tt := range []struct {
 		name            string
@@ -1442,7 +1636,10 @@ func TestIsRetryableHTTPClientDoError(t *testing.T) {
 		{"Unknown", errors.New("oops"), true},
 		{"MisleadingMessage", errors.New("x509: certificate signed by unknown authority"), true},
 		{"Canceled", context.Canceled, false},
-		{"DeadlineExceeded", context.DeadlineExceeded, false},
+		{"RequestDeadline", context.DeadlineExceeded, true},
+		{"RequestTimeout", testHTTPTimeoutError{}, true},
+		{"RequestTimeoutWithDeadline", errors.Join(testHTTPTimeoutError{}, context.DeadlineExceeded), true},
+		{"RequestTimeoutWithCanceled", errors.Join(testHTTPTimeoutError{}, context.Canceled), false},
 		{"SchemeMismatch", http.ErrSchemeMismatch, false},
 		{"DNSNotFound", &net.DNSError{IsNotFound: true}, false},
 		{"DNSTemporary", &net.DNSError{IsTemporary: true}, true},
@@ -1627,3 +1824,11 @@ func (b *testHTTPResponseBody) Close() error {
 	b.closed = true
 	return nil
 }
+
+type testHTTPTimeoutError struct{}
+
+func (testHTTPTimeoutError) Error() string { return "timeout awaiting response headers" }
+
+func (testHTTPTimeoutError) Timeout() bool { return true }
+
+func (testHTTPTimeoutError) Is(target error) bool { return target == context.DeadlineExceeded }
