@@ -77,7 +77,7 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 
 		respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodySize+1))
 		resp.Body.Close()
-		if err != nil {
+		if err != nil && resp.StatusCode != http.StatusRequestTimeout && resp.StatusCode != http.StatusGatewayTimeout {
 			return nil, &httpError{err: err, statusCode: resp.StatusCode}
 		}
 		if len(respBody) > maxErrorBodySize {
@@ -100,7 +100,7 @@ func httpGet(ctx context.Context, client *http.Client, url string, dst io.Writer
 			http.StatusBadGateway,
 			http.StatusServiceUnavailable:
 			lastErr = &httpError{err: errBadUpstream, statusCode: resp.StatusCode}
-		case http.StatusGatewayTimeout:
+		case http.StatusRequestTimeout, http.StatusGatewayTimeout:
 			lastErr = &httpError{err: errFetchTimedOut, statusCode: resp.StatusCode}
 		default:
 			u := req.URL

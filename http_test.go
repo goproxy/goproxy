@@ -283,31 +283,43 @@ func TestHTTPGet(t *testing.T) {
 		for _, tt := range []struct {
 			name             string
 			statusCode       int
+			readErr          error
 			wantAttempts     int
 			wantErr          error
 			wantStatusCode   int
 			wantCacheControl string
 		}{
-			{"BadRequest", http.StatusBadRequest, 1, nil, http.StatusInternalServerError, "no-store"},
-			{"RequestTimeout", http.StatusRequestTimeout, 1, nil, http.StatusInternalServerError, "no-store"},
-			{"NotFound", http.StatusNotFound, 1, fs.ErrNotExist, http.StatusNotFound, "public, max-age=60"},
-			{"Gone", http.StatusGone, 1, fs.ErrNotExist, http.StatusNotFound, "public, max-age=60"},
-			{"TooManyRequests", http.StatusTooManyRequests, 3, errBadUpstream, http.StatusNotFound, "no-store"},
-			{"InternalServerError", http.StatusInternalServerError, 3, errBadUpstream, http.StatusNotFound, "no-store"},
-			{"BadGateway", http.StatusBadGateway, 3, errBadUpstream, http.StatusNotFound, "no-store"},
-			{"ServiceUnavailable", http.StatusServiceUnavailable, 3, errBadUpstream, http.StatusNotFound, "no-store"},
-			{"GatewayTimeout", http.StatusGatewayTimeout, 3, errFetchTimedOut, http.StatusNotFound, "no-store"},
+			{"BadRequest", http.StatusBadRequest, nil, 1, nil, http.StatusInternalServerError, "no-store"},
+			{"RequestTimeout", http.StatusRequestTimeout, nil, 3, errFetchTimedOut, http.StatusNotFound, "no-store"},
+			{"RequestTimeoutReadError", http.StatusRequestTimeout, io.ErrUnexpectedEOF, 3, errFetchTimedOut, http.StatusNotFound, "no-store"},
+			{"RequestTimeoutReadNotExist", http.StatusRequestTimeout, fs.ErrNotExist, 3, errFetchTimedOut, http.StatusNotFound, "no-store"},
+			{"NotFound", http.StatusNotFound, nil, 1, fs.ErrNotExist, http.StatusNotFound, "public, max-age=60"},
+			{"Gone", http.StatusGone, nil, 1, fs.ErrNotExist, http.StatusNotFound, "public, max-age=60"},
+			{"TooManyRequests", http.StatusTooManyRequests, nil, 3, errBadUpstream, http.StatusNotFound, "no-store"},
+			{"InternalServerError", http.StatusInternalServerError, nil, 3, errBadUpstream, http.StatusNotFound, "no-store"},
+			{"BadGateway", http.StatusBadGateway, nil, 3, errBadUpstream, http.StatusNotFound, "no-store"},
+			{"ServiceUnavailable", http.StatusServiceUnavailable, nil, 3, errBadUpstream, http.StatusNotFound, "no-store"},
+			{"GatewayTimeout", http.StatusGatewayTimeout, nil, 3, errFetchTimedOut, http.StatusNotFound, "no-store"},
+			{"GatewayTimeoutReadError", http.StatusGatewayTimeout, io.ErrUnexpectedEOF, 3, errFetchTimedOut, http.StatusNotFound, "no-store"},
+			{"GatewayTimeoutReadNotExist", http.StatusGatewayTimeout, fs.ErrNotExist, 3, errFetchTimedOut, http.StatusNotFound, "no-store"},
 		} {
 			t.Run(tt.name, func(t *testing.T) {
 				synctest.Test(t, func(t *testing.T) {
 					attempts := 0
+					var bodies []*testHTTPResponseBody
 					client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 						attempts++
+						var reader io.Reader = strings.NewReader("upstream details")
+						if tt.readErr != nil {
+							reader = iotest.ErrReader(tt.readErr)
+						}
+						body := &testHTTPResponseBody{Reader: reader}
+						bodies = append(bodies, body)
 						return &http.Response{
 							StatusCode: tt.statusCode,
 							Status:     strconv.Itoa(tt.statusCode) + " " + http.StatusText(tt.statusCode),
 							Header:     http.Header{"Cache-Control": {"public"}},
-							Body:       io.NopCloser(strings.NewReader("upstream details")),
+							Body:       body,
 							Request:    req,
 						}, nil
 					})}
@@ -321,6 +333,9 @@ func TestHTTPGet(t *testing.T) {
 					if tt.wantErr != nil && !errors.Is(err, tt.wantErr) {
 						t.Errorf("got error %v, want an error matching %v", err, tt.wantErr)
 					}
+					if got, want := errors.Is(err, fs.ErrNotExist), tt.wantErr == fs.ErrNotExist; got != want {
+						t.Errorf("got absence %t, want %t", got, want)
+					}
 					httpErr, ok := errors.AsType[*httpError](err)
 					if tt.wantErr == fs.ErrNotExist {
 						if ok {
@@ -331,6 +346,11 @@ func TestHTTPGet(t *testing.T) {
 					}
 					if got, want := attempts, tt.wantAttempts; got != want {
 						t.Errorf("got attempts %d, want %d", got, want)
+					}
+					for _, body := range bodies {
+						if !body.closed {
+							t.Error("response body was not closed")
+						}
 					}
 					rec := httptest.NewRecorder()
 					responseError(rec, httptest.NewRequest(http.MethodGet, "/", nil), err)
@@ -539,6 +559,54 @@ func TestHTTPGet(t *testing.T) {
 		}
 	})
 
+	t.Run("ContextExpiresWhileReadingErrorBody", func(t *testing.T) {
+		for _, tt := range []struct {
+			name       string
+			statusCode int
+			cancel     bool
+			wantErr    error
+		}{
+			{"RequestTimeoutCanceled", http.StatusRequestTimeout, true, context.Canceled},
+			{"RequestTimeoutDeadline", http.StatusRequestTimeout, false, context.DeadlineExceeded},
+			{"GatewayTimeoutCanceled", http.StatusGatewayTimeout, true, context.Canceled},
+			{"GatewayTimeoutDeadline", http.StatusGatewayTimeout, false, context.DeadlineExceeded},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+					defer cancel()
+					reader, writer := io.Pipe()
+					defer reader.Close()
+					defer writer.Close()
+					body := &testHTTPResponseBody{Reader: reader}
+					attempts := 0
+					client := &http.Client{Transport: httpRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+						attempts++
+						return &http.Response{StatusCode: tt.statusCode, Body: body}, nil
+					})}
+					go func() {
+						if tt.cancel {
+							synctest.Wait()
+							cancel()
+						}
+						<-ctx.Done()
+						writer.CloseWithError(ctx.Err())
+					}()
+					_, err := httpGet(ctx, client, "https://example.com", nil)
+					if !errors.Is(err, tt.wantErr) {
+						t.Errorf("got error %v, want %v", err, tt.wantErr)
+					}
+					if attempts != 1 {
+						t.Errorf("got attempts %d, want 1", attempts)
+					}
+					if !body.closed {
+						t.Error("response body was not closed")
+					}
+				})
+			})
+		}
+	})
+
 	t.Run("CertificateErrors", func(t *testing.T) {
 		server := httptest.NewTLSServer(http.NotFoundHandler())
 		defer server.Close()
@@ -575,7 +643,7 @@ func TestHTTPGet(t *testing.T) {
 
 	t.Run("RetryAfter", func(t *testing.T) {
 		for _, statusCode := range []int{
-			http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway,
+			http.StatusRequestTimeout, http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway,
 			http.StatusServiceUnavailable, http.StatusGatewayTimeout,
 		} {
 			for _, tt := range []struct {
@@ -638,7 +706,7 @@ func TestHTTPGet(t *testing.T) {
 								t.Errorf("got error %#v, want HTTP status %d", err, statusCode)
 							}
 							wantErr := errBadUpstream
-							if statusCode == http.StatusGatewayTimeout {
+							if statusCode == http.StatusRequestTimeout || statusCode == http.StatusGatewayTimeout {
 								wantErr = errFetchTimedOut
 							}
 							if !errors.Is(err, wantErr) {
@@ -851,7 +919,7 @@ func TestHTTPGet(t *testing.T) {
 		atLimit := strings.Repeat("x", maxErrorBodySize)
 		aboveLimit := atLimit + "x"
 		for _, statusCode := range []int{
-			http.StatusBadRequest, http.StatusNotFound, http.StatusGone,
+			http.StatusBadRequest, http.StatusRequestTimeout, http.StatusNotFound, http.StatusGone,
 			http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway,
 			http.StatusServiceUnavailable, http.StatusGatewayTimeout, http.StatusNotImplemented,
 		} {
@@ -907,7 +975,7 @@ func TestHTTPGet(t *testing.T) {
 							t.Error("response body was not closed")
 						}
 						wantAttempts := 1
-						if tt.wantErr != nil {
+						if tt.wantErr != nil && statusCode != http.StatusRequestTimeout && statusCode != http.StatusGatewayTimeout {
 							if !errors.Is(err, tt.wantErr) {
 								t.Errorf("got %v, want %v", err, tt.wantErr)
 							}

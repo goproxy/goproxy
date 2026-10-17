@@ -3067,7 +3067,7 @@ func TestWalkEnvGOPROXY(t *testing.T) {
 	})
 
 	t.Run("HTTPStatusFallback", func(t *testing.T) {
-		for _, statusCode := range []int{http.StatusBadRequest, http.StatusNotFound, http.StatusGone} {
+		for _, statusCode := range []int{http.StatusBadRequest, http.StatusRequestTimeout, http.StatusNotFound, http.StatusGone, http.StatusGatewayTimeout} {
 			for _, tt := range []struct {
 				name      string
 				separator string
@@ -3085,6 +3085,7 @@ func TestWalkEnvGOPROXY(t *testing.T) {
 						return &http.Response{
 							StatusCode: statusCode,
 							Status:     strconv.Itoa(statusCode) + " " + http.StatusText(statusCode),
+							Header:     http.Header{"Retry-After": {"2"}},
 							Body:       http.NoBody,
 							Request:    req,
 						}, nil
@@ -3101,7 +3102,7 @@ func TestWalkEnvGOPROXY(t *testing.T) {
 						return nil
 					})
 					wantProxyCalls, wantDirectCalls := 1, 0
-					if statusCode == http.StatusBadRequest && tt.separator == "," {
+					if statusCode != http.StatusNotFound && statusCode != http.StatusGone && tt.separator == "," {
 						if err == nil || errors.Is(err, fs.ErrNotExist) {
 							t.Errorf("got %v, want a non-absence error", err)
 						}

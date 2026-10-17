@@ -651,6 +651,10 @@ func TestGoproxyServeHTTP(t *testing.T) {
 				{"NotFound", http.StatusNotFound, nil, false, false, http.StatusNotFound, "public, max-age=60", "not found: missing"},
 				{"RestrictedNotFound", http.StatusNotFound, nil, true, false, http.StatusNotFound, "no-store", "not found: missing"},
 				{"BadUpstream", http.StatusBadGateway, nil, false, false, http.StatusNotFound, "no-store", "not found: bad upstream"},
+				{"RequestTimeout", http.StatusRequestTimeout, nil, false, false, http.StatusNotFound, "no-store", "not found: fetch timed out"},
+				{"RequestTimeoutReadError", http.StatusRequestTimeout, io.ErrUnexpectedEOF, false, false, http.StatusNotFound, "no-store", "not found: fetch timed out"},
+				{"GatewayTimeout", http.StatusGatewayTimeout, nil, false, false, http.StatusNotFound, "no-store", "not found: fetch timed out"},
+				{"GatewayTimeoutReadError", http.StatusGatewayTimeout, io.ErrUnexpectedEOF, false, false, http.StatusNotFound, "no-store", "not found: fetch timed out"},
 				{"Timeout", 0, context.DeadlineExceeded, false, false, http.StatusNotFound, "no-store", "not found: fetch timed out"},
 				{"ReadError", http.StatusOK, errors.New("cannot read"), false, false, http.StatusInternalServerError, "no-store", "internal server error"},
 				{"NoFetch", http.StatusOK, nil, false, true, http.StatusNotFound, "no-store", "not found: temporarily unavailable"},
@@ -686,7 +690,8 @@ func TestGoproxyServeHTTP(t *testing.T) {
 											var body io.Reader = strings.NewReader(content)
 											if tt.statusCode != http.StatusOK {
 												body = strings.NewReader("missing")
-											} else if tt.err != nil {
+											}
+											if tt.err != nil {
 												body = iotest.ErrReader(tt.err)
 											}
 											header := make(http.Header)
@@ -1927,6 +1932,34 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 			wantContent:      "not found",
 		},
 		{
+			name: "RequestTimeoutReadError",
+			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
+				rw.Header().Set("Content-Length", "1")
+				rw.WriteHeader(http.StatusRequestTimeout)
+			},
+			target:           "example.com/@v/v1.0.0.info",
+			wantStatusCode:   http.StatusNotFound,
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "no-store",
+			wantContent:      "not found: fetch timed out",
+		},
+		{
+			name: "GatewayTimeoutReadError",
+			proxyHandler: func(rw http.ResponseWriter, req *http.Request) {
+				if path.Ext(req.URL.Path) != ".zip" {
+					proxyHandler(rw, req)
+					return
+				}
+				rw.Header().Set("Content-Length", "1")
+				rw.WriteHeader(http.StatusGatewayTimeout)
+			},
+			target:           "example.com/@v/v1.0.0.zip",
+			wantStatusCode:   http.StatusNotFound,
+			wantContentType:  "text/plain; charset=utf-8",
+			wantCacheControl: "no-store",
+			wantContent:      "not found: fetch timed out",
+		},
+		{
 			name:             "FetchDisabled",
 			target:           "example.com/@v/v1.0.0.info",
 			noFetch:          true,
@@ -2029,6 +2062,11 @@ func TestGoproxyServeFetchDownload(t *testing.T) {
 				t.Errorf("unexpected error %v", err)
 			} else if got, want := string(b), tt.wantContent; got != want {
 				t.Errorf("got %q, want %q", got, want)
+			}
+			if entries, err := os.ReadDir(g.Fetcher.(*GoFetcher).TempDir); err != nil {
+				t.Errorf("unexpected error %v", err)
+			} else if len(entries) != 0 {
+				t.Errorf("unexpected temporary files %v", entries)
 			}
 		})
 	}
@@ -2655,6 +2693,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 			{"BadGateway", http.StatusBadGateway, nil, nil, nil, http.StatusBadGateway, "no-store", "bad gateway"},
 			{"ServiceUnavailable", http.StatusServiceUnavailable, nil, nil, nil, http.StatusServiceUnavailable, "no-store", "service unavailable"},
 			{"GatewayTimeout", http.StatusGatewayTimeout, nil, nil, nil, http.StatusGatewayTimeout, "no-store", "gateway timeout"},
+			{"RequestTimeoutRetryAfter", http.StatusRequestTimeout, nil, nil, http.Header{"Retry-After": {"60"}}, http.StatusGatewayTimeout, "no-store", "gateway timeout"},
 			{"RateLimitRetryAfter", http.StatusTooManyRequests, nil, nil, http.Header{"Retry-After": {"60"}}, http.StatusServiceUnavailable, "no-store", "service unavailable"},
 			{"UnavailableRetryAfter", http.StatusServiceUnavailable, nil, nil, http.Header{"Retry-After": {"60"}}, http.StatusServiceUnavailable, "no-store", "service unavailable"},
 			{"BadGatewayRetryAfter", http.StatusBadGateway, nil, nil, http.Header{"Retry-After": {"60"}}, http.StatusBadGateway, "no-store", "bad gateway"},
@@ -2675,6 +2714,7 @@ func TestGoproxyServeSumDB(t *testing.T) {
 			{"AbsenceReadTimeout", http.StatusGone, nil, os.ErrDeadlineExceeded, nil, http.StatusGatewayTimeout, "no-store", "gateway timeout"},
 			{"UnavailableReadError", http.StatusServiceUnavailable, nil, io.ErrUnexpectedEOF, nil, http.StatusServiceUnavailable, "no-store", "service unavailable"},
 			{"UnavailableReadTimeout", http.StatusServiceUnavailable, nil, os.ErrDeadlineExceeded, nil, http.StatusGatewayTimeout, "no-store", "gateway timeout"},
+			{"RequestTimeoutReadError", http.StatusRequestTimeout, nil, io.ErrUnexpectedEOF, nil, http.StatusGatewayTimeout, "no-store", "gateway timeout"},
 			{"GatewayTimeoutReadError", http.StatusGatewayTimeout, nil, io.ErrUnexpectedEOF, nil, http.StatusGatewayTimeout, "no-store", "gateway timeout"},
 		} {
 			t.Run(tt.name, func(t *testing.T) {
