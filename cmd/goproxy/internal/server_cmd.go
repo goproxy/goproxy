@@ -56,6 +56,7 @@ type serverCmdConfig struct {
 	cacher                     string
 	cacherDir                  string
 	s3CacherOpts               s3CacherOptions
+	siteDir                    string
 	tempDir                    string
 	insecure                   bool
 	readHeaderTimeout          time.Duration
@@ -90,6 +91,7 @@ func newServerCmdConfig(cmd *cobra.Command) *serverCmdConfig {
 	fs.StringVar(&cfg.s3CacherOpts.prefix, "cacher-s3-prefix", "", "object key prefix for the S3 cacher")
 	fs.BoolVar(&cfg.s3CacherOpts.forcePathStyle, "cacher-s3-force-path-style", false, "force path-style addressing for the S3 cacher")
 	fs.Int64Var(&cfg.s3CacherOpts.partSize, "cacher-s3-part-size", 100<<20, "multipart upload part size for the S3 cacher")
+	fs.StringVar(&cfg.siteDir, "site-dir", "", "directory of public files to serve as a static site")
 	fs.StringVar(&cfg.tempDir, "temp-dir", os.TempDir(), "directory for storing temporary files")
 	fs.BoolVar(&cfg.insecure, "insecure", false, "skip TLS certificate verification for outgoing HTTP requests")
 	fs.DurationVar(&cfg.readHeaderTimeout, "read-header-timeout", 10*time.Second, "maximum amount of time to read incoming request headers (0 means no limit)")
@@ -186,8 +188,18 @@ func runServerCmd(cmd *cobra.Command, cfg *serverCmdConfig) error {
 	}
 	g.Logger = slog.New(logHandler)
 
+	var siteRoot *os.Root
+	if cfg.siteDir != "" {
+		root, err := os.OpenRoot(cfg.siteDir)
+		if err != nil {
+			return fmt.Errorf("invalid --site-dir: %w", err)
+		}
+		defer root.Close()
+		siteRoot = root
+	}
+
 	server := &http.Server{
-		Handler:                      newServerHandler(cfg, g),
+		Handler:                      newServerHandler(cfg, g, siteRoot),
 		DisableGeneralOptionsHandler: true,
 		ReadHeaderTimeout:            cfg.readHeaderTimeout,
 		WriteTimeout:                 cfg.writeTimeout,
@@ -249,10 +261,20 @@ func runServerCmd(cmd *cobra.Command, cfg *serverCmdConfig) error {
 }
 
 // newServerHandler creates a new [http.Handler] used by the server command.
-func newServerHandler(cfg *serverCmdConfig, base http.Handler) http.Handler {
+func newServerHandler(cfg *serverCmdConfig, base http.Handler, siteRoot *os.Root) http.Handler {
 	prefix := strings.TrimSuffix(cfg.pathPrefix, "/")
 	patternPrefix := (&url.URL{Path: prefix}).EscapedPath()
 	handler := base
+	if siteRoot != nil {
+		site := siteHandler{root: siteRoot, prefix: prefix}
+		handler = http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			if isProxyPath(req.URL.Path) {
+				base.ServeHTTP(rw, req)
+				return
+			}
+			site.ServeHTTP(rw, req)
+		})
+	}
 	if prefix != "" {
 		handler = http.StripPrefix(prefix, handler)
 	}
@@ -279,6 +301,19 @@ func newServerHandler(cfg *serverCmdConfig, base http.Handler) http.Handler {
 		}
 		handler.ServeHTTP(rw, req)
 	})
+}
+
+// isProxyPath reports whether a decoded request path belongs to the proxy.
+func isProxyPath(requestPath string) bool {
+	if requestPath == "/sumdb" || strings.HasPrefix(requestPath, "/sumdb/") {
+		return true
+	}
+	for segment := range strings.SplitSeq(requestPath, "/") {
+		if segment == "@v" || segment == "@latest" {
+			return true
+		}
+	}
+	return false
 }
 
 // httpDirFS implements [http.FileSystem] for the local file system.

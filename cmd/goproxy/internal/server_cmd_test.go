@@ -167,6 +167,77 @@ func TestRunServerCmd(t *testing.T) {
 		}
 	})
 
+	t.Run("SiteDir", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Chdir(dir)
+		writeTestSiteFile(t, dir, "web/index.html", "home")
+		if err := os.Mkdir("empty", 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		for _, tt := range []struct {
+			name       string
+			args       []string
+			wantStatus int
+			wantBody   string
+		}{
+			{"Unset", nil, http.StatusNotFound, "not found"},
+			{"Empty", []string{"--site-dir="}, http.StatusNotFound, "not found"},
+			{"Absolute", []string{"--site-dir", filepath.Join(dir, "web")}, http.StatusOK, "home"},
+			{"Relative", []string{"--site-dir", "./web"}, http.StatusOK, "home"},
+			{"NoIndex", []string{"--site-dir", "empty"}, http.StatusNotFound, "404 page not found\n"},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				address := startTestServerCmd(t, append([]string{"--proxied-sumdbs=sum.golang.org"}, tt.args...)...)
+				client := &http.Client{Timeout: 2 * time.Second}
+				for _, route := range []struct {
+					path   string
+					status int
+					body   string
+				}{
+					{"/healthz", http.StatusNoContent, ""},
+					{"/sumdb/sum.golang.org/supported", http.StatusOK, ""},
+					{"/", tt.wantStatus, tt.wantBody},
+				} {
+					resp, err := client.Get("http://" + address + route.path)
+					if err != nil {
+						t.Fatal(err)
+					}
+					body, err := io.ReadAll(resp.Body)
+					resp.Body.Close()
+					if err != nil {
+						t.Fatal(err)
+					}
+					if resp.StatusCode != route.status || string(body) != route.body {
+						t.Errorf("GET %s = (%d, %q), want (%d, %q)", route.path, resp.StatusCode, body, route.status, route.body)
+					}
+				}
+			})
+		}
+
+		for _, tt := range []struct {
+			name string
+			file bool
+		}{
+			{name: "Missing"},
+			{name: "RegularFile", file: true},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				dir := t.TempDir()
+				if tt.file {
+					writeTestSiteFile(t, dir, "web", "home")
+				}
+				cmd := newServerCmd()
+				cmd.SetOut(io.Discard)
+				cmd.SetErr(io.Discard)
+				cmd.SetArgs([]string{"--address=invalid", "--site-dir", filepath.Join(dir, "web")})
+				if err := cmd.ExecuteContext(t.Context()); err == nil || !strings.HasPrefix(err.Error(), "invalid --site-dir:") {
+					t.Fatalf("got error %v, want invalid --site-dir error before listening", err)
+				}
+			})
+		}
+	})
+
 	t.Run("InvalidConfiguration", func(t *testing.T) {
 		for _, tt := range []struct {
 			name    string
@@ -311,7 +382,7 @@ func TestRunServerCmd(t *testing.T) {
 				t.Parallel()
 				startServer := func(t *testing.T, cfg *serverCmdConfig, base http.Handler) *httptest.Server {
 					t.Helper()
-					server := httptest.NewUnstartedServer(newServerHandler(cfg, base))
+					server := httptest.NewUnstartedServer(newServerHandler(cfg, base, nil))
 					server.Config.WriteTimeout = cfg.writeTimeout
 					server.EnableHTTP2 = tt.http2
 					if tt.http2 {
@@ -923,7 +994,7 @@ func TestNewServerHandler(t *testing.T) {
 				} else {
 					rw.WriteHeader(http.StatusTeapot)
 				}
-			}))
+			}), nil)
 
 			req := httptest.NewRequest(tt.method, "https://example.com"+tt.path, nil)
 			rec := httptest.NewRecorder()
@@ -946,6 +1017,102 @@ func TestNewServerHandler(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("SiteRoutes", func(t *testing.T) {
+		const prefix = "/proxy"
+		dir := t.TempDir()
+		writeTestSiteFile(t, dir, "404.html", "<h1>Page not found</h1>")
+		root := openTestSiteRoot(t, dir)
+		for _, tt := range []struct {
+			name       string
+			file       string
+			method     string
+			target     string
+			wantStatus int
+		}{
+			{name: "Healthz", file: "healthz", target: "/healthz", wantStatus: http.StatusNoContent},
+			{name: "List", file: "example.com/mod/@v/list", target: "/example.com/mod/@v/list", wantStatus: http.StatusOK},
+			{name: "Latest", file: "example.com/mod/@latest", target: "/example.com/mod/@latest", wantStatus: http.StatusOK},
+			{name: "Info", file: "example.com/mod/@v/v1.0.0.info", target: "/example.com/mod/@v/v1.0.0.info", wantStatus: http.StatusOK},
+			{name: "Mod", file: "example.com/mod/@v/v1.0.0.mod", method: http.MethodHead, target: "/example.com/mod/@v/v1.0.0.mod", wantStatus: http.StatusOK},
+			{name: "Zip", file: "example.com/mod/@v/v1.0.0.zip", target: "/example.com/mod/@v/v1.0.0.zip", wantStatus: http.StatusOK},
+			{name: "EscapedModule", file: "example.com/!module/@v/list", target: "/example.com/%21module/%40v/list?x=1%2F2&x=3", wantStatus: http.StatusOK},
+			{name: "MalformedVersionPath", file: "example.com/broken/@v", target: "/example.com/broken/@v", wantStatus: http.StatusNotFound},
+			{name: "MissingModule", file: "example.com/missing/@latest", target: "/example.com/missing/@latest", wantStatus: http.StatusNotFound},
+			{name: "RemovedModule", file: "example.com/removed/@latest", target: "/example.com/removed/@latest", wantStatus: http.StatusGone},
+			{name: "SumDBRoot", file: "sumdb/index.html", target: "/sumdb", wantStatus: http.StatusNotFound},
+			{name: "SumDB", file: "sumdb/sum.golang.org/supported", target: "/sumdb/sum.golang.org/supported", wantStatus: http.StatusOK},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				writeTestSiteFile(t, dir, tt.file, "static")
+				wantReq := httptest.NewRequest(tt.method, tt.target, nil)
+				wantBody := "proxy " + http.StatusText(tt.wantStatus)
+				wantCacheControl := "public, max-age=60"
+				if tt.wantStatus == http.StatusNoContent {
+					wantCacheControl = "no-store"
+				}
+				if tt.wantStatus == http.StatusNoContent || tt.method == http.MethodHead {
+					wantBody = ""
+				}
+				base := http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+					if tt.wantStatus == http.StatusNoContent {
+						t.Fatal("health check reached the proxy")
+					}
+					if req.Method != wantReq.Method || *req.URL != *wantReq.URL || req.RequestURI != prefix+tt.target ||
+						req.Header.Get("Disable-Module-Fetch") != "true" {
+						t.Errorf("unexpected proxy request %s %+v with headers %v", req.Method, *req.URL, req.Header)
+					}
+					rw.Header().Set("Cache-Control", wantCacheControl)
+					rw.Header().Set("Vary", "Disable-Module-Fetch")
+					rw.WriteHeader(tt.wantStatus)
+					if wantBody != "" {
+						io.WriteString(rw, wantBody)
+					}
+				})
+				handler := newServerHandler(&serverCmdConfig{pathPrefix: prefix}, base, root)
+				req := httptest.NewRequest(tt.method, prefix+tt.target, nil)
+				req.Header.Set("Disable-Module-Fetch", "true")
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+				if rec.Code != tt.wantStatus || rec.Body.String() != wantBody {
+					t.Errorf("got (%d, %q), want (%d, %q)", rec.Code, rec.Body, tt.wantStatus, wantBody)
+				}
+				if got := rec.Header().Get("Cache-Control"); got != wantCacheControl {
+					t.Errorf("got Cache-Control %q, want %q", got, wantCacheControl)
+				}
+				if tt.wantStatus != http.StatusNoContent && rec.Header().Get("Vary") != "Disable-Module-Fetch" {
+					t.Errorf("got Vary %q, want Disable-Module-Fetch", rec.Header().Get("Vary"))
+				}
+			})
+		}
+	})
+
+	t.Run("SiteGuard", func(t *testing.T) {
+		dir := t.TempDir()
+		writeTestSiteFile(t, dir, "help.html", "help")
+		handler := newServerHandler(&serverCmdConfig{pathPrefix: "/proxy"}, &goproxy.Goproxy{}, openTestSiteRoot(t, dir))
+		for _, tt := range []struct {
+			name           string
+			method         string
+			body           string
+			wantStatusCode int
+		}{
+			{"Post", http.MethodPost, "", http.StatusMethodNotAllowed},
+			{"Body", http.MethodGet, "body", http.StatusBadRequest},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				req := httptest.NewRequest(tt.method, "/proxy/help.html", strings.NewReader(tt.body))
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+				if rec.Code != tt.wantStatusCode {
+					t.Errorf("got status %d, want %d", rec.Code, tt.wantStatusCode)
+				}
+				if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+					t.Errorf("got Cache-Control %q, want no-store", got)
+				}
+			})
+		}
+	})
 
 	t.Run("RequestBodies", func(t *testing.T) {
 		for _, tt := range []struct {
@@ -974,6 +1141,7 @@ func TestNewServerHandler(t *testing.T) {
 				server := httptest.NewServer(newServerHandler(
 					&serverCmdConfig{pathPrefix: tt.prefix, fetchTimeout: 20 * time.Millisecond},
 					&goproxy.Goproxy{ProxiedSumDBs: []string{"sum.golang.org"}},
+					nil,
 				))
 				defer server.Close()
 				conn, err := net.DialTimeout("tcp", server.Listener.Addr().String(), time.Second)
@@ -1027,6 +1195,7 @@ func TestNewServerHandler(t *testing.T) {
 			server := httptest.NewUnstartedServer(newServerHandler(
 				&serverCmdConfig{pathPrefix: "/proxy"},
 				&goproxy.Goproxy{ProxiedSumDBs: []string{"sum.golang.org"}},
+				nil,
 			))
 			server.EnableHTTP2 = true
 			server.StartTLS()
@@ -1117,6 +1286,7 @@ func TestNewServerHandler(t *testing.T) {
 					server := httptest.NewServer(newServerHandler(
 						&serverCmdConfig{pathPrefix: tt.prefix},
 						&goproxy.Goproxy{ProxiedSumDBs: []string{"sumdb.example.com"}},
+						nil,
 					))
 					defer server.Close()
 					client := server.Client()
