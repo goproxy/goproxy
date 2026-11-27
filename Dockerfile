@@ -35,6 +35,7 @@ RUN chown nobody:nobody /goproxy
 VOLUME /goproxy
 EXPOSE 8080
 
+ENV GOVCS=*:git
 USER nobody
 ENTRYPOINT ["/usr/local/bin/goproxy"]
 CMD ["server", "--address", ":8080"]

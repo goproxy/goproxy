@@ -117,6 +117,10 @@ Then run it:
 docker run -p 8080:8080 ghcr.io/goproxy/goproxy server --address :8080
 ```
 
+The Docker image sets `GOVCS=*:git` by default to allow only Git for direct module fetches. To allow another version
+control system for a trusted repository, add `-e 'GOVCS=<repository-prefix>:<vcs>,*:git'` before the image name. For
+`<vcs>`, use `svn` for Subversion, `fossil` for Fossil, or `hg` for Mercurial.
+
 Finally, set `GOPROXY` to try it out:
 
 ```bash
