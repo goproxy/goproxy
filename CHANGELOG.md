@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.27.1](https://github.com/goproxy/goproxy/compare/v0.27.0...v0.27.1) (2026-11-27)
+
+
+### Features
+
+* serve a static site from the proxy server ([#242](https://github.com/goproxy/goproxy/issues/242)) ([4425ec3](https://github.com/goproxy/goproxy/commit/4425ec37781cfe5a67979b4bf79fdc91ffc90dc0))
+
+
+### Bug Fixes
+
+* **docker:** default to Git for direct module fetches ([#244](https://github.com/goproxy/goproxy/issues/244)) ([7233946](https://github.com/goproxy/goproxy/commit/72339468cc31df12cdbf5aa0ceafdae74c970c87))
+
+
+### Documentation
+
+* add a security policy ([#240](https://github.com/goproxy/goproxy/issues/240)) ([913aef8](https://github.com/goproxy/goproxy/commit/913aef823d2f7514725533b0d3c9d840b2627c25))
+
 ## [0.27.0](https://github.com/goproxy/goproxy/compare/v0.26.1...v0.27.0) (2026-10-17)
 
 
